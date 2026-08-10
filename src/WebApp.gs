@@ -23,14 +23,22 @@
  * to a deployment that already exists.
  */
 
+/**
+ * The URL serves App.html — one screen with its own navigation, built for a
+ * browser window. Admin.html and Intake.html stay exactly as they are and keep
+ * serving the in-sheet menu, which opens them at 760px and 300px respectively;
+ * a layout that works in a sidebar does not work full-bleed, and vice versa.
+ * All three call the same server functions, so behaviour cannot drift.
+ */
 const WEBAPP_PAGES = {
+  app: { file: 'App', title: 'Onboarding' },
   dashboard: { file: 'Admin', title: 'Onboarding dashboard' },
   intake: { file: 'Intake', title: 'New client intake' }
 };
 
 function doGet(e) {
-  const requested = (e && e.parameter && e.parameter.page) || 'dashboard';
-  const page = WEBAPP_PAGES[requested] || WEBAPP_PAGES.dashboard;
+  const requested = (e && e.parameter && e.parameter.page) || 'app';
+  const page = WEBAPP_PAGES[requested] || WEBAPP_PAGES.app;
 
   return HtmlService.createHtmlOutputFromFile(page.file)
     .setTitle(page.title + ' · Lockhern')

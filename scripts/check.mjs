@@ -99,6 +99,15 @@ for (const [f, src] of Object.entries(htmlSrc)) {
       if (!c[1].startsWith('with')) called.set(c[1], f);
     }
   }
+
+  // A page that dispatches dynamically (`run[fn](...)`) is invisible to the
+  // scans above, so it declares its targets in a SERVER_FNS array instead.
+  const decl = src.match(/SERVER_FNS\s*=\s*\[([\s\S]*?)\]/);
+  if (decl) {
+    for (const m of decl[1].matchAll(/'([A-Za-z0-9_]+)'|"([A-Za-z0-9_]+)"/g)) {
+      called.set(m[1] || m[2], f + ' (SERVER_FNS)');
+    }
+  }
 }
 
 if (!called.size) fail('no google.script.run calls found — regex may be stale');
