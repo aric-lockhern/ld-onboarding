@@ -1,0 +1,57 @@
+# Netlify does not host this app and cannot. The CRM is Google Apps Script:
+# it runs inside Google, holding a live connection to the bound spreadsheet,
+# and its UI is served by HtmlService. There is no bundle to publish.
+#
+# What Netlify is good for here is an address. The deployed Apps Script URL is
+# a 70-character deployment ID nobody will ever type or remember, so this site
+# forwards a short one to it, and publishes the standalone design mockup.
+#
+#   /            -> the live app (redirect)
+#   /mockup.html -> the design reference, fake data, PIN 1234
+#
+# This is a 302, not a proxy. The address bar changes to script.google.com on
+# arrival — unavoidable, because Google has to run its own sign-in on its own
+# origin. A 200 rewrite would proxy the HTML but break the auth round trip and
+# every google.script.run call underneath it.
+
+[build]
+  publish = "design"
+  command = ""
+
+# The deployment ID below is stable across *versions* of the same deployment —
+# cutting a new version to ship code changes does not change it. It only
+# changes if someone creates a NEW deployment instead of a new version of the
+# existing one, which would silently point this redirect at the old code.
+# Onboarding -> Show web app URL in the sheet prints the current one.
+[[redirects]]
+  from = "/"
+  to = "https://script.google.com/a/macros/lockherndigital.com/s/AKfycbxq2X6YLR_SxQ51-8vYlU2R3Tyev9akVcvzmAYVxkw4AUorfK0coUU-5c-6sHLp9yQskQ/exec"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/app"
+  to = "https://script.google.com/a/macros/lockherndigital.com/s/AKfycbxq2X6YLR_SxQ51-8vYlU2R3Tyev9akVcvzmAYVxkw4AUorfK0coUU-5c-6sHLp9yQskQ/exec"
+  status = 302
+  force = true
+
+# The old in-sheet dashboard and sidebar form, still served by doGet.
+[[redirects]]
+  from = "/dashboard"
+  to = "https://script.google.com/a/macros/lockherndigital.com/s/AKfycbxq2X6YLR_SxQ51-8vYlU2R3Tyev9akVcvzmAYVxkw4AUorfK0coUU-5c-6sHLp9yQskQ/exec?page=dashboard"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/intake"
+  to = "https://script.google.com/a/macros/lockherndigital.com/s/AKfycbxq2X6YLR_SxQ51-8vYlU2R3Tyev9akVcvzmAYVxkw4AUorfK0coUU-5c-6sHLp9yQskQ/exec?page=intake"
+  status = 302
+  force = true
+
+# The mockup is a design reference with invented clients, not the tool. It is
+# published so the UI can be reviewed without a Google login; keep it in step
+# with the real dashboard or delete it.
+[[headers]]
+  for = "/mockup.html"
+  [headers.values]
+    X-Robots-Tag = "noindex"

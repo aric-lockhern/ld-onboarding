@@ -71,6 +71,7 @@ src/
   App.html       the web app UI — own nav, four views, built for a browser
 design/
   mockup.html    standalone UI reference, fake data, no Apps Script calls
+netlify.toml     redirects a short URL to the Apps Script deployment
 docs/
   OPERATIONS.md  install, phases, daily use, deploying, adjusting
 scripts/
@@ -87,6 +88,7 @@ scripts/
 - Plain ES2015+ on V8. No build step, no bundler, no TypeScript. Files are pushed verbatim.
 - HTML files are referenced without extension: `createHtmlOutputFromFile('Admin')`.
 - `SpreadsheetApp.getUi()` exists only in the sheet. Menu wrappers may call it; anything reachable from `Admin.html`, `Intake.html`, or `doGet` may not, or the web app URL breaks while the menu keeps working.
+- `netlify.toml` forwards, it never hosts. If the deployment ID changes — a *new deployment* rather than a new version of the existing one — every redirect in it silently points at old code.
 - A `clasp push` does not update the web app URL. That needs a new deployment version in the editor, so the menu and the URL can run different code.
 - `App.html` dispatches server calls dynamically through `api()`, which hides them from `check.mjs`. Its targets are declared in the `SERVER_FNS` array, which `check.mjs` validates by name — add a call there or `api()` rejects it.
 - Inline `<script>` in HTML runs in an iframe sandbox. `localStorage` and `sessionStorage` are unavailable — keep state in JS variables.
