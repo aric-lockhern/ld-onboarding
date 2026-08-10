@@ -45,10 +45,14 @@ jobs:
         with:
           node-version: '20'
 
-      # Pinned exactly. clasp 3.x reworked auth and the command surface;
-      # an unpinned install would break this job without a commit.
+      # Pinned exactly, and pinned to 3.x deliberately: `npx clasp login`
+      # installs the latest clasp, which writes {"tokens":{"default":{...}}}.
+      # clasp 2.x only reads the older {"token":{...}} shape and dies with
+      # "Cannot read properties of undefined (reading 'access_token')" on a
+      # 3.x credential file. 3.3.0 reads all three historical shapes, so this
+      # pin must be >= the version whoever ran `clasp login` used.
       - name: Install clasp
-        run: npm install -g @google/clasp@2.5.0
+        run: npm install -g @google/clasp@3.3.0
 
       # The script ID lives in the committed .clasp.json. It is an address,
       # not a credential — reaching that script still requires Google
@@ -74,6 +78,23 @@ jobs:
             echo "::error::from the opening { to the closing }, with nothing added."
             exit 1
           fi
+
+          # Recognise the shape before clasp does, so a version mismatch
+          # reports itself here instead of as an undefined-property crash.
+          node -e '
+            const rc = JSON.parse(require("fs").readFileSync(process.env.HOME + "/.clasprc.json", "utf8"));
+            const shape = rc.tokens ? "v3 (tokens.default)"
+                        : rc.token  ? "legacy v2 (token + oauth2ClientSettings)"
+                        : rc.access_token ? "legacy v1 (flat access_token)"
+                        : null;
+            if (!shape) {
+              console.log("::error::CLASPRC_JSON has no recognisable credential shape.");
+              console.log("::error::Expected one of: tokens.default, token, or access_token.");
+              console.log("::error::Run `npx clasp login` again and copy the whole file.");
+              process.exit(1);
+            }
+            console.log("Credential format: " + shape);
+          '
 
           if [ ! -f .clasp.json ]; then
             echo "::error::.clasp.json is missing from the repository."
