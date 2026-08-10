@@ -55,6 +55,7 @@ function onOpen() {
     .addItem('Enable daily digest', 'installDigestTrigger')
     .addSeparator()
     .addItem('Set Anthropic API key', 'promptForApiKey')
+    .addItem('Set ClickUp API token', 'promptForClickUpToken')
     .addItem('Set dashboard PIN', 'promptForPin')
     .addItem('Re-run setup / repair tabs', 'setup')
     .addToUi();

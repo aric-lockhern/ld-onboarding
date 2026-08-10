@@ -67,6 +67,8 @@ It needs one repository secret — `CLASPRC_JSON`, the contents of your local `~
 
 No external web host is involved. Apps Script runs inside Google and `HtmlService` serves the UI — these are not static pages and will not work on Netlify, Vercel, or anywhere else.
 
+`netlify.toml` exists only to give that URL a memorable address. The Netlify site publishes `design/` (the standalone mockup) and 302-redirects `/`, `/app`, `/dashboard` and `/intake` to the Apps Script deployment. It forwards; it does not host. The address bar changes to `script.google.com` on arrival, because Google runs its own sign-in on its own origin — a proxy rewrite would break the auth round trip and every `google.script.run` call underneath it.
+
 ## The web app URL
 
 The dashboard and intake also run at their own URL, so staff can use the tool without opening the spreadsheet:

@@ -141,6 +141,34 @@ Things deliberately left out, in rough order of value:
 4. **Renewal triggers** — the `Renewal Date` field is captured but nothing reads it yet. A 60-day-out task would close the loop.
 5. **The five API request flows** — the biggest lift but the most setup. Google Ads and Meta first; between them they cover ad accounts, Pages, Instagram, pixels, and catalogs.
 
+## New client: sources first, then the form
+
+The **+ New client** button opens a two-step flow.
+
+**Step 1 — sources.** Three optional boxes: sales call transcript, onboarding/kickoff transcript, scope of work. Each takes pasted text, a ClickUp doc link, or a Google Doc link. The whole step is skippable; not every client arrives with documents, and a flow you cannot skip is a flow people work around.
+
+**Step 2 — review and create.** Anthropic reads whatever was supplied and returns a pre-filled form. Every extracted value carries the sentence it came from and a confidence chip, shown by default rather than behind a hover — the point is checking a number without going hunting for it.
+
+Three things it produces beyond the fields:
+
+- **Conflicts.** When the sales call and the scope of work disagree, both readings are shown with their quotes. The scope-of-work value is the one used: the contract governs, the sales call is what was hoped for.
+- **Open questions.** Things the documents do not answer that must be resolved before launch. These are copied into Context notes so they reach the onboarding plan.
+- **Pre-selected platforms**, constrained to the names on the `Platforms` tab so the task builder always recognises them.
+
+It guesses wherever the evidence supports it and omits fields it cannot quote. **Check MRR and the dates before submitting.** A confident wrong number on a commercial term is the expensive failure here, which is why the quote sits under every one.
+
+### ClickUp links
+
+Reading a ClickUp doc needs an API token: **ClickUp → Settings → Apps → API Token**, then in the sheet **Onboarding → Set ClickUp API token**. It lives in Script Properties as `CLICKUP_API_TOKEN`, never in a cell and never in the repo.
+
+Links look like `doc.clickup.com/{workspaceId}/d/h/{docId}/{pageId}`. The fetch pulls **every page in the doc**, not just the linked one — transcripts are routinely split across pages and grabbing only the deep-linked page silently truncates the input.
+
+Without a token, the step-1 screen says so up front. Pasted text and Google Doc links work regardless.
+
+### Cost and limits
+
+Each analysis is one Anthropic call against the model named in `Config`. Transcripts over ~60k characters are trimmed head-and-tail before sending: openings carry the company and the ask, closings carry the commitments, the middle is usually rapport.
+
 ## The web app URL
 
 The same two UIs are also served at a URL, so staff can use the tool without opening the spreadsheet.
