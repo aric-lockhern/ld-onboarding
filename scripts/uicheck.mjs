@@ -146,7 +146,8 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForSelector('#app.on', { timeout: 5000 });
 
   for (const view of ['overview', 'queue', 'clients', 'new']) {
-    await page.click(`nav button[data-v="${view}"]`);
+    // "New client" is the header CTA, not a sidebar item.
+    await page.click(view === 'new' ? '#newBtn' : `nav button[data-v="${view}"]`);
     await page.waitForTimeout(250);
     const f = `${OUT}/${name}-${view}.png`;
     await page.screenshot({ path: f, fullPage: name === 'desktop' });

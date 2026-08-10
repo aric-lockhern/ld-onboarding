@@ -3,211 +3,236 @@
 <head>
 <base target="_top">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Brand tokens carried over from Admin.html so the two UIs don't diverge.
-     Status colours are the validated status palette — they are reserved for
-     state and never reused as decoration, and every one ships with a text
-     label beside it so meaning is never carried by colour alone. */
+  /* Lockhern Digital brand.
+     Blues and greys come from the brand sheet. Tertiary navy (#0E2970) is
+     used for text and the logo mark only, never as a surface — it makes the
+     whole tool feel like a database admin panel.
+
+     Status colours are darker steps than the stock palette so all four clear
+     3:1 against both the card and the page (the lighter amber and orange did
+     not). They are reserved for state, never decoration, and every one renders
+     beside its own word — "3 overdue", "1 blocked" — so hue never carries the
+     meaning by itself. Blocked and overdue deliberately share a red: they are
+     both problems, and the label is what tells them apart. */
   :root{
-    --ink:#14181D; --muted:#5A6470; --faint:#8B939C; --line:#E3E5E1;
-    --accent:#0F5C5B; --accent-dk:#0B4443; --paper:#FBFBF9; --surface:#fff;
-    --ochre:#A8641B; --tick-off:#DFE2DE;
-    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
-    --nav:#11201F;
-    --sidebar-w:208px;
+    --blue:#317AE0; --blue-dk:#2A62B4; --blue-ink:#0E2970;
+    --blue-wash:#EAF1FC; --blue-line:#CFE0F7;
+    --ink:#0E0E0E; --muted:#6B7A99; --faint:#8E9BB5;
+    --line:#E7ECF4; --mid:#BAC3D6;
+    --paper:#F7F9FC; --surface:#FFFFFF;
+    --good:#0F7B2E; --warning:#B26A00; --critical:#C22B2B; --serious:#C22B2B;
+    --tick-off:#DDE4EF;
+    --sidebar-w:216px;
+    --shadow:0 1px 2px rgba(14,41,112,.05), 0 1px 3px rgba(14,41,112,.04);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0; background:var(--paper); color:var(--ink);
-    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-  .mono,.eyebrow,.pill,.tab,.stat .v,.frac,button,input,select,textarea{
-    font-family:ui-monospace,"Roboto Mono",Menlo,monospace}
-  .eyebrow{font:600 9px/1; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
-  h1,h2,h3{margin:0; font-weight:600}
-  a{color:var(--accent)}
+    font:15px/1.55 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; font-feature-settings:"cv11","ss01"}
+  .num,.stat .v,.frac{font-variant-numeric:tabular-nums}
+  .eyebrow{font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:0;
+    text-transform:none}
+  h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.011em}
+  a{color:var(--blue); text-decoration:none}
+  a:hover{text-decoration:underline}
 
   /* ---------------------------------------------------------------- gate */
-  #gate{max-width:300px; margin:15vh auto; text-align:left}
-  #gate .mark{width:34px; height:34px; border-radius:4px; background:var(--accent);
-    display:grid; place-items:center; color:#fff; font:600 14px/1 ui-monospace,Menlo,monospace;
-    margin-bottom:14px}
-  #gate h1{font-size:18px; margin:0 0 4px}
-  #gate p{color:var(--muted); font-size:12px; margin:0 0 16px}
-  #pin{width:100%; padding:11px; border:1px solid var(--line); border-radius:4px;
-    font:15px/1 ui-monospace,Menlo,monospace; letter-spacing:.25em; text-align:center;
-    background:var(--surface)}
-  #pin:focus{outline:2px solid var(--accent); outline-offset:-1px}
-  #gateMsg{margin-top:10px; font-size:12px; color:var(--critical); min-height:16px}
+  #gate{max-width:340px; margin:14vh auto; padding:0 20px}
+  #gate .mark{width:42px; height:42px; border-radius:10px; background:var(--blue);
+    display:grid; place-items:center; color:#fff; font-size:16px; font-weight:700;
+    margin-bottom:20px; letter-spacing:-.02em}
+  #gate h1{font-size:24px; margin:0 0 6px}
+  #gate p{color:var(--muted); font-size:14.5px; margin:0 0 22px}
+  #pin{width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:9px;
+    font:17px/1 "Inter",sans-serif; letter-spacing:.22em; text-align:center;
+    background:var(--surface); color:var(--ink)}
+  #pin::placeholder{letter-spacing:.1em; color:var(--mid)}
+  #pin:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
+  #gateMsg{margin-top:12px; font-size:13.5px; color:var(--critical); min-height:18px}
 
   /* --------------------------------------------------------------- shell */
   #app{display:none; min-height:100%}
-  /* The gradient paints the sidebar's column for the full document height.
-     nav itself is 100vh and sticky, so on a long page the column would
-     otherwise run out of dark and show paper beneath it. */
   #app.on{display:grid; grid-template-columns:var(--sidebar-w) 1fr;
-    background:linear-gradient(90deg, var(--nav) 0, var(--nav) var(--sidebar-w),
+    background:linear-gradient(90deg, var(--surface) 0, var(--surface) var(--sidebar-w),
       var(--paper) var(--sidebar-w))}
 
-  nav{background:var(--nav); color:#fff; padding:16px 0; position:sticky; top:0;
-    height:100vh; display:flex; flex-direction:column}
-  nav .brand{display:flex; align-items:center; gap:9px; padding:0 16px 18px}
-  nav .brand .mark{width:24px; height:24px; border-radius:3px; background:var(--accent);
-    display:grid; place-items:center; font:600 11px/1 ui-monospace,Menlo,monospace}
-  nav .brand b{font-size:12.5px; font-weight:600; letter-spacing:.01em}
-  nav button{display:flex; align-items:center; gap:9px; width:100%; text-align:left;
-    background:none; border:0; color:rgba(255,255,255,.68); padding:9px 16px; cursor:pointer;
-    font:600 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.09em; text-transform:uppercase}
-  nav button:hover{color:#fff; background:rgba(255,255,255,.05)}
-  nav button.on{color:#fff; background:rgba(255,255,255,.09);
-    box-shadow:inset 2px 0 0 var(--accent)}
-  nav button .ic{width:14px; text-align:center; font-size:12px; opacity:.9}
+  nav{background:var(--surface); border-right:1px solid var(--line); padding:18px 12px;
+    position:sticky; top:0; height:100vh; display:flex; flex-direction:column}
+  nav .brand{display:flex; align-items:center; gap:10px; padding:2px 8px 22px}
+  nav .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--blue);
+    display:grid; place-items:center; color:#fff; font-size:12.5px; font-weight:700;
+    letter-spacing:-.02em}
+  nav .brand b{font-size:15px; font-weight:600; color:var(--blue-ink); letter-spacing:-.012em}
+  nav button{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    background:none; border:0; color:var(--muted); padding:9px 10px; cursor:pointer;
+    font:500 14.5px/1.2 "Inter",sans-serif; border-radius:8px; margin-bottom:2px}
+  nav button:hover{color:var(--blue-ink); background:var(--paper)}
+  nav button.on{color:var(--blue); background:var(--blue-wash); font-weight:600}
+  nav button .ic{width:18px; text-align:center; font-size:15px; opacity:.85}
   nav .spacer{flex:1}
-  nav .foot{padding:12px 16px 0; font-size:10px; color:rgba(255,255,255,.4); line-height:1.5}
-  nav .foot button{padding:6px 0; text-transform:none; letter-spacing:0; font-size:10px}
+  nav .foot{padding:12px 10px 0; font-size:12.5px; color:var(--faint); border-top:1px solid var(--line)}
+  nav .foot button{padding:5px 0; font-size:13px; color:var(--muted)}
+  nav .foot button:hover{background:none; color:var(--blue)}
 
   main{min-width:0; display:flex; flex-direction:column}
-  header{display:flex; align-items:center; gap:12px; padding:14px 24px; background:var(--surface);
-    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5}
-  header h1{font-size:15px; margin-right:auto}
-  header .sub{color:var(--muted); font-size:11.5px}
-  .wrap{padding:20px 24px 40px; max-width:1080px; width:100%}
+  header{display:flex; align-items:center; gap:14px; padding:20px 28px 16px;
+    background:var(--paper); position:sticky; top:0; z-index:5;
+    border-bottom:1px solid var(--line)}
+  header h1{font-size:21px; margin-right:auto}
+  header .sub{color:var(--muted); font-size:13.5px}
+  .wrap{padding:22px 28px 48px; max-width:1120px; width:100%}
 
   /* --------------------------------------------------------------- bits */
   button.btn{border:1px solid var(--line); background:var(--surface); color:var(--ink);
-    padding:7px 12px; border-radius:4px; cursor:pointer; font:600 10px/1;
-    letter-spacing:.08em; text-transform:uppercase}
-  button.btn:hover{border-color:var(--accent); color:var(--accent)}
-  button.btn.pri{background:var(--accent); border-color:var(--accent); color:#fff}
-  button.btn.pri:hover{background:var(--accent-dk); border-color:var(--accent-dk); color:#fff}
-  button.btn:disabled{opacity:.45; cursor:default}
-  button.btn.sm{padding:5px 9px; font-size:9px}
+    padding:8px 14px; border-radius:8px; cursor:pointer;
+    font:500 13.5px/1.2 "Inter",sans-serif; box-shadow:var(--shadow)}
+  button.btn:hover{border-color:var(--mid); background:var(--paper)}
+  button.btn.pri{background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600}
+  button.btn.pri:hover{background:var(--blue-dk); border-color:var(--blue-dk)}
+  button.btn:disabled{opacity:.5; cursor:default}
+  button.btn.sm{padding:6px 11px; font-size:13px}
+  a.btn{display:inline-block; text-decoration:none}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:6px}
-  .grp{font:600 9px/1; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
-    padding:24px 0 10px; display:flex; align-items:center; gap:8px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow)}
+  .grp{font-size:13.5px; font-weight:600; color:var(--muted); letter-spacing:0;
+    text-transform:none; padding:26px 2px 10px; display:flex; align-items:center; gap:8px}
   .grp .n{color:var(--faint); font-weight:400}
 
-  /* KPI row — stat tiles, not charts: these are single headline numbers,
-     so a plot would add nothing. */
-  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px}
-  .stat{padding:14px 15px}
-  .stat .k{display:flex; align-items:center; gap:6px; margin-bottom:7px}
-  .stat .k .eyebrow{color:var(--muted)}
-  .stat .v{font-size:26px; font-weight:600; line-height:1; letter-spacing:-.01em}
-  .stat .cap{font-size:11px; color:var(--faint); margin-top:5px}
-  .dot{width:8px; height:8px; border-radius:50%; flex:none; display:inline-block}
+  /* Stat tiles, not charts — each is a single headline number, so a plot
+     would add nothing but ink. */
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:12px}
+  .stat{padding:16px 18px}
+  .stat .k{display:flex; align-items:center; gap:7px; margin-bottom:9px}
+  .stat .v{font-size:32px; font-weight:600; line-height:1; letter-spacing:-.025em}
+  .stat .cap{font-size:13px; color:var(--faint); margin-top:6px}
+  .dot{width:9px; height:9px; border-radius:50%; flex:none; display:inline-block}
   .dot.good{background:var(--good)} .dot.warning{background:var(--warning)}
   .dot.serious{background:var(--serious)} .dot.critical{background:var(--critical)}
-  .dot.idle{background:var(--tick-off)}
+  .dot.idle{background:var(--mid)}
 
-  .row{display:flex; align-items:center; gap:11px; padding:11px 15px;
+  .row{display:flex; align-items:center; gap:13px; padding:14px 18px;
     border-top:1px solid var(--line)}
   .row:first-child{border-top:0}
   .row .who{flex:1; min-width:0}
-  .row .co{font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap}
-  .row .meta{color:var(--muted); font-size:11.5px; margin-top:2px}
-  .row .act{display:flex; gap:6px; flex:none}
+  .row .co{font-weight:600; font-size:15px; letter-spacing:-.01em; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap}
+  .row .meta{color:var(--muted); font-size:13.5px; margin-top:2px}
+  .row .act{display:flex; gap:8px; flex:none}
   .row.clickable{cursor:pointer}
-  .row.clickable:hover{background:#F6F8F6}
+  .row.clickable:hover{background:var(--paper)}
 
-  .pill{font:600 9px/1; letter-spacing:.06em; text-transform:uppercase; padding:4px 7px;
-    border-radius:3px; background:#EEF0EE; color:var(--muted); flex:none;
-    display:inline-flex; align-items:center; gap:5px}
-  .pill.critical{background:#FBEBEB; color:#8f2020}
-  .pill.warning{background:#FDF4E0; color:#7a5406}
-  .pill.serious{background:#FCEEE7; color:#8a4326}
-  .pill.good{background:#E7F6E7; color:#0a6b0a}
+  .pill{font-size:12.5px; font-weight:500; letter-spacing:0; text-transform:none;
+    padding:4px 10px; border-radius:20px; background:var(--paper); color:var(--muted);
+    flex:none; display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line)}
+  .pill.critical{background:#FDECEC; color:#9B2020; border-color:#F6D5D5}
+  .pill.warning{background:#FDF3E3; color:#8A5200; border-color:#F3E2C4}
+  .pill.serious{background:#FDECEC; color:#9B2020; border-color:#F6D5D5}
+  .pill.good{background:#E9F6EE; color:#0D6528; border-color:#CDE9D8}
 
-  /* Progress: one tick per task, filled = complete. A bar, not a chart —
-     the job is magnitude against a known whole. */
+  /* One tick per task, filled = complete. Magnitude against a known whole. */
   .ticks{display:flex; gap:2px; flex:none}
-  .tick{width:5px; height:13px; border-radius:1px; background:var(--tick-off)}
-  .tick.on{background:var(--accent)}
-  .frac{font-size:11px; color:var(--muted); flex:none; min-width:46px; text-align:right}
+  .tick{width:6px; height:16px; border-radius:2px; background:var(--tick-off)}
+  .tick.on{background:var(--blue)}
+  .frac{font-size:13px; color:var(--muted); flex:none; min-width:52px; text-align:right}
 
-  .empty{padding:26px 16px; text-align:center; color:var(--faint); font-size:12.5px}
-  .empty b{display:block; color:var(--muted); font-weight:600; margin-bottom:3px; font-size:13px}
-  .skel{height:12px; background:linear-gradient(90deg,#EDEFED,#F6F7F6,#EDEFED);
-    background-size:200% 100%; animation:sh 1.2s infinite; border-radius:3px}
+  .empty{padding:34px 20px; text-align:center; color:var(--faint); font-size:14px}
+  .empty b{display:block; color:var(--muted); font-weight:600; margin-bottom:4px; font-size:15px}
+  .skel{height:13px; background:linear-gradient(90deg,#EDF1F7,#F7F9FC,#EDF1F7);
+    background-size:200% 100%; animation:sh 1.3s infinite; border-radius:5px}
   @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-  .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:#fff;
-    padding:11px 15px; border-radius:5px; font-size:12px; max-width:340px; z-index:50;
-    box-shadow:0 6px 22px rgba(0,0,0,.18)}
-  .toast.bad{background:#7d1f1f}
+  .toast{position:fixed; right:22px; bottom:22px; background:var(--blue-ink); color:#fff;
+    padding:13px 17px; border-radius:10px; font-size:14px; max-width:360px; z-index:50;
+    box-shadow:0 8px 26px rgba(14,41,112,.22)}
+  .toast.bad{background:#8F2020}
 
   /* --------------------------------------------------------------- forms */
-  .form{max-width:680px}
-  .sect{padding:18px 20px; border-top:1px solid var(--line)}
+  .form{max-width:760px}
+  .sect{padding:22px 24px; border-top:1px solid var(--line)}
   .sect:first-child{border-top:0}
-  .sect h3{font-size:12.5px; margin-bottom:2px}
-  .sect .hint{color:var(--faint); font-size:11.5px; margin-bottom:14px}
-  .fields{display:grid; grid-template-columns:1fr 1fr; gap:12px}
-  .f{display:flex; flex-direction:column; gap:5px}
+  .sect h3{font-size:16px; margin-bottom:3px}
+  .sect .hint{color:var(--faint); font-size:13.5px; margin-bottom:18px}
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  .f{display:flex; flex-direction:column; gap:6px}
   .f.wide{grid-column:1/-1}
-  .f label{font:600 9px/1; letter-spacing:.11em; text-transform:uppercase; color:var(--muted)}
-  .f input,.f select,.f textarea{padding:8px 9px; border:1px solid var(--line); border-radius:4px;
-    font:12px/1.4 inherit; background:var(--surface); color:var(--ink); width:100%}
-  .f textarea{min-height:78px; resize:vertical; font-family:inherit}
-  .f input:focus,.f select:focus,.f textarea:focus{outline:2px solid var(--accent);
-    outline-offset:-1px}
-  .f .note{font-size:11px; color:var(--faint)}
-  .checks{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:7px}
-  .chk{display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border:1px solid var(--line);
-    border-radius:4px; cursor:pointer; background:var(--surface)}
-  .chk:hover{border-color:var(--accent)}
-  .chk.on{border-color:var(--accent); background:#F2F7F6}
-  .chk input{margin:1px 0 0}
-  .chk .nm{font-size:12px; font-weight:600}
-  .chk .cat{font-size:10.5px; color:var(--faint)}
-  .bar{display:flex; gap:9px; align-items:center; padding:14px 20px; border-top:1px solid var(--line);
-    background:#F7F9F7; border-radius:0 0 6px 6px}
+  .f label{font-size:13.5px; font-weight:500; color:var(--muted); letter-spacing:0;
+    text-transform:none}
+  .f input,.f select,.f textarea{padding:10px 12px; border:1px solid var(--line);
+    border-radius:8px; font:14.5px/1.5 "Inter",sans-serif; background:var(--surface);
+    color:var(--ink); width:100%}
+  .f textarea{min-height:92px; resize:vertical}
+  .f input::placeholder,.f textarea::placeholder{color:var(--mid)}
+  .f input:focus,.f select:focus,.f textarea:focus{outline:none; border-color:var(--blue);
+    box-shadow:0 0 0 3px var(--blue-wash)}
+  .f .note{font-size:12.5px; color:var(--faint)}
+  .checks{display:grid; grid-template-columns:repeat(auto-fill,minmax(232px,1fr)); gap:9px}
+  .chk{display:flex; align-items:flex-start; gap:10px; padding:11px 13px;
+    border:1px solid var(--line); border-radius:9px; cursor:pointer; background:var(--surface)}
+  .chk:hover{border-color:var(--blue-line); background:var(--paper)}
+  .chk.on{border-color:var(--blue); background:var(--blue-wash)}
+  .chk input{margin:2px 0 0; accent-color:var(--blue); width:15px; height:15px}
+  .chk .nm{font-size:14px; font-weight:500}
+  .chk .cat{font-size:12.5px; color:var(--faint)}
+  .bar{display:flex; gap:12px; align-items:center; padding:18px 24px;
+    border-top:1px solid var(--line); background:var(--paper); border-radius:0 0 12px 12px}
   .bar .sp{flex:1}
 
   /* -------------------------------------------------------------- detail */
   .back{background:none; border:0; color:var(--muted); cursor:pointer; padding:0;
-    font:600 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.08em; text-transform:uppercase}
-  .back:hover{color:var(--accent)}
-  .rail{display:flex; gap:5px; padding:14px 15px; overflow-x:auto}
-  .step{flex:1; min-width:96px; padding:8px 9px; border-radius:4px; background:#F1F3F1;
-    border:1px solid var(--line)}
-  .step.done{background:#EAF3EE; border-color:#CBE0D4}
-  .step.cur{background:var(--accent); border-color:var(--accent); color:#fff}
-  .step .p{font:600 8.5px/1; letter-spacing:.1em; text-transform:uppercase; opacity:.75}
-  .step .n{font-size:11.5px; font-weight:600; margin-top:4px}
-  .task{display:flex; align-items:center; gap:10px; padding:9px 15px; border-top:1px solid var(--line)}
-  .task .n{flex:1; min-width:0; font-size:12.5px}
-  .task select{padding:5px 7px; border:1px solid var(--line); border-radius:3px;
-    font:11px/1 inherit; background:var(--surface); width:136px; flex:none}
-  .modal{position:fixed; inset:0; background:rgba(10,14,18,.45); display:grid; place-items:center;
-    padding:20px; z-index:40}
-  .modal .box{background:var(--surface); border-radius:7px; max-width:620px; width:100%;
-    max-height:86vh; overflow:auto}
-  .modal .hd{padding:15px 18px; border-bottom:1px solid var(--line); display:flex;
-    align-items:center; gap:10px; position:sticky; top:0; background:var(--surface)}
-  .modal .hd h3{font-size:13px; margin-right:auto}
-  .modal .bd{padding:16px 18px; font-size:12.5px; white-space:pre-wrap; line-height:1.55}
-  .modal .subj{font-size:12px; color:var(--muted); padding:0 18px 12px}
+    font:500 13.5px/1 "Inter",sans-serif}
+  .back:hover{color:var(--blue)}
+  .rail{display:flex; gap:8px; padding:18px; overflow-x:auto}
+  .step{flex:1; min-width:118px; padding:11px 13px; border-radius:9px;
+    background:var(--paper); border:1px solid var(--line)}
+  .step.done{background:#EDF7F1; border-color:#CFE7DA}
+  .step.cur{background:var(--blue); border-color:var(--blue); color:#fff}
+  .step .p{font-size:12px; font-weight:500; opacity:.72}
+  .step .n{font-size:14px; font-weight:600; margin-top:4px; letter-spacing:-.008em}
+  .task{display:flex; align-items:center; gap:12px; padding:12px 18px;
+    border-top:1px solid var(--line)}
+  .task .n{flex:1; min-width:0; font-size:14.5px}
+  .task select{padding:7px 9px; border:1px solid var(--line); border-radius:7px;
+    font:13.5px/1 "Inter",sans-serif; background:var(--surface); width:148px; flex:none;
+    color:var(--ink)}
+  .task select:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
+  .modal{position:fixed; inset:0; background:rgba(14,41,112,.34); display:grid;
+    place-items:center; padding:24px; z-index:40}
+  .modal .box{background:var(--surface); border-radius:14px; max-width:660px; width:100%;
+    max-height:86vh; overflow:auto; box-shadow:0 18px 50px rgba(14,41,112,.26)}
+  .modal .hd{padding:18px 22px; border-bottom:1px solid var(--line); display:flex;
+    align-items:center; gap:11px; position:sticky; top:0; background:var(--surface)}
+  .modal .hd h3{font-size:16px; margin-right:auto}
+  .modal .bd{padding:18px 22px; font-size:14.5px; white-space:pre-wrap; line-height:1.62;
+    color:#26303F}
+  .modal .subj{font-size:13.5px; color:var(--muted); padding:0 22px 14px}
+  .modal .subj b{color:var(--ink); font-weight:600}
+
   @media(max-width:760px){
     #app.on{grid-template-columns:1fr; background:var(--paper)}
-    /* A single non-wrapping flex row squeezes the company name to nothing
-       and pushes the fraction off-screen. Stack the identity above the
-       status pills, and drop the per-task ticks — at this width they are
-       sub-pixel and the fraction carries the same information. */
-    .row{flex-wrap:wrap; row-gap:8px}
+    nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
+      padding:10px; border-right:0; border-bottom:1px solid var(--line)}
+    nav .brand{padding:0 12px 0 6px}
+    nav button{width:auto; margin-bottom:0}
+    nav .spacer,nav .foot{display:none}
+    .fields{grid-template-columns:1fr}
+    /* A single non-wrapping flex row squeezes the company name to nothing and
+       pushes the fraction off-screen. Stack identity above the status pills,
+       and drop the per-task ticks — at this width they are sub-pixel and the
+       fraction carries the same information. */
+    .row{flex-wrap:wrap; row-gap:9px}
     .row .who{flex:1 0 100%}
     .row .act{width:100%}
     .ticks{display:none}
     .frac{min-width:0; text-align:left}
-    .wrap{padding:16px 14px 30px}
-    header{padding:12px 14px}
-    .task select{width:120px}
-    nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
-      padding:10px}
-    nav .brand{padding:0 10px 0 6px}
-    nav .spacer,nav .foot{display:none}
-    .fields{grid-template-columns:1fr}
+    .wrap{padding:18px 16px 36px}
+    header{padding:16px}
+    .task select{width:132px}
   }
 </style>
 </head>
@@ -227,7 +252,6 @@
     <button data-v="overview" class="on"><span class="ic">◇</span>Overview</button>
     <button data-v="queue"><span class="ic">▸</span>Queue</button>
     <button data-v="clients"><span class="ic">▤</span>Clients</button>
-    <button data-v="new"><span class="ic">+</span>New client</button>
     <div class="spacer"></div>
     <div class="foot">
       <button class="mono" id="refresh">↻ Refresh</button>
@@ -238,6 +262,7 @@
     <header>
       <h1 id="hTitle">Overview</h1>
       <span class="sub" id="hSub"></span>
+      <button class="btn pri" id="newBtn">+ New client</button>
     </header>
     <div class="wrap" id="view"></div>
   </main>
@@ -341,6 +366,7 @@ var TITLES = {
 [].forEach.call(document.querySelectorAll('nav button[data-v]'), function(b){
   b.addEventListener('click', function(){ go(b.getAttribute('data-v')); });
 });
+el('newBtn').addEventListener('click', function(){ go('new'); });
 el('refresh').addEventListener('click', function(){
   CACHE.overview = null; CACHE.queue = null; go(VIEW);
 });
@@ -352,6 +378,7 @@ function go(v){
   });
   el('hTitle').textContent = TITLES[v][0];
   el('hSub').textContent = TITLES[v][1];
+  el('newBtn').style.display = (v === 'new') ? 'none' : '';
   if (v === 'overview') renderOverview();
   else if (v === 'queue') renderQueue();
   else if (v === 'clients') renderClients();
