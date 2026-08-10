@@ -49,6 +49,8 @@ function onOpen() {
     .addItem('Preview & send email (selected row)', 'sendAccessEmailForActiveRow')
     .addItem('Create Drive folder (selected row)', 'createDriveFolderForActiveRow')
     .addSeparator()
+    .addItem('Show web app URL', 'showWebAppUrl')
+    .addSeparator()
     .addItem('Send digest now', 'sendDigestNow')
     .addItem('Enable daily digest', 'installDigestTrigger')
     .addSeparator()

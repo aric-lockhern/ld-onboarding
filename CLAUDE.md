@@ -57,6 +57,7 @@ Anything beyond that needs `npm run push` and a manual click-through. Don't repo
 ```
 src/
   Code.gs        setup(), menu, column maps, intake, task board, Drive folders
+  WebApp.gs      doGet — serves Admin/Intake at a URL instead of in the sheet
   Phases.gs      phase state, gate evaluation, send eligibility
   Send.gs        preview, send, queue construction, preflight
   Templates.gs   email copy + merge + composer
@@ -81,6 +82,8 @@ scripts/
 
 - Plain ES2015+ on V8. No build step, no bundler, no TypeScript. Files are pushed verbatim.
 - HTML files are referenced without extension: `createHtmlOutputFromFile('Admin')`.
+- `SpreadsheetApp.getUi()` exists only in the sheet. Menu wrappers may call it; anything reachable from `Admin.html`, `Intake.html`, or `doGet` may not, or the web app URL breaks while the menu keeps working.
+- A `clasp push` does not update the web app URL. That needs a new deployment version in the editor, so the menu and the URL can run different code.
 - Inline `<script>` in HTML runs in an iframe sandbox. `localStorage` and `sessionStorage` are unavailable — keep state in JS variables.
 - Secrets live in `PropertiesService.getScriptProperties()`, never in a cell and never in the repo. Currently: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`.
 - The dashboard PIN is a convenience lock. Anyone with edit access to the Sheet can read around it via the script editor. Don't describe it as access control.
