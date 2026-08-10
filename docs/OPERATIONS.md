@@ -157,16 +157,17 @@ npm run push     # runs check, then clasp push
 
 ### One-time CI setup
 
-Two repository secrets, at **Settings → Secrets and variables → Actions**:
+**One** repository secret, at **Settings → Secrets and variables → Actions → New repository secret**:
 
 | Secret | Value |
 |---|---|
 | `CLASPRC_JSON` | The entire contents of `~/.clasprc.json`, verbatim, after running `npx clasp login` locally |
-| `SCRIPT_ID` | The script ID — the long string in the script editor URL, also in your local `.clasp.json` |
+
+It must be a **Secret**, not a Variable — those live on an adjacent tab of the same page and are invisible to `secrets.*`. Environment secrets and Codespaces/Dependabot secrets do not work here either. If the deploy log prints `CLASPRC_JSON:` followed by nothing, the secret does not exist; a secret that exists prints as `***`.
 
 `~/.clasprc.json` holds an OAuth refresh token for your Google account. Treat it like a password: it is not in this repo, `.gitignore` excludes it, and the workflow writes it to the runner at `chmod 600`, then deletes it in an `always()` step. Anyone with admin access to this repo can use it to act on your Apps Script projects. Revoke it at [myaccount.google.com/permissions](https://myaccount.google.com/permissions) if it ever leaks.
 
-`.clasp.json` is deliberately gitignored — it is per-checkout config, not source — so the runner generates its own from `SCRIPT_ID`.
+**The script ID is committed**, in `.clasp.json` at the repo root. That is deliberate. A script ID is an address, not a credential — holding it grants nothing, since reaching the script still requires Google permission on it. Committing it means one less secret to configure, and a fresh clone can `npm run push` with no setup. To point the repo at a different script, edit that file.
 
 The workflow pins `@google/clasp@2.5.0` exactly. clasp 3.x reworked auth and the command surface; upgrading is a deliberate change, not something that should happen on its own.
 

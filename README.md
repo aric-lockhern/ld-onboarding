@@ -17,20 +17,17 @@ npx clasp login
 
 ### Bind to a spreadsheet
 
-**New sheet:**
+`.clasp.json` is committed and already points at the live script, so a fresh clone needs no binding step.
+
+**To point at a different sheet:** open it, **Extensions → Apps Script** (this creates the bound script project if it doesn't exist), copy the script ID from that editor's URL, and paste it into `.clasp.json`. The script ID is *not* the ID in the spreadsheet URL — they're different objects.
+
+**For a brand-new sheet instead:**
 
 ```bash
 npx clasp create --type sheets --title "Lockhern Onboarding" --rootDir src
 ```
 
-This writes `.clasp.json` (gitignored) and creates the sheet.
-
-**Existing sheet:** open it, **Extensions → Apps Script**, copy the script ID from the URL, then:
-
-```bash
-cp .clasp.json.example .clasp.json
-# paste the script ID into .clasp.json
-```
+This overwrites `.clasp.json` and creates the sheet.
 
 ### Push and initialise
 
@@ -66,7 +63,7 @@ If someone edited in the browser, `npm run pull` first — `clasp push` overwrit
 
 Merging to `main` deploys. `.github/workflows/deploy.yml` runs the static checks on every pull request and pushes to Apps Script when a commit lands on `main`.
 
-It needs two repository secrets — `CLASPRC_JSON` (the contents of your local `~/.clasprc.json`) and `SCRIPT_ID`. Setup, the credential-handling details, and three things worth understanding before enabling it are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#deploying-code-changes). The short version: the push force-overwrites the remote, it lands on a sheet people are actively using, and it deploys code but never configuration.
+It needs one repository secret — `CLASPRC_JSON`, the contents of your local `~/.clasprc.json` after `npx clasp login`. The script ID isn't a secret and is committed in `.clasp.json`. Setup, the credential-handling details, and three things worth understanding before enabling it are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#deploying-code-changes). The short version: the push force-overwrites the remote, it lands on a sheet people are actively using, and it deploys code but never configuration.
 
 There is no web host involved anywhere. Apps Script runs inside Google, and the dashboard and intake UI are served by `HtmlService` from within the bound sheet — they are not static pages and will not work anywhere else.
 
