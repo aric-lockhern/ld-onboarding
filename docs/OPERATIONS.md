@@ -169,7 +169,15 @@ It must be a **Secret**, not a Variable — those live on an adjacent tab of the
 
 **The script ID is committed**, in `.clasp.json` at the repo root. That is deliberate. A script ID is an address, not a credential — holding it grants nothing, since reaching the script still requires Google permission on it. Committing it means one less secret to configure, and a fresh clone can `npm run push` with no setup. To point the repo at a different script, edit that file.
 
-The workflow pins `@google/clasp@2.5.0` exactly. clasp 3.x reworked auth and the command surface; upgrading is a deliberate change, not something that should happen on its own.
+The workflow pins `@google/clasp@3.3.0` exactly, and the pin has to be **at least** the version used to produce the credential file. clasp changed its credential format across major versions:
+
+| clasp | `~/.clasprc.json` shape |
+|---|---|
+| 3.x | `{"tokens": {"default": {…}}}` |
+| 2.x | `{"token": {…}, "oauth2ClientSettings": {…}}` |
+| 1.x | flat `{"access_token": …}` |
+
+3.x reads all three; 2.x reads only its own. Since `npx clasp login` installs the latest, a 2.x pin in CI against a freshly generated file fails with `Cannot read properties of undefined (reading 'access_token')` — which looks like a broken token but is purely a version mismatch. The workflow now identifies the shape and prints it before pushing, so that failure names itself.
 
 ### Three things to know before you turn it on
 
