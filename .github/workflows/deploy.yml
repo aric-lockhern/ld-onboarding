@@ -1,0 +1,88 @@
+name: Deploy
+
+# Static checks run on every PR. Deploys happen only from main, and only
+# after the checks pass. Apps Script has no local runtime, so `check` is the
+# entire automated safety net between a commit and the live tool.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One deploy at a time. `clasp push` overwrites the whole script project,
+# so two concurrent runs could interleave and leave a half-updated script.
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # scripts/check.mjs imports only node: builtins, so there is nothing
+      # to install. Keep it that way — it makes this job fast and unbreakable
+      # by a bad dependency.
+      - name: Parse, resolve google.script.run targets, verify column maps
+        run: node scripts/check.mjs
+
+  deploy:
+    name: Push to Apps Script
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Pinned exactly. clasp 3.x reworked auth and the command surface;
+      # an unpinned install would break this job without a commit.
+      - name: Install clasp
+        run: npm install -g @google/clasp@2.5.0
+
+      - name: Write credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::CLASPRC_JSON secret is empty or unset."
+            exit 1
+          fi
+          if [ -z "$SCRIPT_ID" ]; then
+            echo "::error::SCRIPT_ID secret is empty or unset."
+            exit 1
+          fi
+
+          # printf, not echo — keeps the token out of the log and off argv.
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+          if ! node -e 'JSON.parse(require("fs").readFileSync(process.env.HOME + "/.clasprc.json", "utf8"))'; then
+            echo "::error::CLASPRC_JSON is not valid JSON. Re-copy ~/.clasprc.json verbatim."
+            exit 1
+          fi
+
+          # .clasp.json is gitignored (it is per-checkout config, not source),
+          # so the runner generates its own from the secret.
+          printf '{"scriptId":"%s","rootDir":"src","fileExtension":"gs"}\n' "$SCRIPT_ID" > .clasp.json
+
+      # --force skips the interactive manifest-change prompt, which would
+      # otherwise hang a non-interactive runner. It also means this push
+      # overwrites the remote unconditionally — see docs/OPERATIONS.md.
+      - name: clasp push
+        run: clasp push --force
+
+      - name: Shred credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json
