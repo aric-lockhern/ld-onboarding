@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onboarding CRM — mockup</title>
+<style>
+  :root{
+    --ink:#14181D; --muted:#5A6470; --faint:#8B939C; --line:#E3E5E1;
+    --accent:#0F5C5B; --accent-dk:#0B4443; --paper:#FBFBF9; --ochre:#A8641B;
+    --red:#8C2F1E; --tick-off:#DFE2DE;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--paper); color:var(--ink); padding-bottom:44px;
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .lbl,.eyebrow,.pill,.frac,.cid,.tab,.grp,.due,button{
+    font-family:ui-monospace,"SF Mono","Roboto Mono",Menlo,monospace;}
+  .eyebrow{font:600 9px/1; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+  .shell{max-width:760px; margin:0 auto}
+
+  .chrome{display:flex; gap:6px; padding:10px 14px; background:var(--ink);
+    position:sticky; top:0; z-index:20; align-items:center}
+  .chrome .brand{color:#fff; font:600 9px/1; letter-spacing:.16em; text-transform:uppercase;
+    opacity:.5; margin-right:auto}
+  .ctab{border:0; background:#252B33; color:#B9C0C6; padding:7px 11px; border-radius:3px;
+    font:600 9px/1; letter-spacing:.1em; text-transform:uppercase; cursor:pointer}
+  .ctab.on{background:var(--accent); color:#fff}
+
+  #gate{padding:64px 24px}
+  #gate .box{max-width:280px; margin:0 auto}
+  #gate h1{font-size:19px; margin:6px 0}
+  #gate p{color:var(--muted); font-size:12.5px; margin:0 0 15px}
+  #pin{width:100%; padding:11px; border:1px solid var(--line); border-radius:3px;
+    font:17px/1 ui-monospace,Menlo,monospace; letter-spacing:.3em; text-align:center}
+  #pin:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  .gerr{color:var(--red); font-size:12px; margin-top:9px; min-height:16px}
+
+  header{display:flex; align-items:center; gap:9px; padding:12px 16px; background:#fff;
+    border-bottom:1px solid var(--line); position:sticky; top:41px; z-index:10}
+  header h1{font-size:15px; margin:0; margin-right:auto; letter-spacing:-.01em}
+  .tab{border:0; background:#EEF0EE; color:var(--muted); padding:6px 11px; border-radius:3px;
+    font:600 9px/1; letter-spacing:.1em; text-transform:uppercase; cursor:pointer}
+  .tab.on{background:var(--accent); color:#fff}
+  .wrap{padding:16px 16px 30px}
+
+  .grp{font:600 9px/1; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+    padding:22px 0 9px; border-bottom:1px solid var(--line); margin-bottom:3px}
+  .grp:first-child{padding-top:0}
+  .grp em{font-style:normal; color:var(--faint); font-weight:400}
+
+  .q{display:flex; align-items:center; gap:12px; padding:14px 0;
+    border-bottom:1px solid var(--line)}
+  .q .who{flex:1; min-width:0}
+  .q .co{font-weight:600; font-size:14px}
+  .q .sub{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4}
+
+  button.send{border:0; border-radius:3px; background:var(--accent); color:#fff;
+    padding:10px 16px; font:600 10px/1; letter-spacing:.1em; text-transform:uppercase;
+    cursor:pointer; flex:none; min-width:78px}
+  button.send:active{background:var(--accent-dk)}
+  button.send:disabled{background:#A8B0AF}
+  button.send.ghost{background:#fff; color:var(--accent); border:1px solid var(--line)}
+  button.send.warn{background:#fff; color:var(--ochre); border:1px solid #E2D3BF}
+  button.send.done{background:#E7F0EE; color:var(--accent)}
+  button.bulk{border:0; border-radius:3px; background:var(--ink); color:#fff; padding:11px 18px;
+    font:600 10px/1; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; margin-top:16px}
+
+  .rail{display:flex; gap:3px; margin:14px 0 4px}
+  .step{flex:1; padding:7px 4px 8px; border-radius:3px; background:#EFF1EF; text-align:center;
+    font:600 7.5px/1.3; letter-spacing:.05em; text-transform:uppercase; color:var(--faint)}
+  .step b{display:block; font-size:11px; margin-bottom:3px; letter-spacing:0}
+  .step.done{background:#E7F0EE; color:var(--accent)}
+  .step.open{background:var(--accent); color:#fff}
+  .phasenote{font-size:11.5px; color:var(--muted); line-height:1.5; margin:10px 0 4px}
+  .gatelist{font-size:11.5px; color:var(--ochre); line-height:1.55; margin-top:7px}
+  .gatemark{color:var(--ochre); font-weight:700}
+  .blockers{font-size:11.5px; color:var(--ochre); margin-top:5px; line-height:1.5}
+
+  .pv{border:1px solid var(--line); border-radius:4px; background:#fff; margin:12px 0;
+    overflow:hidden}
+  .pv .head{padding:11px 13px; border-bottom:1px solid var(--line); background:#F7F8F7}
+  .pv .head .l{font:600 8px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted)}
+  .pv .head .v{font-size:12.5px; margin-top:3px; word-break:break-word}
+  .pv .head .v + .l{margin-top:9px}
+  .pv pre{margin:0; padding:13px; font:11px/1.6 ui-monospace,Menlo,monospace;
+    white-space:pre-wrap; max-height:290px; overflow:auto}
+  .pv .foot{display:flex; gap:8px; padding:11px 13px; border-top:1px solid var(--line);
+    background:#F7F8F7}
+  .pv .warns{padding:11px 13px; background:#FBF4EC; color:var(--ochre); font-size:11.5px;
+    line-height:1.55; border-bottom:1px solid var(--line)}
+  button.send.mute{background:#fff; color:var(--faint); border:1px solid var(--line)}
+
+  .fix{font-size:11.5px; color:var(--ochre); margin-top:5px; line-height:1.45}
+  .pill{display:inline-block; font:600 8px/1; letter-spacing:.09em; text-transform:uppercase;
+    padding:3px 5px; border-radius:2px; background:#EDF2F1; color:var(--accent)}
+  .pill.email{background:#F5EFE6; color:var(--ochre)}
+  .pill.internal{background:#EEEEF1; color:#55596B}
+
+  .ticks{display:flex; gap:2px; align-items:center; flex-wrap:wrap; margin-top:9px}
+  .tick{width:6px; height:14px; border-radius:1px; background:var(--tick-off); flex:none}
+  .tick.on{background:var(--accent)}
+  .tick.late{background:var(--ochre)}
+  .tick.blocked{background:var(--red)}
+  .frac{font:600 10px/1; color:var(--muted); margin-left:8px}
+  .crow{padding:14px 0; border-bottom:1px solid var(--line); cursor:pointer}
+  .crow:active{background:#F4F6F4}
+
+  .back{background:none; border:0; padding:4px 0 10px; cursor:pointer; color:var(--accent);
+    font:600 9px/1; letter-spacing:.12em; text-transform:uppercase}
+  .task{display:flex; align-items:center; gap:10px; padding:11px 0;
+    border-bottom:1px solid var(--line)}
+  .task .n{flex:1; min-width:0}
+  .task .name{font-weight:600; font-size:13px}
+  .task .meta{font-size:11px; color:var(--muted); margin-top:4px}
+  .task select{padding:6px 7px; border:1px solid var(--line); border-radius:3px;
+    font:12px/1 -apple-system,sans-serif; background:#fff; flex:none; width:120px}
+  .task select.done{border-color:var(--accent); color:var(--accent); font-weight:600}
+  .task select.stuck{border-color:var(--red); color:var(--red); font-weight:600}
+  .task.is-done .name{color:var(--muted); font-weight:500}
+  .toggle{background:none; border:0; padding:12px 0; cursor:pointer; color:var(--accent);
+    font:600 9px/1; letter-spacing:.11em; text-transform:uppercase}
+
+  details.det{margin:8px 0 4px}
+  details.det summary{cursor:pointer; list-style:none; padding:10px 0; font:600 9px/1;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--accent);
+    border-bottom:1px solid var(--line)}
+  details.det summary::-webkit-details-marker{display:none}
+  .profile{display:grid; grid-template-columns:1fr 1fr; gap:13px 16px; padding:14px 0}
+  .profile .full{grid-column:1/-1}
+  .lbl{display:block; font:600 8px/1; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:5px}
+  .val{font-size:12.5px; word-break:break-word}
+  .val a{color:var(--accent)}
+  .profile input,.profile select,.profile textarea{width:100%; padding:7px 8px;
+    border:1px solid var(--line); border-radius:3px; background:#fff;
+    font:12.5px/1.35 -apple-system,sans-serif}
+  .profile textarea{resize:vertical; min-height:54px}
+
+  #msg{margin-top:13px; font-size:12.5px; min-height:18px; color:var(--accent)}
+  #msg.err{color:var(--red)}
+  .empty{padding:40px 0; text-align:center; color:var(--muted)}
+  .note{background:#F2F4F3; border-left:2px solid var(--accent); padding:10px 12px;
+    font-size:11.5px; color:var(--muted); line-height:1.55; margin:18px 0 0}
+
+  /* intake */
+  .sidebar{max-width:330px; margin:0 auto; padding:16px 16px 40px}
+  fieldset{border:0; margin:0 0 18px; padding:0}
+  legend{font:600 9px/1; letter-spacing:.14em; text-transform:uppercase; color:var(--accent);
+    padding:0 0 7px; border-bottom:1px solid var(--line); width:100%; margin-bottom:11px}
+  .fl{display:block; margin-bottom:11px}
+  .fl input,.fl select,.fl textarea{width:100%; padding:8px; border:1px solid var(--line);
+    border-radius:3px; background:#fff; font:13px/1.35 -apple-system,sans-serif}
+  .fl textarea{resize:vertical; min-height:58px}
+  .row2{display:flex; gap:8px} .row2>.fl{flex:1}
+  .hint{font-size:11px; color:var(--muted); margin:-6px 0 11px; line-height:1.45}
+  .cat{font:600 9px/1; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+    margin:12px 0 6px}
+  .chk{display:flex; align-items:baseline; gap:8px; margin-bottom:6px; font-size:12.5px}
+  .chk input{width:auto}
+  .sidebar button.send{width:100%; padding:13px}
+
+  @media (min-width:700px){
+    .profile{grid-template-columns:repeat(3,1fr)}
+    .wrap{padding:18px 22px 40px}
+    .tick{width:7px; height:15px}
+  }
+</style>
+</head>
+<body>
+
+<div class="chrome">
+  <span class="brand">Lockhern · mockup</span>
+  <button class="ctab on" data-screen="dash">Dashboard</button>
+  <button class="ctab" data-screen="intake">Intake</button>
+</div>
+
+<div class="shell">
+  <div id="gate"><div class="box">
+    <div class="eyebrow">Onboarding</div>
+    <h1>Dashboard</h1>
+    <p>Enter your PIN to continue.</p>
+    <input id="pin" type="tel" inputmode="numeric" placeholder="····" maxlength="8">
+    <div class="gerr" id="gerr"></div>
+    <button class="bulk" id="unlock" style="width:100%">Unlock</button>
+    <div class="note">Mockup PIN is <strong>1234</strong>.</div>
+  </div></div>
+
+  <div id="app" style="display:none">
+    <header>
+      <h1 id="hTitle">Send queue</h1>
+      <button class="tab on" data-v="queue">Queue</button>
+      <button class="tab" data-v="clients">Clients</button>
+    </header>
+    <div class="wrap" id="view"></div>
+  </div>
+
+  <div id="intake" style="display:none"></div>
+</div>
+
+<script>
+var STATUSES=['Not started','Info needed','Requested','Complete','Blocked','N/A'];
+
+var PHASES=[
+ {n:1,name:'Internal Setup',
+  meaning:'Alias and Drive folder must exist before anything goes out — the client email contains the alias and points at the folder.'},
+ {n:2,name:'Client Requests',
+  meaning:'Access, billing, brand assets. One email covering everything we need from them.'},
+ {n:3,name:'Data & Validation',
+  meaning:'Baseline captured before optimisation. Tracking verified before spend moves.'},
+ {n:4,name:'Launch',meaning:'Kickoff booked, recurring calls set, build begins.'},
+ {n:5,name:'Steady State',meaning:'Reporting rhythm established and the 30-day partner check.'}
+];
+
+var PREVIEWS={
+ 'HARBOR-2608':{to:'dana@harborandsons.com',
+  subject:'Access request — Harbor & Sons onboarding',
+  body:"Hi Dana,\n\nAhead of kickoff we need access to the platforms below. Each one takes a\ncouple of minutes and can be done in any order.\n\nEverything goes to harborandsons@lockherndigital.com — a dedicated address\nfor your account. Granting access there rather than to an individual means\nyour access list doesn't need updating when our team changes, and revoking\nus later is a single action per platform.\n\nWe never need your personal passwords. Every platform below supports\ndelegated access.\n\nIf we've shared a Drive folder with you, anything we ask you to send can go\nstraight in there.\n\n— — —\nMETA ADS\n\nThis runs through Business Manager, so we never need your personal login.\n\n1. Send us your Business Manager ID — business.facebook.com → Business\n   settings → Business info.\n2. We'll send a partner request from Lockhern Digital (partner ID 1029…).\n3. Business settings → Partners → approve the request.\n4. Assign us the ad account with Manage campaigns, plus the pixel and\n   catalog if you have them.\n\n— — —\nMEDIA BILLING SETUP\n\nCampaigns pause the moment a payment method fails, so this is worth nailing\ndown before launch rather than after.\n\n1. Who funds media spend — your card directly, or we invoice and rebill?\n2. If it's your card: add it now, before we build.\n3. Set the billing threshold as high as your account allows.\n4. Send us who should get billing alerts — usually finance, not marketing.\n\n— — —\n\n[…4 more sections…]\n\nReply here with the account IDs listed above and we'll confirm once each\ngrant lands."},
+ 'NOVAPE-2607':{to:'marcus@novapet.co',subject:'Kickoff — Nova Pet Co',
+  body:"Hi Marcus,\n\nAccess is in and we've captured a baseline, so we're ready to kick off.\n\nBefore the call, two things worth having ready:\n\n1. What \"working\" looks like to you in 90 days — a number if you have one.\n2. Anything in-flight on your side that could move the ground under us:\n   a replatform, a pricing change, a big promo, inventory constraints.\n\nWe'll come with what we found in the account and the questions the audit\nraised. The call is mostly us asking, not presenting.\n\nSend over a couple of windows that work and we'll get it booked."}
+};
+
+var NUDGE={to:'sam@verityoutdoors.com',subject:'Still need access — Verity Outdoors',
+ body:"Hi Sam,\n\nQuick nudge — we're still waiting on these:\n\n· Google Business Profile\n· Klaviyo\n\nInstructions were in the earlier thread, but happy to resend or jump on a\nscreenshare if any of them are being awkward. A couple of these interfaces\nhave moved recently.\n\nEverything goes to verityoutdoors@lockherndigital.com."};
+
+var QUEUE={
+  ready:[
+    {id:'HARBOR-2608',co:'Harbor & Sons',phase:2,phaseName:'Client Requests',count:6},
+    {id:'NOVAPE-2607',co:'Nova Pet Co',phase:4,phaseName:'Launch',count:1}
+  ],
+  waiting:[
+    {id:'VERITY-2607',co:'Verity Outdoors',phase:2,phaseName:'Client Requests',count:2,days:9}
+  ],
+  gated:[
+    {id:'ALDERW-2608',co:'Alderwood Home',phase:1,phaseName:'Internal Setup',
+     reasons:['Google Drive folder (Drake)','Lockhern email alias (Drake)']}
+  ],
+  blocked:[
+    {id:'BRIGHT-2608',co:'Brightfold Co',phase:2,phaseName:'Client Requests',count:5,
+     problems:['No contact email on the client record.',
+               'Config missing — email would say [Business Manager ID]']}
+  ]
+};
+
+var CLIENTS=[
+  {id:'ALDERW-2608',co:'Alderwood Home',stage:'Intake',owner:'Drake',done:5,total:24,late:2,blocked:0},
+  {id:'HARBOR-2608',co:'Harbor & Sons',stage:'Access Pending',owner:'Ian',done:8,total:20,late:2,blocked:1},
+  {id:'NOVAPE-2607',co:'Nova Pet Co',stage:'Auditing',owner:'Ian',done:13,total:21,late:1,blocked:0},
+  {id:'VERITY-2607',co:'Verity Outdoors',stage:'Building',owner:'Drake',done:19,total:23,late:0,blocked:1},
+  {id:'RIDGEL-2606',co:'Ridgeline Supply',stage:'Live',owner:'Eric',done:24,total:24,late:0,blocked:0}
+];
+
+var DETAIL={
+  'HARBOR-2608':{
+    co:'Harbor & Sons', stage:'Access Pending', owner:'Ian', contact:'Dana Whitfield',
+    alias:'harborandsons@lockherndigital.com', cadence:'Weekly', call:'Scheduled',
+    billing:'Client card on account', slack:'#harbor-lockhern', approvals:'Dana Whitfield',
+    renewal:'1 Aug 2027',
+    scope:'Paid search and shopping management, feed remediation, Meta prospecting. Monthly reporting, weekly calls through onboarding.',
+    current:2,
+    // [name, method, owner, due, lateDays, status, phase, isGate]
+    tasks:[
+      ['Lockhern email alias','INTERNAL','Ian','2 Aug',0,'Complete',1,1],
+      ['Google Drive folder','INTERNAL','Ian','2 Aug',0,'Complete',1,1],
+      ['ClickUp space','INTERNAL','Drake','3 Aug',0,'Complete',1,0],
+      ['Client Slack channel','INTERNAL','Ian','4 Aug',0,'Complete',1,0],
+
+      ['Google Ads','API','Ian','5 Aug',0,'Complete',2,1],
+      ['Google Analytics (GA4)','EMAIL','Drake','5 Aug',0,'Complete',2,1],
+      ['Google Search Console','EMAIL','Drake','5 Aug',0,'Complete',2,0],
+      ['Meta Ads','API','Ian','5 Aug',0,'Requested',2,1],
+      ['Google Merchant Center','API','Drake','5 Aug',0,'Requested',2,1],
+      ['Google Tag Manager','EMAIL','Drake','5 Aug',0,'Requested',2,1],
+      ['Shopify','SEMI-API','Drake','5 Aug',0,'Blocked',2,1],
+      ['Media billing setup','EMAIL','Ian','7 Aug',2,'Not started',2,1],
+      ['Brand assets and constraints','EMAIL','Ian','9 Aug',0,'Not started',2,0],
+
+      ['Baseline performance snapshot','INTERNAL','Drake','12 Aug',0,'Not started',3,1],
+      ['Historical data export','INTERNAL','Drake','14 Aug',0,'Not started',3,0],
+      ['Conversion tracking validated','INTERNAL','Drake','16 Aug',0,'Not started',3,1],
+
+      ['Kickoff call','INTERNAL','Ian','18 Aug',0,'Not started',4,1],
+      ['Weekly onboarding call','INTERNAL','Ian','18 Aug',0,'Complete',4,0],
+
+      ['First report delivered','INTERNAL','Ian','6 Sep',0,'Not started',5,0],
+      ['30-day client check-in','INTERNAL','Justin','1 Sep',0,'Not started',5,0]
+    ]
+  }
+};
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function el(id){return document.getElementById(id);}
+function setTitle(t){el('hTitle').textContent=t;}
+function note(cls,t){var m=el('msg'); if(m){m.className=cls; m.textContent=t;}}
+
+// ---------------------------------------------------------------- queue
+function loadQueue(){
+  setTitle('Queue'); tabOn('queue');
+  var h='<div class="grp">Ready to send <em>'+QUEUE.ready.length+'</em></div>';
+  QUEUE.ready.forEach(function(c){
+    h+=qrow(c,'Phase '+c.phase+' · '+esc(c.phaseName)+' · '+c.count
+      +' item'+(c.count===1?'':'s'),
+      '<button class="send" data-pv="'+c.id+'">Preview</button>');
+  });
+
+  h+='<div class="grp">Waiting on client <em>'+QUEUE.waiting.length+'</em></div>';
+  QUEUE.waiting.forEach(function(c){
+    h+=qrow(c,c.count+' outstanding · '+c.days+' days',
+      '<button class="send ghost" data-nudge="'+c.id+'">Nudge</button>');
+  });
+
+  h+='<div class="grp">Held by internal work <em>'+QUEUE.gated.length+'</em></div>';
+  QUEUE.gated.forEach(function(c){
+    h+='<div class="q"><div class="who"><div class="co">'+esc(c.co)+'</div>'
+      +'<div class="sub">Phase '+c.phase+' · '+esc(c.phaseName)+'</div>'
+      +'<div class="blockers">'+c.reasons.map(esc).join('<br>')+'</div></div>'
+      +'<button class="send ghost" data-open="'+c.id+'">Open</button></div>';
+  });
+
+  h+='<div class="grp">Needs fixing <em>'+QUEUE.blocked.length+'</em></div>';
+  QUEUE.blocked.forEach(function(c){
+    h+='<div class="q"><div class="who"><div class="co">'+esc(c.co)+'</div>'
+      +'<div class="blockers">'+c.problems.map(esc).join('<br>')+'</div></div>'
+      +'<button class="send warn" data-open="'+c.id+'">Open</button></div>';
+  });
+
+  h+='<div id="msg"></div><div class="note">Nothing sends without a preview. '
+    +'Alderwood is held because its alias and Drive folder don\'t exist yet — '
+    +'the client email contains both, so sending now would go out broken.</div>';
+
+  el('view').innerHTML=h;
+  each('[data-pv]',function(b){b.addEventListener('click',function(){
+    showPreview(b,b.getAttribute('data-pv'),false);});});
+  each('[data-nudge]',function(b){b.addEventListener('click',function(){
+    showPreview(b,b.getAttribute('data-nudge'),true);});});
+  each('[data-open]',function(b){b.addEventListener('click',function(){
+    loadDetail(b.getAttribute('data-open'));});});
+  window.scrollTo(0,0);
+}
+
+function qrow(c,sub,btn){
+  return '<div class="q" id="q_'+c.id+'"><div class="who"><div class="co">'+esc(c.co)+'</div>'
+    +'<div class="sub">'+sub+'</div></div>'+btn+'</div>';
+}
+
+// ---------------------------------------------------------------- preview
+function showPreview(btn,id,isNudge){
+  var p = isNudge ? NUDGE : PREVIEWS[id];
+  var host = el('pvHost');
+  if(!host){
+    host=document.createElement('div'); host.id='pvHost';
+    var a=el('q_'+id)||el('view');
+    a.insertAdjacentElement('afterend',host);
+  }
+  if(!p){
+    host.innerHTML='<div class="pv"><div class="warns">No demo preview for this client.</div>'
+      +'<div class="foot"><button class="send ghost" id="pvX">Close</button></div></div>';
+    el('pvX').addEventListener('click',function(){host.remove();});
+    return;
+  }
+  host.innerHTML='<div class="pv">'
+    +'<div class="head"><div class="l">To</div><div class="v">'+esc(p.to)+'</div>'
+    +'<div class="l">Subject</div><div class="v">'+esc(p.subject)+'</div></div>'
+    +'<pre>'+esc(p.body)+'</pre>'
+    +'<div class="foot"><button class="send" id="pvSend">Send now</button>'
+    +'<button class="send ghost" id="pvX">Close</button></div></div>';
+  el('pvX').addEventListener('click',function(){host.remove();});
+  el('pvSend').addEventListener('click',function(){
+    var b=this; b.disabled=true; b.textContent='Sending';
+    setTimeout(function(){
+      b.className='send done'; b.textContent='Sent';
+      note('','Sent to '+p.to+'.');
+    },550);
+  });
+  host.scrollIntoView({block:'nearest'});
+}
+
+// ---------------------------------------------------------------- clients
+function loadClients(){
+  setTitle('Clients');
+  tabOn('clients');
+  var h='';
+  CLIENTS.forEach(function(c){
+    h+='<div class="crow" data-open="'+c.id+'"><div style="font-weight:600">'+esc(c.co)+'</div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'
+      +esc(c.stage)+' · '+esc(c.owner)+'</div>'+ticks(c)+'</div>';
+  });
+  h+='<div id="msg"></div><div class="note">One tick per task. '
+    +'Open Harbor &amp; Sons to see the phase rail and gates.</div>';
+  el('view').innerHTML=h;
+  each('[data-open]',function(b){
+    b.addEventListener('click',function(){loadDetail(b.getAttribute('data-open'));});
+  });
+  window.scrollTo(0,0);
+}
+
+function ticks(c){
+  var h='<div class="ticks">';
+  for(var i=0;i<c.total;i++){
+    var cls = i<c.done?'on' : (i>=c.total-c.blocked?'blocked'
+      : (i>=c.total-c.blocked-c.late?'late':''));
+    h+='<i class="tick '+cls+'"></i>';
+  }
+  return h+'<span class="frac">'+c.done+'/'+c.total+'</span></div>';
+}
+
+// ---------------------------------------------------------------- detail
+function loadDetail(id){
+  var d=DETAIL[id];
+  if(!d){
+    el('view').innerHTML='<button class="back" id="back">← Back</button>'
+      +'<div class="note" style="margin-top:12px">Demo detail is populated for '
+      +'<strong>Harbor &amp; Sons</strong> only.</div><div id="msg"></div>';
+    el('back').addEventListener('click',loadClients); return;
+  }
+  setTitle(d.co);
+
+  // phase state from the task list
+  var state={};
+  PHASES.forEach(function(p){
+    var mine=d.tasks.filter(function(t){return t[6]===p.n;});
+    var gates=mine.filter(function(t){return t[7]===1 && t[5]!=='N/A';});
+    var openG=gates.filter(function(t){return t[5]!=='Complete';});
+    state[p.n]={mine:mine,openG:openG,
+      done:mine.filter(function(t){return t[5]==='Complete';}).length,total:mine.length};
+  });
+  var current=null;
+  PHASES.forEach(function(p){
+    var st=state[p.n];
+    st.state = st.openG.length ? (current===null?'open':'locked') : 'done';
+    if(st.state==='open') current=p.n;
+  });
+
+  var h='<button class="back" id="back">← Back</button>';
+  h+='<div class="rail">'+PHASES.map(function(p){
+    return '<div class="step '+state[p.n].state+'"><b>'+p.n+'</b>'+esc(p.name)+'</div>';
+  }).join('')+'</div>';
+
+  var cp=PHASES.filter(function(p){return p.n===current;})[0];
+  if(cp){
+    h+='<div class="phasenote">'+esc(cp.meaning)+'</div>';
+    var og=state[cp.n].openG;
+    if(og.length){
+      h+='<div class="gatelist">Gates still open:<br>'
+        +og.map(function(t){return esc(t[0])+' — '+esc(t[2]);}).join('<br>')+'</div>';
+    }
+    if(cp.n===2||cp.n===4){
+      h+='<div style="margin-top:12px"><button class="send" id="pvBtn">Preview email</button></div>';
+    }
+  }
+
+  h+='<details class="det"><summary>Client details</summary><div class="profile">'
+    +f('Stage',d.stage)+f('Owner',d.owner)+f('Contact',d.contact)
+    +sel('Cadence',['Weekly','Biweekly','Monthly'],d.cadence)
+    +sel('Onboarding call',['Not applicable','To schedule','Scheduled','Running'],d.call)
+    +sel('Media billing',['Client card on account','Agency billed / rebilled'],d.billing)
+    +inp('Slack',d.slack)+inp('Approvals',d.approvals)+f('Renewal',d.renewal)
+    +'<div class="full"><span class="lbl">Alias</span><div class="val">'+esc(d.alias)+'</div></div>'
+    +'<div class="full"><span class="lbl">Links</span><div class="val">'
+      +'<a href="#" onclick="return false">Drive folder</a> · '
+      +'<a href="#" onclick="return false">Onboarding plan</a></div></div>'
+    +'<div class="full"><span class="lbl">Scope</span><textarea>'+esc(d.scope)+'</textarea></div>'
+    +'</div></details>';
+
+  PHASES.forEach(function(p){
+    var st=state[p.n];
+    if(!st.mine.length) return;
+    var open=st.mine.filter(function(t){return t[5]!=='Complete'&&t[5]!=='N/A';});
+    var done=st.mine.filter(function(t){return t[5]==='Complete';});
+    h+='<div class="grp">'+p.n+' · '+esc(p.name)+' <em>'+st.done+'/'+st.total+'</em></div>';
+    if(!open.length) h+='<div style="padding:11px 0;color:var(--muted)">Phase complete.</div>';
+    open.forEach(function(t){h+=task(t);});
+    if(done.length){
+      h+='<button class="toggle" data-dl="'+p.n+'">Show '+done.length+' complete</button>'
+        +'<div id="dl_'+p.n+'" style="display:none">'+done.map(task).join('')+'</div>';
+    }
+  });
+
+  h+='<div style="margin-top:16px"><button class="send ghost" id="nudgeBtn">'
+    +'Preview nudge</button></div><div id="msg"></div>';
+
+  el('view').innerHTML=h;
+  el('back').addEventListener('click',loadClients);
+  each('[data-dl]',function(b){
+    b.addEventListener('click',function(){
+      var l=el('dl_'+b.getAttribute('data-dl'));
+      var o=l.style.display==='none';
+      l.style.display=o?'block':'none';
+      b.textContent=(o?'Hide ':'Show ')+l.children.length+' complete';
+    });
+  });
+  each('.task select',function(x){
+    x.addEventListener('change',function(){
+      x.className=x.value==='Complete'?'done':(x.value==='Blocked'?'stuck':'');
+      note('','Saved.');
+    });
+  });
+  var pv=el('pvBtn');
+  if(pv) pv.addEventListener('click',function(){showPreview(pv,id,false);});
+  el('nudgeBtn').addEventListener('click',function(){showPreview(this,id,true);});
+  window.scrollTo(0,0);
+}
+
+function task(t){
+  var mp=t[1]==='INTERNAL'?'internal':(t[1]==='EMAIL'?'email':'');
+  var cls=t[5]==='Complete'?'done':(t[5]==='Blocked'?'stuck':'');
+  return '<div class="task'+(t[5]==='Complete'?' is-done':'')+'"><div class="n">'
+    +'<span class="name">'+esc(t[0])+'</span>'
+    +(t[7]===1?' <span class="gatemark" title="Gate">▮</span>':'')
+    +' <span class="pill '+mp+'">'+esc(t[1])+'</span>'
+    +'<div class="meta">'+esc(t[2])+' · '+esc(t[3])
+    +(t[4]?' · <span style="color:var(--red)">'+t[4]+'d late</span>':'')+'</div></div>'
+    +'<select class="'+cls+'">'+STATUSES.map(function(x){
+      return '<option'+(x===t[5]?' selected':'')+'>'+x+'</option>';}).join('')+'</select></div>';
+}
+
+function f(l,v){return '<div><span class="lbl">'+l+'</span><div class="val">'+esc(v)+'</div></div>';}
+function inp(l,v){return '<div><span class="lbl">'+l+'</span><input value="'+esc(v)+'"></div>';}
+function sel(l,o,v){return '<div><span class="lbl">'+l+'</span><select>'
+  +o.map(function(x){return '<option'+(x===v?' selected':'')+'>'+x+'</option>';}).join('')
+  +'</select></div>';}
+function each(s,fn){[].forEach.call(document.querySelectorAll(s),fn);}
+function tabOn(v){each('.tab',function(t){t.classList.toggle('on',t.getAttribute('data-v')===v);});}
+
+// ---------------------------------------------------------------- intake
+function renderIntake(){
+  var chans=[['Paid',[['Google Ads','API'],['Microsoft Ads','API'],['Meta Ads','API'],
+      ['Reddit Ads','EMAIL'],['TikTok Ads','EMAIL']]],
+    ['Organic',[['Meta / Instagram Organic','API'],['Google Search Console','EMAIL'],
+      ['Reddit Organic','EMAIL']]],
+    ['Feed',[['Google Merchant Center','API']]],
+    ['Platform',[['Shopify','API'],['WordPress','EMAIL']]],
+    ['Measurement',[['Google Analytics (GA4)','EMAIL'],['Google Tag Manager','EMAIL']]],
+    ['Local',[['Google Business Profile','EMAIL']]],
+    ['Email',[['Klaviyo','EMAIL']]]];
+  var ch='';
+  chans.forEach(function(g){
+    ch+='<div class="cat">'+g[0]+'</div>';
+    g[1].forEach(function(p,i){
+      var on=(g[0]==='Paid'&&i<3)||g[0]==='Feed'||(g[0]==='Platform'&&i===0)||g[0]==='Measurement';
+      ch+='<div class="chk"><input type="checkbox" '+(on?'checked':'')+'><label>'+esc(p[0])
+        +' <span class="pill'+(p[1]==='EMAIL'?' email':'')+'">'+p[1]+'</span></label></div>';
+    });
+  });
+
+  el('intake').innerHTML='<div class="sidebar"><div class="eyebrow">Onboarding</div>'
+    +'<h1 style="font-size:17px;margin:5px 0 16px">New client intake</h1>'
+    +'<fieldset><legend>Account</legend>'
+    +fl('Company','<input value="Harbor &amp; Sons">')
+    +'<div class="row2">'+fl('Contact','<input value="Dana Whitfield">')
+    +fl('Vertical','<input value="Apparel">')+'</div>'
+    +fl('Contact email','<input value="dana@harborandsons.com">')
+    +'<div class="row2">'+fl('Start date','<input value="2026-08-02">')
+    +fl('MRR','<input value="6500">')+'</div>'
+    +fl('Onboarding owner','<input value="Ian">')+'</fieldset>'
+
+    +'<fieldset><legend>Engagement</legend>'
+    +fl('Scope','<textarea>Paid search and shopping management, feed remediation, Meta prospecting.</textarea>')
+    +fl('Meeting cadence','<select><option>Weekly</option><option>Biweekly</option></select>')
+    +'<div class="chk"><input type="checkbox" checked><label>Weekly onboarding call applies</label></div>'
+    +fl('Slack channel','<input value="#harbor-lockhern">')
+    +fl('Media billing','<select><option>Client card on account</option></select>')
+    +fl('Approvals contact','<input value="Dana Whitfield">')
+    +fl('Access alias','<input value="harborandsons@lockherndigital.com">')
+    +'<div class="chk"><input type="checkbox" checked><label>Create the Drive folder</label></div>'
+    +'</fieldset>'
+
+    +'<fieldset><legend>Channels</legend>'+ch
+    +'<p class="hint" style="margin-top:11px">Internal setup — alias, Drive, Slack, ClickUp, '
+    +'baseline snapshot, kickoff, 30-day check-in — is added automatically.</p></fieldset>'
+
+    +'<fieldset><legend>Context</legend>'
+    +fl('Sales transcript','<textarea placeholder="Paste transcript, or a Google Doc link"></textarea>')
+    +fl('Contract','<textarea placeholder="Paste contract or a Doc link"></textarea>')
+    +'<div class="chk"><input type="checkbox" checked><label>Generate onboarding plan now</label></div>'
+    +'</fieldset>'
+    +'<button class="send" id="create">Create client</button>'
+    +'<div id="imsg" style="margin-top:12px;font-size:12.5px;color:var(--accent)"></div>'
+    +'<div class="note">In the real build this is a 300px sidebar docked beside the sheet.</div></div>';
+
+  el('create').addEventListener('click',function(){
+    el('imsg').innerHTML='<strong>HARBOR-2608</strong> created. 20 tasks built, '
+      +'Drive folder ready, plan generated.';
+  });
+}
+function fl(l,inner){return '<label class="fl"><span class="lbl">'+l+'</span>'+inner+'</label>';}
+
+// ---------------------------------------------------------------- nav
+el('unlock').addEventListener('click',function(){
+  if(el('pin').value.trim()==='1234'){
+    el('gate').style.display='none'; el('app').style.display='block'; loadQueue();
+  } else el('gerr').textContent='PIN not recognised. Try 1234.';
+});
+el('pin').addEventListener('keydown',function(e){if(e.key==='Enter')el('unlock').click();});
+each('.tab',function(t){
+  t.addEventListener('click',function(){
+    t.getAttribute('data-v')==='queue'?loadQueue():loadClients();
+  });
+});
+each('.ctab',function(b){
+  b.addEventListener('click',function(){
+    each('.ctab',function(x){x.classList.remove('on');}); b.classList.add('on');
+    var s=b.getAttribute('data-screen');
+    if(s==='intake'){
+      el('gate').style.display='none'; el('app').style.display='none';
+      el('intake').style.display='block';
+      if(!el('intake').innerHTML) renderIntake();
+    }else{
+      el('intake').style.display='none';
+      if(el('view').innerHTML) el('app').style.display='block';
+      else el('gate').style.display='block';
+    }
+    window.scrollTo(0,0);
+  });
+});
+</script>
+</body>
+</html>

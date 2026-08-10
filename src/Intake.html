@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --ink:#14181D; --muted:#5A6470; --line:#E3E5E1;
+    --accent:#0F5C5B; --paper:#FBFBF9; --ochre:#A8641B;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:14px 12px 32px; background:var(--paper); color:var(--ink);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .eyebrow{
+    font:600 9px/1 ui-monospace,"Roboto Mono",Menlo,monospace;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  }
+  h1{font-size:16px; margin:4px 0 16px; letter-spacing:-.01em}
+  fieldset{border:0; margin:0 0 18px; padding:0}
+  legend{
+    font:600 9px/1 ui-monospace,"Roboto Mono",Menlo,monospace;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--accent);
+    padding:0 0 7px; border-bottom:1px solid var(--line); width:100%; margin-bottom:11px;
+  }
+  label{display:block; margin-bottom:10px}
+  .lbl{
+    display:block; font:600 9px/1 ui-monospace,"Roboto Mono",Menlo,monospace;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px;
+  }
+  input,select,textarea{
+    width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:3px;
+    background:#fff; font:13px/1.4 inherit; color:var(--ink);
+  }
+  textarea{resize:vertical; min-height:70px; font-size:12px}
+  input:focus,select:focus,textarea:focus{
+    outline:2px solid var(--accent); outline-offset:-1px; border-color:var(--accent);
+  }
+  .row{display:flex; gap:8px}
+  .row>label{flex:1}
+  .hint{font-size:11px; color:var(--muted); margin:-6px 0 10px; line-height:1.4}
+  .cat{
+    font:600 9px/1 ui-monospace,"Roboto Mono",Menlo,monospace; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); margin:10px 0 5px;
+  }
+  .chk{display:flex; align-items:baseline; gap:7px; margin-bottom:5px; font-size:12.5px}
+  .chk input{width:auto; margin:0}
+  .tag{
+    font:600 8px/1 ui-monospace,Menlo,monospace; letter-spacing:.08em;
+    padding:2px 4px; border-radius:2px; background:#EDF2F1; color:var(--accent);
+  }
+  .tag.email{background:#F5EFE6; color:var(--ochre)}
+  button{
+    width:100%; padding:11px; border:0; border-radius:3px; background:var(--accent);
+    color:#fff; font:600 12px/1 ui-monospace,Menlo,monospace; letter-spacing:.08em;
+    text-transform:uppercase; cursor:pointer;
+  }
+  button:hover{background:#0B4443}
+  button:disabled{background:#9AA5A4; cursor:default}
+  #status{margin-top:12px; font-size:12px; line-height:1.5; display:none}
+  #status.on{display:block}
+  #status.err{color:#8C2F1E}
+  #status.ok{color:var(--accent)}
+  #status a{color:var(--accent)}
+  .spin{
+    display:inline-block; width:9px; height:9px; margin-right:6px;
+    border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+
+<div class="eyebrow">Onboarding</div>
+<h1>New client intake</h1>
+
+<fieldset>
+  <legend>Account</legend>
+  <label><span class="lbl">Company</span><input id="company" required></label>
+  <div class="row">
+    <label><span class="lbl">Contact</span><input id="contact"></label>
+    <label><span class="lbl">Vertical</span><input id="vertical"></label>
+  </div>
+  <label><span class="lbl">Contact email</span><input id="email" type="email"></label>
+  <label><span class="lbl">Website</span><input id="website" placeholder="https://"></label>
+  <div class="row">
+    <label><span class="lbl">Start date</span><input id="contractStart" type="date"></label>
+    <label><span class="lbl">MRR</span><input id="mrr" type="number" placeholder="0"></label>
+  </div>
+  <label><span class="lbl">Onboarding owner</span><input id="owner"></label>
+</fieldset>
+
+<fieldset>
+  <legend>Engagement</legend>
+  <label><span class="lbl">Scope</span>
+    <textarea id="scope" placeholder="What we're delivering, in plain terms"></textarea></label>
+  <p class="hint">Visible on the client profile. The plan generator also extracts commitments from the transcript and contract separately.</p>
+  <label><span class="lbl">Meeting cadence</span>
+    <select id="cadence"><option value=""></option></select></label>
+  <div class="chk" style="margin:-2px 0 12px">
+    <input type="checkbox" id="weeklyCall" checked>
+    <label for="weeklyCall" style="margin:0">Weekly onboarding call applies</label>
+  </div>
+  <label><span class="lbl">Slack channel</span>
+    <input id="slack" placeholder="#client-lockhern"></label>
+  <label><span class="lbl">Media billing</span>
+    <select id="billing"></select></label>
+  <label><span class="lbl">Approvals contact</span>
+    <input id="approvals" placeholder="Who signs off on creative"></label>
+  <label><span class="lbl">Renewal date</span>
+    <input id="renewal" type="date"></label>
+  <label><span class="lbl">Lockhern access alias</span><input id="alias"></label>
+  <p class="hint">Auto-generated from the company name. Every platform grant goes here, so access survives staffing changes.</p>
+  <div class="chk">
+    <input type="checkbox" id="makeDrive" checked>
+    <label for="makeDrive" style="margin:0">Create the Drive folder</label>
+  </div>
+  <p class="hint">Contract, recordings, brand, reports, audits, feed data. Credentials stay in the password manager, not here.</p>
+</fieldset>
+
+<fieldset>
+  <legend>Channels</legend>
+  <div id="platforms"><span class="hint">Loading channels…</span></div>
+  <p class="hint" style="margin-top:10px">Internal setup — alias, Slack, ClickUp, kickoff — is added automatically.</p>
+</fieldset>
+
+<fieldset>
+  <legend>Context</legend>
+  <label><span class="lbl">Sales transcript</span>
+    <textarea id="transcript" placeholder="Paste the transcript, or a Google Doc link"></textarea></label>
+  <p class="hint">A Doc link on its own gets read directly. Long pastes move to a Doc automatically.</p>
+  <label><span class="lbl">Contract</span>
+    <textarea id="contract" placeholder="Paste contract text or a Google Doc link"></textarea></label>
+  <label><span class="lbl">Internal notes</span>
+    <textarea id="notes" placeholder="Anything the transcript won't show"></textarea></label>
+  <div class="chk" style="margin-top:8px">
+    <input type="checkbox" id="generatePlan" checked>
+    <label for="generatePlan" style="margin:0">Generate onboarding plan now</label>
+  </div>
+</fieldset>
+
+<button id="go">Create client</button>
+<div id="status"></div>
+
+<script>
+  var ALIAS_DOMAIN = 'lockherndigital.com';
+  var aliasEdited = false;
+
+  google.script.run.withSuccessHandler(renderPlatforms)
+    .withFailureHandler(function(){
+      document.getElementById('platforms').innerHTML =
+        '<span class="hint">Could not load the Platforms tab. Run setup first.</span>';
+    }).getPlatformList();
+
+  google.script.run.withSuccessHandler(function(o){
+    fillSelect('cadence', o.cadences, '');
+    fillSelect('billing', o.billing, 'Not set');
+  }).getIntakeOptions();
+
+  function fillSelect(id, list, selected){
+    var sel = document.getElementById(id);
+    list.forEach(function(v){
+      var o = document.createElement('option');
+      o.textContent = v;
+      if (v === selected) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function renderPlatforms(list){
+    var groups = {};
+    list.forEach(function(p){ (groups[p.category] = groups[p.category] || []).push(p); });
+    var html = '';
+    Object.keys(groups).forEach(function(cat){
+      html += '<div class="cat">' + cat + '</div>';
+      groups[cat].forEach(function(p){
+        var isApi = p.method.indexOf('API') !== -1;
+        html += '<div class="chk">'
+          + '<input type="checkbox" class="pf" value="' + p.name + '" id="pf_' + slug(p.name) + '">'
+          + '<label for="pf_' + slug(p.name) + '" style="margin:0">' + p.name
+          + ' <span class="tag' + (isApi ? '' : ' email') + '">'
+          + (isApi ? 'API' : 'EMAIL') + '</span></label></div>';
+      });
+    });
+    document.getElementById('platforms').innerHTML = html;
+  }
+
+  document.getElementById('alias').addEventListener('input', function(){ aliasEdited = true; });
+  document.getElementById('company').addEventListener('input', function(){
+    if (aliasEdited) return;
+    var s = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
+    document.getElementById('alias').value = s ? s + '@' + ALIAS_DOMAIN : '';
+  });
+
+  function slug(s){ return s.replace(/[^a-zA-Z0-9]/g,''); }
+  function val(id){ return document.getElementById(id).value.trim(); }
+
+  document.getElementById('go').addEventListener('click', function(){
+    var company = val('company');
+    var status = document.getElementById('status');
+    if (!company){
+      status.className = 'on err';
+      status.textContent = 'Company name is required.';
+      document.getElementById('company').focus();
+      return;
+    }
+
+    var willPlan = document.getElementById('generatePlan').checked;
+    this.disabled = true;
+    this.textContent = 'Working…';
+    status.className = 'on';
+    status.innerHTML = '<span class="spin"></span>'
+      + (willPlan ? 'Reading the intake and drafting the plan. This takes about a minute.'
+                  : 'Saving client record.');
+
+    google.script.run.withSuccessHandler(done).withFailureHandler(failed)
+      .submitIntake({
+        company: company, contact: val('contact'), email: val('email'),
+        website: val('website'), vertical: val('vertical'),
+        contractStart: val('contractStart'), mrr: val('mrr'), owner: val('owner'),
+        scope: val('scope'), cadence: val('cadence'), slack: val('slack'),
+        alias: val('alias'), billing: val('billing'), approvals: val('approvals'),
+        renewal: val('renewal'),
+        makeDrive: document.getElementById('makeDrive').checked,
+        weeklyCall: document.getElementById('weeklyCall').checked,
+        platforms: [].slice.call(document.querySelectorAll('.pf:checked'))
+          .map(function(c){ return c.value; }),
+        transcript: val('transcript'), contract: val('contract'), notes: val('notes'),
+        generatePlan: willPlan
+      });
+  });
+
+  function done(res){
+    var status = document.getElementById('status');
+    var btn = document.getElementById('go');
+    btn.disabled = false;
+    btn.textContent = 'Create another';
+
+    var msg = '<strong>' + res.clientId + '</strong> created. Checklist built, alias '
+      + res.alias + '.';
+    if (res.drive) msg += '<br><a href="' + res.drive + '" target="_blank">Open Drive folder</a>';
+    if (res.plan && res.plan.ok){
+      msg += '<br><a href="' + res.plan.docUrl + '" target="_blank">Open onboarding plan</a>';
+      status.className = 'on ok';
+    } else if (res.plan && res.plan.message){
+      msg += '<br>Plan not generated — ' + res.plan.message;
+      status.className = 'on err';
+    } else {
+      status.className = 'on ok';
+    }
+    status.innerHTML = msg;
+
+    ['company','contact','email','website','scope','slack','alias','approvals',
+     'transcript','contract','notes'].forEach(function(id){
+      document.getElementById(id).value = '';
+    });
+    aliasEdited = false;
+  }
+
+  function failed(e){
+    var status = document.getElementById('status');
+    status.className = 'on err';
+    status.textContent = 'Nothing was saved. ' + (e && e.message ? e.message : 'Unknown error.');
+    var btn = document.getElementById('go');
+    btn.disabled = false;
+    btn.textContent = 'Create client';
+  }
+</script>
+</body>
+</html>

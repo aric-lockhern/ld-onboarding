@@ -1,0 +1,17 @@
+{
+  "name": "lockhern-onboarding",
+  "version": "1.0.0",
+  "description": "Client onboarding CRM on Google Apps Script + Sheets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "push": "npm run check && clasp push",
+    "push:force": "clasp push --force",
+    "pull": "clasp pull",
+    "open": "clasp open"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}
