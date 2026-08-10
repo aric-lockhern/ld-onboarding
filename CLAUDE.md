@@ -65,7 +65,7 @@ src/
   Templates.gs   email copy + merge + composer
   PlanGen.gs     Anthropic API call, prompt, plan Doc output
   AdminServer.gs PIN gate, dashboard reads, field writes
-  Extract.gs     ClickUp/Doc fetch + AI extraction for the new-client flow
+  Extract.gs     ClickUp/Doc fetch (readSource) + AI extraction (runExtraction)
   Digest.gs      daily overdue email + trigger installer
   Intake.html    intake sidebar (~300px, in-sheet menu)
   Admin.html     dashboard modal (760px, in-sheet menu)
@@ -107,6 +107,9 @@ These encode decisions that took real thought. Changing them is fine; changing t
 - **Access is granted to a client alias, never a person.** Every template says so. This survives staffing changes and makes offboarding a clean revoke.
 - **No credentials in Drive.** `DRIVE_SUBFOLDERS` deliberately has no credentials folder, and the Reddit Organic template tells clients to use a password manager.
 - **Services and Platforms are different lists.** Services are what the client bought (the contract); Platforms are what we need access to. One service implies several platforms via the `Services` tab, and some platforms arrive regardless via Always Include. Conflating them puts a Merchant Center request in a lead-gen client's access email.
+- **Reading a source and analysing it are separate calls.** `readSource` fetches exactly one document and returns its outcome; `runExtraction` sends the ones that worked to the model. Fetching is the step that fails — a ClickUp doc in a Space you're not in, a scanned PDF, an unshared deck — and one combined call can only report failure for the whole batch. Split, a failure is attributable to one document, and that one can be retried, replaced or skipped while the others keep their result. `readSource` must never throw: the UI needs the reason on that document's row, not a rejected promise.
+- **The text between the two calls lives in `CacheService`, chunked.** A single cache value caps at 100KB, so `cachePutText_` splits across numbered keys with a count key alongside, and `cacheGetText_` returns empty if *any* chunk is missing. A half-evicted transcript is worse than none — it reads as complete with a hole in it, and the model answers confidently from it. Handles expire after six hours.
+- **Trimming is reported, never silent.** `allocateBudget_` gives short documents only what they need so one long transcript can't squeeze a scope of work to a proportional sliver; whatever still overflows is trimmed head-and-tail and named in `runExtraction`'s `trimmed` array, which the UI surfaces. A monthly fee agreed forty minutes into a call is exactly what a dropped middle costs you.
 - **Creating a client and starting its onboarding are separate acts.** `submitIntake` writes the record only. `startOnboarding` builds the task rows, and from that moment there are due dates, owners and a queue entry — undoing it means deleting rows. The split exists so the record can be corrected freely first.
 - **Fees are stored per line, not as a total.** The pricing slide's channels and discounts survive into the `Fees` cell as JSON; MRR is their sum. A mid-term upsell is a new line, so the history of what changed stays readable.
 - **Gate vs non-gate is a real distinction.** Brand assets is intentionally not a gate — it always trails and gating on it would stall every account. Media billing is a gate because a failed card pauses campaigns.

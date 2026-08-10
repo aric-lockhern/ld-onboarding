@@ -149,7 +149,16 @@ function buildPrompt_(meta, intake) {
 
 // ---------------------------------------------------------------- API
 
-function callAnthropic_(prompt) {
+/**
+ * One request to the Messages API, returning parsed JSON.
+ *
+ * @param {Object} prompt  { system, user }
+ * @param {Object} [opts]  { maxTokens } — extraction needs more room than plan
+ *                         generation, since every field it returns drags a
+ *                         quote along with it.
+ */
+function callAnthropic_(prompt, opts) {
+  opts = opts || {};
   const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
   if (!key) throw new Error('No API key set. Onboarding menu → Set Anthropic API key.');
 
@@ -160,7 +169,7 @@ function callAnthropic_(prompt) {
     muteHttpExceptions: true,
     payload: JSON.stringify({
       model: cfg('Model') || 'claude-sonnet-5',
-      max_tokens: 8000,
+      max_tokens: opts.maxTokens || 8000,
       system: prompt.system,
       messages: [{ role: 'user', content: prompt.user }]
     })
@@ -168,13 +177,52 @@ function callAnthropic_(prompt) {
 
   const code = res.getResponseCode();
   const body = res.getContentText();
-  if (code !== 200) throw new Error('API ' + code + ': ' + body.slice(0, 400));
+  if (code !== 200) throw new Error(anthropicError_(code, body));
 
   const data = JSON.parse(body);
+
+  // A response cut off at the token ceiling is truncated JSON, which fails in
+  // parseJson_ as "could not parse" — a parsing problem for what is really a
+  // budget problem. Name it here so the fix is obvious.
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('The model hit its output limit of ' + (opts.maxTokens || 8000)
+      + ' tokens, so the reply was cut off mid-JSON. Retry with fewer documents, '
+      + 'or raise the limit in the code.');
+  }
+
+  // Models that think emit a thinking block before the text block; filtering by
+  // type rather than taking content[0] keeps this working either way.
   const text = (data.content || [])
     .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
 
+  if (!text) throw new Error('The model returned no text. Stop reason: '
+    + (data.stop_reason || 'unknown') + '.');
+
   return parseJson_(text);
+}
+
+/** API failures the user can act on, separated from the ones they cannot. */
+function anthropicError_(code, body) {
+  let detail = '';
+  try {
+    const parsed = JSON.parse(body);
+    detail = (parsed.error && parsed.error.message) || '';
+  } catch (e) { /* fall through to the raw body */ }
+
+  if (code === 401) {
+    return 'Anthropic rejected the API key (401). Onboarding → Set Anthropic API key.';
+  }
+  if (code === 400 && /model/i.test(detail)) {
+    return 'Anthropic does not recognise the model "' + (cfg('Model') || '')
+      + '". Fix the Model row on the Config tab. ' + detail;
+  }
+  if (code === 429) {
+    return 'Rate limited by Anthropic (429). Wait a moment and retry.';
+  }
+  if (code === 529 || code === 503) {
+    return 'Anthropic is overloaded (' + code + '). Retry in a minute.';
+  }
+  return 'Anthropic API ' + code + ': ' + (detail || String(body).slice(0, 300));
 }
 
 function parseJson_(text) {

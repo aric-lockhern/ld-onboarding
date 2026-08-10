@@ -91,7 +91,7 @@ const FAKE = {
     ]
   },
   hasClickUpToken: true,
-  extractIntake: {
+  runExtraction: {
     ok:true,
     sourcesUsed:['Sales call transcript','Scope of work','ClickUp onboarding form'],
     problems:[],
@@ -153,9 +153,39 @@ const FAKE = {
 // Each withXHandler must return an INDEPENDENT runner, the way Apps Script
 // does — a single shared handler slot breaks any two concurrent calls, which
 // is exactly what Promise.all does.
+//
+// Some responses depend on their arguments, and functions do not survive
+// JSON.stringify, so they are injected as source afterwards. readSource is the
+// one that matters: it has to be able to fail, or the failure row — the whole
+// reason the reading step exists — never gets rendered.
 const stub = `<script>
 (function(){
   var FAKE = ${JSON.stringify(FAKE)};
+  var DELAY = { runExtraction: 900 };
+
+  // A ClickUp link fails the way the real one does; pasted text succeeds. That
+  // is the actual recovery path, so the harness walks it.
+  FAKE.readSource = function(key, raw){
+    var isLink = typeof raw === 'string' && /^https?:/.test(raw);
+    var label = { sales:'Sales call transcript', kickoff:'Onboarding / kickoff call transcript',
+                  sow:'Scope of work', form:'ClickUp onboarding form', deck:'Pitch deck' }[key] || key;
+    if (isLink && key === 'kickoff'){
+      return { ok:false, key:key, label:label, via:'ClickUp doc',
+        error:'ClickUp will not open doc h6apc-44034 for the account that owns the API '
+            + 'token (403). The link you used is a share link (doc.clickup.com/…/d/h/…). '
+            + 'Those open in a browser for anyone holding them, but publishing a doc does '
+            + 'not grant API access to it. Check by opening '
+            + 'https://app.clickup.com/18033356/docs/h6apc-44034 while signed in.',
+        hint:'Open the doc in ClickUp, select all, and paste it in — that always works.' };
+    }
+    var chars = isLink ? 48210 : String(raw && raw.data ? 'x' : raw || '').length * 40 + 9100;
+    return { ok:true, key:key, label:label, handle:'ex_stub_' + key,
+      via: raw && raw.data ? 'Upload · ' + raw.name : (isLink ? 'ClickUp doc' : 'Pasted text'),
+      chars:chars, words:Math.round(chars / 5.6), warn:'',
+      preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out '
+            + 'of Leeds, and you want to be running by the start of September' };
+  };
+
   function runner(ok, no){
     return new Proxy({}, {
       get: function(_, prop){
@@ -163,7 +193,9 @@ const stub = `<script>
         if (prop === 'withFailureHandler') return function(f){ return runner(ok, f); };
         return function(){
           var data = FAKE[prop];
-          setTimeout(function(){ ok && ok(data === undefined ? {ok:true} : data); }, 30);
+          if (typeof data === 'function') data = data.apply(null, arguments);
+          setTimeout(function(){ ok && ok(data === undefined ? {ok:true} : data); },
+                     DELAY[prop] || 30);
         };
       }
     });
@@ -201,9 +233,35 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
     if (view === 'new') {
+      // Two ClickUp links: one resolves, one 403s. The failure row is the point.
       await page.fill('#src_sales', 'https://doc.clickup.com/18033356/d/h/h6apc-42354/f4aa');
+      await page.fill('#src_kickoff', 'https://doc.clickup.com/18033356/d/h/h6apc-44034/b21c');
       await page.click('#analyse');
-      await page.waitForSelector('#submit', { timeout: 5000 });
+      await page.waitForSelector('#rrow_kickoff.fail', { timeout: 5000 });
+      await page.waitForTimeout(200);
+      const fRead = `${OUT}/${name}-new-reading.png`;
+      await page.screenshot({ path: fRead, fullPage: name === 'desktop' });
+      shots.push(fRead);
+
+      // Recover the failed one by pasting the transcript in, as the hint says.
+      await page.click('[data-fix="kickoff"]');
+      await page.fill('#fixtx_kickoff', 'Dana: right, so weekly on Tuesdays works for us. '.repeat(60));
+      await page.click('[data-fixgo="kickoff"]');
+      await page.waitForSelector('#rrow_kickoff.ok', { timeout: 5000 });
+      await page.waitForTimeout(200);
+      const fFixed = `${OUT}/${name}-new-recovered.png`;
+      await page.screenshot({ path: fFixed, fullPage: name === 'desktop' });
+      shots.push(fFixed);
+
+      // The analysing state, caught mid-flight via the stub's deliberate delay.
+      await page.click('#goAnalyse');
+      await page.waitForSelector('.thinking', { timeout: 3000 });
+      await page.waitForTimeout(150);
+      const fThink = `${OUT}/${name}-new-analysing.png`;
+      await page.screenshot({ path: fThink, fullPage: name === 'desktop' });
+      shots.push(fThink);
+
+      await page.waitForSelector('#submit', { timeout: 8000 });
       await page.waitForTimeout(250);
       const f2 = `${OUT}/${name}-new-review.png`;
       await page.screenshot({ path: f2, fullPage: name === 'desktop' });
