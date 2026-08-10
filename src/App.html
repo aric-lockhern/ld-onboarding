@@ -248,6 +248,15 @@
   .f.filled input,.f.filled select,.f.filled textarea{background:#FCFDFF;
     border-color:var(--blue-line)}
 
+  .drop{display:flex; align-items:center; gap:10px; margin-top:7px}
+  .drop .fn{font-size:12.5px; color:var(--faint)}
+  .drop .fn.has{color:var(--blue-ink); font-weight:500}
+  .drop .fn.bad{color:var(--critical)}
+  .drop .clr{background:none; border:0; color:var(--muted); font:500 12.5px/1 "Inter",sans-serif;
+    cursor:pointer; padding:4px}
+  .drop .clr:hover{color:var(--critical)}
+  .f textarea:disabled{background:var(--paper); color:var(--faint)}
+
   @media(max-width:760px){
     #app.on{grid-template-columns:1fr; background:var(--paper)}
     nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
@@ -822,7 +831,13 @@ function drawSources(){
       + '<label for="src_' + s.key + '">' + esc(s.label) + '</label>'
       + '<div class="note" style="margin:-2px 0 4px">' + esc(s.hint) + '</div>'
       + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…"></textarea>'
-      + '</div>';
+      + '<div class="drop" id="drop_' + s.key + '">'
+      + '<input type="file" id="file_' + s.key + '" hidden '
+      + 'accept=".pdf,.docx,.doc,.txt,.md,.rtf,application/pdf,text/plain">'
+      + '<button type="button" class="btn sm" data-pick="' + s.key + '">Upload a file</button>'
+      + '<span class="fn" id="fn_' + s.key + '">PDF, Word, or plain text</span>'
+      + '<button type="button" class="clr" data-clear="' + s.key + '" hidden>Remove</button>'
+      + '</div></div>';
   }).join('');
 
   h += '</div><div class="bar">'
@@ -833,31 +848,96 @@ function drawSources(){
 
   el('view').innerHTML = h;
 
+  [].forEach.call(document.querySelectorAll('[data-pick]'), function(b){
+    var k = b.getAttribute('data-pick');
+    b.addEventListener('click', function(){ el('file_' + k).click(); });
+    el('file_' + k).addEventListener('change', function(){ showFile(k); });
+  });
+  [].forEach.call(document.querySelectorAll('[data-clear]'), function(b){
+    var k = b.getAttribute('data-clear');
+    b.addEventListener('click', function(){ el('file_' + k).value = ''; showFile(k); });
+  });
+
   el('skip').addEventListener('click', function(){ EXTRACT = null; drawForm(); });
   el('analyse').addEventListener('click', function(){
-    var payload = {};
-    var any = false;
-    SOURCES.forEach(function(s){
-      var v = el('src_' + s.key).value.trim();
-      if (v){ payload[s.key] = v; any = true; }
-    });
-    if (!any){
-      el('exMsg').textContent = 'Add at least one source, or skip.';
-      return;
-    }
     var b = el('analyse');
     b.disabled = true; b.textContent = 'Reading…';
-    el('exMsg').textContent = 'Fetching and analysing. This takes 20–40 seconds.';
-    api('extractIntake', payload).then(function(r){
-      b.disabled = false; b.textContent = 'Analyse and continue';
-      if (!r.ok){ el('exMsg').textContent = ''; toast(r.message || 'Extraction failed.', true); return; }
-      EXTRACT = r;
-      if (r.problems && r.problems.length) toast(r.problems.join(' · '), true);
-      drawForm();
+    el('exMsg').textContent = 'Reading sources…';
+
+    // A file wins over the textarea for the same source: picking one is the
+    // more deliberate act, and sending both would double the prompt.
+    Promise.all(SOURCES.map(function(s){
+      var f = el('file_' + s.key).files[0];
+      if (f) return readFile(f);
+      var v = el('src_' + s.key).value.trim();
+      return Promise.resolve(v || null);
+    })).then(function(vals){
+      var payload = {};
+      var any = false;
+      SOURCES.forEach(function(s, i){
+        if (vals[i]){ payload[s.key] = vals[i]; any = true; }
+      });
+      if (!any){
+        b.disabled = false; b.textContent = 'Analyse and continue';
+        el('exMsg').textContent = 'Add at least one source, or skip.';
+        return;
+      }
+      el('exMsg').textContent = 'Analysing. This takes 20–40 seconds.';
+      return api('extractIntake', payload).then(function(r){
+        b.disabled = false; b.textContent = 'Analyse and continue';
+        if (!r.ok){ el('exMsg').textContent = ''; toast(r.message || 'Extraction failed.', true); return; }
+        EXTRACT = r;
+        if (r.problems && r.problems.length) toast(r.problems.join(' · '), true);
+        drawForm();
+      });
     }).catch(function(e){
       b.disabled = false; b.textContent = 'Analyse and continue';
       el('exMsg').textContent = ''; fail(e);
     });
+  });
+}
+
+/** Client-side cap, so an oversized file fails instantly instead of after a
+    slow upload that the server would reject anyway. */
+var MAX_UPLOAD = 12 * 1024 * 1024;
+
+function showFile(key){
+  var f = el('file_' + key).files[0];
+  var nm = el('fn_' + key);
+  var clr = document.querySelector('[data-clear="' + key + '"]');
+  if (!f){
+    nm.textContent = 'PDF, Word, or plain text';
+    nm.className = 'fn';
+    clr.hidden = true;
+    el('src_' + key).disabled = false;
+    return;
+  }
+  if (f.size > MAX_UPLOAD){
+    nm.textContent = f.name + ' is too big (limit 12 MB)';
+    nm.className = 'fn bad';
+    clr.hidden = false;
+    return;
+  }
+  nm.textContent = f.name + ' · ' + Math.max(1, Math.round(f.size / 1024)) + ' KB';
+  nm.className = 'fn has';
+  clr.hidden = false;
+  // The file supersedes anything typed, so say so rather than silently ignoring it.
+  el('src_' + key).disabled = true;
+}
+
+function readFile(f){
+  return new Promise(function(res, rej){
+    if (f.size > MAX_UPLOAD){ rej(new Error(f.name + ' is over the 12 MB limit.')); return; }
+    var r = new FileReader();
+    r.onerror = function(){ rej(new Error('Could not read ' + f.name)); };
+    r.onload = function(){
+      // readAsDataURL gives "data:<mime>;base64,<payload>" — the server wants
+      // the payload only.
+      var s = String(r.result);
+      res({ name: f.name, mimeType: f.type || 'application/octet-stream',
+            data: s.slice(s.indexOf(',') + 1) });
+    };
+    r.readAsDataURL(f);
   });
 }
 
