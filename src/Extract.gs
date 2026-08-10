@@ -16,12 +16,14 @@
  */
 
 const CLICKUP_API = 'https://api.clickup.com/api/v3';
+const CLICKUP_API_V2 = 'https://api.clickup.com/api/v2';
 
 /** Labels for the three sources, in the order they get sent to the model. */
 const SOURCE_KINDS = [
   { key: 'sales', label: 'Sales call transcript' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript' },
-  { key: 'sow', label: 'Scope of work' }
+  { key: 'sow', label: 'Scope of work' },
+  { key: 'form', label: 'ClickUp onboarding form' }
 ];
 
 // ---------------------------------------------------------------- PUBLIC
@@ -106,6 +108,11 @@ function resolveSource_(raw) {
   if (!/^https?:\/\//i.test(raw) || /\s/.test(raw.trim())) return raw;
 
   const url = raw.trim();
+  // Two different ClickUp objects behind two different APIs. A form submission
+  // is a task (app.clickup.com/t/…) whose answers live in custom fields; a doc
+  // is doc.clickup.com/… and has pages. Guessing wrong returns a 404 that reads
+  // like a permissions problem, so the shape of the URL decides.
+  if (/clickup\.com\/t\//i.test(url)) return fetchClickUpTask_(url);
   if (url.indexOf('clickup.com') !== -1) return fetchClickUpDoc_(url);
 
   const gdoc = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
@@ -154,6 +161,107 @@ function fetchClickUpDoc_(url) {
     const title = p.name ? '## ' + p.name + '\n' : '';
     return title + String(p.content || '');
   }).join('\n\n').trim();
+}
+
+/**
+ * A ClickUp task, which is what a submitted ClickUp Form becomes.
+ *
+ *   https://app.clickup.com/t/{teamId}/{taskId}
+ *   https://app.clickup.com/t/{taskId}
+ *
+ * The form's answers are custom fields, not the description, so they are
+ * rendered as question/answer lines. Without that the model sees an empty
+ * task and reports the form as blank.
+ */
+function parseClickUpTaskUrl_(url) {
+  const m = url.match(/clickup\.com\/t\/(?:(\d+)\/)?([A-Za-z0-9_-]+)/i);
+  if (!m) throw new Error('Could not read a task ID from that ClickUp link.');
+  return { teamId: m[1] || '', taskId: m[2] };
+}
+
+function fetchClickUpTask_(url) {
+  const token = PropertiesService.getScriptProperties().getProperty('CLICKUP_API_TOKEN');
+  if (!token) {
+    throw new Error('No ClickUp API token set. Onboarding → Set ClickUp API token.');
+  }
+  const ids = parseClickUpTaskUrl_(url);
+
+  const res = UrlFetchApp.fetch(
+    CLICKUP_API_V2 + '/task/' + encodeURIComponent(ids.taskId)
+      + (ids.teamId ? '?team_id=' + encodeURIComponent(ids.teamId) : ''),
+    { method: 'get', headers: { Authorization: token }, muteHttpExceptions: true });
+
+  const code = res.getResponseCode();
+  const body = res.getContentText();
+  if (code === 401) throw new Error('ClickUp rejected the token (401).');
+  if (code === 404) throw new Error('ClickUp could not find that task (404) — check the link.');
+  if (code !== 200) throw new Error('ClickUp API ' + code + ': ' + body.slice(0, 200));
+
+  const task = JSON.parse(body);
+  const out = [];
+  if (task.name) out.push('# ' + task.name);
+  if (task.status && task.status.status) out.push('Status: ' + task.status.status);
+
+  const desc = task.text_content || task.description || '';
+  if (String(desc).trim()) out.push('\n' + String(desc).trim());
+
+  const answers = (task.custom_fields || [])
+    .map(f => {
+      const v = formatCustomField_(f);
+      return v === '' ? null : (f.name || 'Field') + ': ' + v;
+    })
+    .filter(Boolean);
+
+  if (answers.length) out.push('\n## Form answers\n' + answers.join('\n'));
+
+  const text = out.join('\n').trim();
+  if (!text) throw new Error('That ClickUp task has no description and no filled-in fields.');
+  return text;
+}
+
+/**
+ * Custom field values are stored by type, and several are indirections —
+ * a dropdown stores an option index, labels store option IDs. Returning those
+ * raw would feed the model "Vertical: 2".
+ */
+function formatCustomField_(f) {
+  const v = f.value;
+  if (v === null || v === undefined || v === '') return '';
+  const cfg = f.type_config || {};
+  const opts = cfg.options || [];
+
+  switch (f.type) {
+    case 'drop_down': {
+      const hit = opts.find(o => o.orderindex === v || o.id === v);
+      return hit ? (hit.name || hit.label || '') : String(v);
+    }
+    case 'labels': {
+      const ids = Array.isArray(v) ? v : [v];
+      return ids.map(id => {
+        const hit = opts.find(o => o.id === id);
+        return hit ? (hit.label || hit.name || id) : id;
+      }).join(', ');
+    }
+    case 'users':
+      return (Array.isArray(v) ? v : [v])
+        .map(u => (u && (u.username || u.email)) || '').filter(Boolean).join(', ');
+    case 'date': {
+      const n = Number(v);
+      if (!n) return String(v);
+      return Utilities.formatDate(new Date(n), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    case 'checkbox':
+      return (v === true || v === 'true') ? 'Yes' : 'No';
+    case 'currency':
+      return String(v);
+    case 'attachment':
+      return (Array.isArray(v) ? v : [v])
+        .map(a => (a && (a.title || a.url)) || '').filter(Boolean).join(', ');
+    default:
+      if (Array.isArray(v)) return v.map(x => (x && x.name) || String(x)).join(', ');
+      if (typeof v === 'object') return v.name || v.value || JSON.stringify(v);
+      return String(v);
+  }
 }
 
 // ---------------------------------------------------------------- FILES

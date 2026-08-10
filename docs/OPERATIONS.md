@@ -145,7 +145,7 @@ Things deliberately left out, in rough order of value:
 
 The **+ New client** button opens a two-step flow.
 
-**Step 1 — sources.** Three optional boxes: sales call transcript, onboarding/kickoff transcript, scope of work. Each takes pasted text, a ClickUp doc link, a Google Doc link, or an **uploaded file** — PDF, Word, or plain text. Scopes of work are almost always PDFs, which is why uploads exist. The whole step is skippable; not every client arrives with documents, and a flow you cannot skip is a flow people work around.
+**Step 1 — sources.** Four optional boxes: sales call transcript, onboarding/kickoff transcript, scope of work, and the ClickUp onboarding form. Each takes pasted text, a ClickUp doc link, a Google Doc link, or an **uploaded file** — PDF, Word, or plain text. Scopes of work are almost always PDFs, which is why uploads exist. The whole step is skippable; not every client arrives with documents, and a flow you cannot skip is a flow people work around.
 
 **Step 2 — review and create.** Anthropic reads whatever was supplied and returns a pre-filled form. Every extracted value carries the sentence it came from and a confidence chip, shown by default rather than behind a hover — the point is checking a number without going hunting for it.
 
@@ -161,7 +161,14 @@ It guesses wherever the evidence supports it and omits fields it cannot quote. *
 
 Reading a ClickUp doc needs an API token: **ClickUp → Settings → Apps → API Token**, then in the sheet **Onboarding → Set ClickUp API token**. It lives in Script Properties as `CLICKUP_API_TOKEN`, never in a cell and never in the repo.
 
-Links look like `doc.clickup.com/{workspaceId}/d/h/{docId}/{pageId}`. The fetch pulls **every page in the doc**, not just the linked one — transcripts are routinely split across pages and grabbing only the deep-linked page silently truncates the input.
+Two kinds of ClickUp link are understood, behind two different APIs:
+
+| Link | What it is | How it is read |
+|---|---|---|
+| `doc.clickup.com/{workspaceId}/d/h/{docId}/{pageId}` | a doc | **every page** in the doc, not just the linked one — transcripts get split across pages and grabbing only the deep-linked page silently truncates the input |
+| `app.clickup.com/t/{teamId}/{taskId}` | a task, which is what a submitted **ClickUp Form** becomes | name, description, and every filled custom field rendered as question/answer |
+
+The form case matters: a ClickUp Form writes its answers into **custom fields**, not the description. Reading only the description returns an apparently empty form. Dropdowns and label fields store option indexes and IDs rather than text, so those are resolved back to their labels — otherwise the model receives `Vertical: 2`.
 
 Without a token, the step-1 screen says so up front. Pasted text and Google Doc links work regardless.
 

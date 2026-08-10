@@ -805,7 +805,9 @@ var SOURCES = [
   { key:'kickoff', label:'Onboarding / kickoff call transcript',
     hint:'Who does what, meeting cadence, approvals, launch expectations.' },
   { key:'sow', label:'Scope of work',
-    hint:'The contract. Where MRR, start date, renewal and the platform list actually live.' }
+    hint:'The contract. Where MRR, start date, renewal and the platform list actually live.' },
+  { key:'form', label:'ClickUp onboarding form',
+    hint:'The submitted form as a ClickUp task link — app.clickup.com/t/… . The answers are read from its custom fields, not just the description.' }
 ];
 
 function drawSources(){
@@ -816,9 +818,8 @@ function drawSources(){
   h += '<div class="card form"><div class="sect">'
     + '<h3>Drop in what you already have</h3>'
     + '<div class="hint">All optional, but the more you add the less you type. '
-    + 'Paste the text, or paste a '
-    + (CLICKUP ? 'ClickUp doc link' : '<span title="No ClickUp token set">ClickUp doc link</span>')
-    + ' or Google Doc link and it will be fetched.</div>';
+    + 'Paste the text, upload a file, or paste a ClickUp link (doc or task), '
+    + 'or a Google Doc link, and it will be fetched.</div>';
 
   if (!CLICKUP){
     h += '<div class="warnbox"><b>ClickUp links will not work yet.</b> '
