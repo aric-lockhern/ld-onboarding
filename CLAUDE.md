@@ -65,6 +65,7 @@ src/
   Templates.gs   email copy + merge + composer
   PlanGen.gs     Anthropic API call, prompt, plan Doc output
   AdminServer.gs PIN gate, dashboard reads, field writes
+  Extract.gs     ClickUp/Doc fetch + AI extraction for the new-client flow
   Digest.gs      daily overdue email + trigger installer
   Intake.html    intake sidebar (~300px, in-sheet menu)
   Admin.html     dashboard modal (760px, in-sheet menu)
@@ -92,7 +93,8 @@ scripts/
 - A `clasp push` does not update the web app URL. That needs a new deployment version in the editor, so the menu and the URL can run different code.
 - `App.html` dispatches server calls dynamically through `api()`, which hides them from `check.mjs`. Its targets are declared in the `SERVER_FNS` array, which `check.mjs` validates by name — add a call there or `api()` rejects it.
 - Inline `<script>` in HTML runs in an iframe sandbox. `localStorage` and `sessionStorage` are unavailable — keep state in JS variables.
-- Secrets live in `PropertiesService.getScriptProperties()`, never in a cell and never in the repo. Currently: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`.
+- Secrets live in `PropertiesService.getScriptProperties()`, never in a cell and never in the repo. Currently: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`, `CLICKUP_API_TOKEN`.
+- `Extract.gs` is named that way because `Intake.html` already owns the name `Intake` — see rule 0. It reuses `callAnthropic_` from `PlanGen.gs` rather than opening a second API client.
 - The dashboard PIN is a convenience lock. Anyone with edit access to the Sheet can read around it via the script editor. Don't describe it as access control.
 
 ## Domain rules worth preserving

@@ -83,6 +83,31 @@ const FAKE = {
       {task:'30-day client check-in',phase:5,gate:false,status:'Not started',method:'INTERNAL'}
     ]
   },
+  hasClickUpToken: true,
+  extractIntake: {
+    ok:true,
+    sourcesUsed:['Sales call transcript','Scope of work'],
+    problems:[],
+    fields:{
+      company:{value:'Harbor & Sons',confidence:'high',quote:'Great, so Harbor and Sons — we are the family furniture business out of Leeds.',source:'Sales call transcript'},
+      contact:{value:'Dana Whitfield',confidence:'high',quote:'Dana will be your day to day.',source:'Sales call transcript'},
+      email:{value:'dana@harborandsons.com',confidence:'medium',quote:'best email is dana@harborandsons.com',source:'Sales call transcript'},
+      website:{value:'https://harborandsons.com',confidence:'high',quote:'the site is harborandsons.com',source:'Scope of work'},
+      vertical:{value:'Home & furniture retail',confidence:'medium',quote:'family furniture business',source:'Sales call transcript'},
+      mrr:{value:8000,confidence:'high',quote:'Management fee of £8,000 per calendar month.',source:'Scope of work'},
+      contractStart:{value:'2026-09-01',confidence:'high',quote:'Term commences 1 September 2026.',source:'Scope of work'},
+      renewal:{value:'2027-09-01',confidence:'medium',quote:'initial term of twelve months',source:'Scope of work'},
+      cadence:{value:'Weekly',confidence:'high',quote:'weekly check-in on Tuesdays',source:'Onboarding / kickoff call transcript'},
+      billing:{value:'Client card on account',confidence:'low',quote:'we will keep our own card on the ad accounts',source:'Sales call transcript'},
+      approvals:{value:'Dana Whitfield',confidence:'medium',quote:'Dana signs off creative',source:'Onboarding / kickoff call transcript'},
+      scope:{value:'Paid search and paid social management across Google Ads and Meta, plus Merchant Center feed management. Includes GA4 and GTM measurement setup and a monthly performance report.',confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'}
+    },
+    platforms:{value:['Google Ads','Meta Ads','Google Merchant Center','Google Analytics (GA4)','Google Tag Manager'],confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'},
+    conflicts:[{field:'mrr',note:'The sales call promised a lower rate than the signed scope of work.',
+      a:{source:'Sales call transcript',quote:'we can do it for about six and a half'},
+      b:{source:'Scope of work',quote:'Management fee of £8,000 per calendar month.'}}],
+    openQuestions:['Who owns the Merchant Center account today — the client or their previous agency?','Is there an existing GA4 property, or does one need creating?','What is the restricted-claims list for furniture safety wording?']
+  },
   getIntakeOptions: { cadences:['Weekly','Biweekly','Monthly','Quarterly','Ad hoc'],
     billing:['Client card on account','Agency billed / rebilled','Hybrid','Not set'] },
   getPlatformList: [
@@ -152,6 +177,17 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     const f = `${OUT}/${name}-${view}.png`;
     await page.screenshot({ path: f, fullPage: name === 'desktop' });
     shots.push(f);
+
+    // The new-client flow is two screens; step 2 is where the extraction lands.
+    if (view === 'new') {
+      await page.fill('#src_sales', 'https://doc.clickup.com/18033356/d/h/h6apc-42354/f4aa');
+      await page.click('#analyse');
+      await page.waitForSelector('#submit', { timeout: 5000 });
+      await page.waitForTimeout(250);
+      const f2 = `${OUT}/${name}-new-review.png`;
+      await page.screenshot({ path: f2, fullPage: name === 'desktop' });
+      shots.push(f2);
+    }
   }
 
   // Client detail, reached by clicking a row on the clients list

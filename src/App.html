@@ -213,6 +213,41 @@
   .modal .subj{font-size:13.5px; color:var(--muted); padding:0 22px 14px}
   .modal .subj b{color:var(--ink); font-weight:600}
 
+  /* ------------------------------------------------------- intake step 1 */
+  /* Banners share the form's measure so the column has one left and right
+     edge rather than two competing ones. */
+  .steps,.okbox,.warnbox,.qbox{max-width:760px}
+  .steps{display:flex; gap:8px; align-items:center; margin-bottom:16px}
+  .stp{font-size:13px; font-weight:500; color:var(--faint); padding:5px 12px;
+    border-radius:20px; background:var(--surface); border:1px solid var(--line)}
+  .stp.on{color:var(--blue); border-color:var(--blue-line); background:var(--blue-wash);
+    font-weight:600}
+  .stp.done{color:var(--muted); cursor:pointer}
+  .stp.done:hover{border-color:var(--mid); color:var(--blue-ink)}
+
+  .okbox,.warnbox,.qbox{border-radius:10px; padding:14px 16px; margin-bottom:12px;
+    font-size:13.5px; line-height:1.55}
+  .okbox{background:var(--blue-wash); border:1px solid var(--blue-line); color:var(--blue-ink)}
+  .warnbox{background:#FDF3E3; border:1px solid #F3E2C4; color:#7A4A00}
+  .qbox{background:var(--surface); border:1px solid var(--line); color:var(--ink)}
+  .okbox b,.warnbox b,.qbox b{display:block; margin-bottom:3px; font-weight:600}
+  .qbox ul{margin:6px 0 0; padding-left:20px}
+  .qbox li{margin-bottom:4px}
+  .warnbox .q{margin-top:5px; color:#6B4A10; font-style:italic}
+  .warnbox .note{margin-top:6px; color:#8A6A30; font-style:normal}
+
+  /* The sentence a value came from. Shown by default, not behind a hover —
+     the whole point is checking the number without going looking for it. */
+  .src{display:flex; align-items:flex-start; gap:7px; margin-top:5px; font-size:12px;
+    color:var(--muted); line-height:1.45}
+  .src .cf{flex:none; padding:1px 7px; border-radius:20px; background:var(--blue-wash);
+    color:var(--blue-ink); font-weight:500; font-size:11px; text-transform:capitalize}
+  .src.low .cf{background:#FDF3E3; color:#8A5200}
+  .src .qt{flex:1; min-width:0; font-style:italic}
+  .src .sr{flex:none; color:var(--faint)}
+  .f.filled input,.f.filled select,.f.filled textarea{background:#FCFDFF;
+    border-color:var(--blue-line)}
+
   @media(max-width:760px){
     #app.on{grid-template-columns:1fr; background:var(--paper)}
     nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
@@ -287,7 +322,8 @@ var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
-  'getPlatformList', 'getIntakeOptions', 'submitIntake'
+  'getPlatformList', 'getIntakeOptions', 'submitIntake',
+  'extractIntake', 'hasClickUpToken'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -726,76 +762,229 @@ function openClient(clientId){
 
 // ---------------------------------------------------------------- intake
 
+/**
+ * Two steps. Step one takes the documents that already exist by the time a
+ * deal closes and has Anthropic read them; step two is the ordinary form,
+ * pre-filled, with the sentence behind each value shown underneath it.
+ *
+ * Step one is skippable. Not every client arrives with a transcript, and a
+ * flow that cannot be skipped becomes a flow people work around.
+ */
+var INTAKE_STEP = 'sources';   // 'sources' | 'form'
+var EXTRACT = null;            // last extraction result, or null when skipped
+var CLICKUP = null;            // whether a ClickUp token is configured
+
 function renderIntake(){
+  INTAKE_STEP = 'sources';
+  EXTRACT = null;
   el('view').innerHTML = loading();
   Promise.all([
     CACHE.platforms ? Promise.resolve(CACHE.platforms) : api('getPlatformList'),
-    CACHE.options ? Promise.resolve(CACHE.options) : api('getIntakeOptions')
+    CACHE.options ? Promise.resolve(CACHE.options) : api('getIntakeOptions'),
+    CLICKUP === null ? api('hasClickUpToken') : Promise.resolve(CLICKUP)
   ]).then(function(r){
-    CACHE.platforms = r[0]; CACHE.options = r[1];
-    el('view').innerHTML = intakeHtml(r[0], r[1]);
-    wireIntake();
+    CACHE.platforms = r[0]; CACHE.options = r[1]; CLICKUP = r[2];
+    drawSources();
   }).catch(function(e){
     el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
   });
 }
+
+var SOURCES = [
+  { key:'sales', label:'Sales call transcript',
+    hint:'The call where the deal was won. Usually carries the company, the contact, the vertical and what was promised.' },
+  { key:'kickoff', label:'Onboarding / kickoff call transcript',
+    hint:'Who does what, meeting cadence, approvals, launch expectations.' },
+  { key:'sow', label:'Scope of work',
+    hint:'The contract. Where MRR, start date, renewal and the platform list actually live.' }
+];
+
+function drawSources(){
+  var h = '<div class="steps">'
+    + '<span class="stp on">1 · Sources</span>'
+    + '<span class="stp">2 · Review &amp; create</span></div>';
+
+  h += '<div class="card form"><div class="sect">'
+    + '<h3>Drop in what you already have</h3>'
+    + '<div class="hint">All optional, but the more you add the less you type. '
+    + 'Paste the text, or paste a '
+    + (CLICKUP ? 'ClickUp doc link' : '<span title="No ClickUp token set">ClickUp doc link</span>')
+    + ' or Google Doc link and it will be fetched.</div>';
+
+  if (!CLICKUP){
+    h += '<div class="warnbox"><b>ClickUp links will not work yet.</b> '
+      + 'No API token is set. In the sheet: Onboarding → Set ClickUp API token. '
+      + 'Pasted text and Google Doc links work regardless.</div>';
+  }
+
+  h += SOURCES.map(function(s){
+    return '<div class="f wide" style="margin-bottom:16px">'
+      + '<label for="src_' + s.key + '">' + esc(s.label) + '</label>'
+      + '<div class="note" style="margin:-2px 0 4px">' + esc(s.hint) + '</div>'
+      + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…"></textarea>'
+      + '</div>';
+  }).join('');
+
+  h += '</div><div class="bar">'
+    + '<button class="btn" id="skip">Skip, fill in manually</button>'
+    + '<span class="sp"></span><span class="note" id="exMsg"></span>'
+    + '<button class="btn pri" id="analyse">Analyse and continue</button>'
+    + '</div></div>';
+
+  el('view').innerHTML = h;
+
+  el('skip').addEventListener('click', function(){ EXTRACT = null; drawForm(); });
+  el('analyse').addEventListener('click', function(){
+    var payload = {};
+    var any = false;
+    SOURCES.forEach(function(s){
+      var v = el('src_' + s.key).value.trim();
+      if (v){ payload[s.key] = v; any = true; }
+    });
+    if (!any){
+      el('exMsg').textContent = 'Add at least one source, or skip.';
+      return;
+    }
+    var b = el('analyse');
+    b.disabled = true; b.textContent = 'Reading…';
+    el('exMsg').textContent = 'Fetching and analysing. This takes 20–40 seconds.';
+    api('extractIntake', payload).then(function(r){
+      b.disabled = false; b.textContent = 'Analyse and continue';
+      if (!r.ok){ el('exMsg').textContent = ''; toast(r.message || 'Extraction failed.', true); return; }
+      EXTRACT = r;
+      if (r.problems && r.problems.length) toast(r.problems.join(' · '), true);
+      drawForm();
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Analyse and continue';
+      el('exMsg').textContent = ''; fail(e);
+    });
+  });
+}
+
+/** A field's extracted value, or '' when nothing was extracted. */
+function exVal(name){
+  var f = EXTRACT && EXTRACT.fields && EXTRACT.fields[name];
+  return f && f.value != null ? String(f.value) : '';
+}
+/** The sentence the value came from, rendered under the input. */
+function exQuote(name){
+  var f = EXTRACT && EXTRACT.fields && EXTRACT.fields[name];
+  if (!f || !f.quote) return '';
+  var c = (f.confidence || 'medium').toLowerCase();
+  return '<div class="src ' + (c === 'low' ? 'low' : '') + '">'
+    + '<span class="cf">' + esc(c) + '</span>'
+    + '<span class="qt">“' + esc(String(f.quote).slice(0, 220)) + '”</span>'
+    + (f.source ? '<span class="sr">' + esc(f.source) + '</span>' : '')
+    + '</div>';
+}
+
 function field(id, label, opts){
   opts = opts || {};
+  var v = opts.value == null ? '' : String(opts.value);
   var input;
   if (opts.type === 'textarea'){
-    input = '<textarea id="' + id + '" placeholder="' + esc(opts.ph || '') + '"></textarea>';
+    input = '<textarea id="' + id + '" placeholder="' + esc(opts.ph || '') + '">' + esc(v) + '</textarea>';
   } else if (opts.options){
-    input = '<select id="' + id + '">' + (opts.blank ? '<option value=""></option>' : '')
-      + opts.options.map(function(o){ return '<option>' + esc(o) + '</option>'; }).join('')
-      + '</select>';
+    var has = opts.options.indexOf(v) !== -1;
+    input = '<select id="' + id + '">'
+      + (opts.blank || !has ? '<option value=""' + (has ? '' : ' selected') + '></option>' : '')
+      + opts.options.map(function(o){
+          return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
+        }).join('') + '</select>';
   } else {
-    input = '<input id="' + id + '" type="' + (opts.type || 'text') + '" placeholder="'
-      + esc(opts.ph || '') + '">';
+    input = '<input id="' + id + '" type="' + (opts.type || 'text') + '" value="' + esc(v)
+      + '" placeholder="' + esc(opts.ph || '') + '">';
   }
-  return '<div class="f' + (opts.wide ? ' wide' : '') + '"><label for="' + id + '">'
-    + esc(label) + '</label>' + input
-    + (opts.note ? '<div class="note">' + esc(opts.note) + '</div>' : '') + '</div>';
+  return '<div class="f' + (opts.wide ? ' wide' : '') + (v ? ' filled' : '') + '">'
+    + '<label for="' + id + '">' + esc(label) + '</label>' + input
+    + (opts.note ? '<div class="note">' + esc(opts.note) + '</div>' : '')
+    + (opts.quote || '') + '</div>';
 }
+
+function drawForm(){
+  INTAKE_STEP = 'form';
+  el('view').innerHTML = intakeHtml(CACHE.platforms, CACHE.options);
+  wireIntake();
+  window.scrollTo(0, 0);
+}
+
 function intakeHtml(platforms, options){
-  return '<div class="card form">'
+  var picked = (EXTRACT && EXTRACT.platforms && EXTRACT.platforms.value) || [];
+  var h = '<div class="steps">'
+    + '<span class="stp done" id="backStep">1 · Sources</span>'
+    + '<span class="stp on">2 · Review &amp; create</span></div>';
+
+  if (EXTRACT){
+    var n = Object.keys(EXTRACT.fields || {}).length;
+    h += '<div class="okbox"><b>' + n + ' field' + (n === 1 ? '' : 's') + ' pre-filled</b> from '
+      + esc((EXTRACT.sourcesUsed || []).join(', '))
+      + '. Every value shows the sentence it came from — check the money and the dates.</div>';
+
+    (EXTRACT.conflicts || []).forEach(function(c){
+      h += '<div class="warnbox"><b>Sources disagree on ' + esc(c.field || 'something') + '</b>'
+        + '<div>' + esc(c.note || '') + '</div>'
+        + (c.a ? '<div class="q">' + esc(c.a.source || 'A') + ': “' + esc(c.a.quote || '') + '”</div>' : '')
+        + (c.b ? '<div class="q">' + esc(c.b.source || 'B') + ': “' + esc(c.b.quote || '') + '”</div>' : '')
+        + '<div class="note">The scope of work reading was used for the field.</div></div>';
+    });
+
+    if ((EXTRACT.openQuestions || []).length){
+      h += '<div class="qbox"><b>Open questions these documents do not answer</b><ul>'
+        + EXTRACT.openQuestions.map(function(q){ return '<li>' + esc(q) + '</li>'; }).join('')
+        + '</ul></div>';
+    }
+  }
+
+  h += '<div class="card form">'
     + '<div class="sect"><h3>Company</h3><div class="hint">Only the company name is required.</div>'
     + '<div class="fields">'
-    + field('company', 'Company', {wide:true})
-    + field('contact', 'Primary contact')
-    + field('email', 'Contact email', {type:'email'})
-    + field('website', 'Website', {ph:'https://'})
-    + field('vertical', 'Vertical')
+    + field('company', 'Company', {wide:true, value:exVal('company'), quote:exQuote('company')})
+    + field('contact', 'Primary contact', {value:exVal('contact'), quote:exQuote('contact')})
+    + field('email', 'Contact email', {type:'email', value:exVal('email'), quote:exQuote('email')})
+    + field('website', 'Website', {ph:'https://', value:exVal('website'), quote:exQuote('website')})
+    + field('vertical', 'Vertical', {value:exVal('vertical'), quote:exQuote('vertical')})
     + '</div></div>'
 
     + '<div class="sect"><h3>Commercial</h3>'
     + '<div class="hint">Contract start drives every task due date. Blank uses today.</div>'
     + '<div class="fields">'
-    + field('contractStart', 'Contract start', {type:'date'})
-    + field('mrr', 'MRR', {type:'number', ph:'0'})
-    + field('owner', 'Onboarding owner', {note:'Blank uses the Config default.'})
-    + field('cadence', 'Meeting cadence', {options:options.cadences, blank:true})
-    + field('billing', 'Media billing', {options:options.billing, blank:true})
-    + field('renewal', 'Renewal date', {type:'date'})
-    + field('approvals', 'Approvals contact')
-    + field('slack', 'Slack channel', {ph:'#client-name'})
-    + field('scope', 'Scope', {type:'textarea', wide:true, ph:'What we are contracted to do.'})
+    + field('contractStart', 'Contract start', {type:'date', value:exVal('contractStart'), quote:exQuote('contractStart')})
+    + field('mrr', 'MRR', {type:'number', ph:'0', value:exVal('mrr'), quote:exQuote('mrr')})
+    + field('owner', 'Onboarding owner', {note:'Blank uses the Config default.', value:exVal('owner'), quote:exQuote('owner')})
+    + field('cadence', 'Meeting cadence', {options:options.cadences, blank:true, value:exVal('cadence'), quote:exQuote('cadence')})
+    + field('billing', 'Media billing', {options:options.billing, blank:true, value:exVal('billing'), quote:exQuote('billing')})
+    + field('renewal', 'Renewal date', {type:'date', value:exVal('renewal'), quote:exQuote('renewal')})
+    + field('approvals', 'Approvals contact', {value:exVal('approvals'), quote:exQuote('approvals')})
+    + field('slack', 'Slack channel', {ph:'#client-name', value:exVal('slack'), quote:exQuote('slack')})
+    + field('scope', 'Scope', {type:'textarea', wide:true, ph:'What we are contracted to do.', value:exVal('scope'), quote:exQuote('scope')})
     + '</div></div>'
 
     + '<div class="sect"><h3>Platforms</h3>'
-    + '<div class="hint">Pick what this client runs. Internal setup tasks are always added.</div>'
+    + '<div class="hint">Pick what this client runs. Internal setup tasks are always added.'
+    + (picked.length ? ' Pre-selected from the documents.' : '') + '</div>'
+    + (EXTRACT && EXTRACT.platforms ? exQuote('__platforms__placeholder') : '')
     + '<div class="checks">' + platforms.map(function(p){
-        return '<label class="chk"><input type="checkbox" value="' + esc(p.name) + '">'
+        var on = picked.indexOf(p.name) !== -1;
+        return '<label class="chk' + (on ? ' on' : '') + '">'
+          + '<input type="checkbox" value="' + esc(p.name) + '"' + (on ? ' checked' : '') + '>'
           + '<span><span class="nm">' + esc(p.name) + '</span><br>'
           + '<span class="cat">' + esc(p.category) + ' · ' + esc(p.method) + '</span></span></label>';
-      }).join('') + '</div></div>'
+      }).join('') + '</div>'
+    + (EXTRACT && EXTRACT.platforms && EXTRACT.platforms.quote
+        ? '<div class="src"><span class="cf">' + esc(EXTRACT.platforms.confidence || 'medium')
+          + '</span><span class="qt">“' + esc(String(EXTRACT.platforms.quote).slice(0,220))
+          + '”</span></div>' : '')
+    + '</div>'
 
     + '<div class="sect"><h3>Context</h3>'
-    + '<div class="hint">Paste the sales call transcript and contract. Long text is moved to a '
-    + 'Doc automatically. These feed the generated onboarding plan.</div>'
+    + '<div class="hint">Stored on the Intake tab and fed to the onboarding plan. '
+    + 'Long text is moved to a Doc automatically.</div>'
     + '<div class="fields">'
     + field('transcript', 'Sales transcript', {type:'textarea', wide:true})
     + field('contract', 'Contract text', {type:'textarea', wide:true})
-    + field('notes', 'Context notes', {type:'textarea', wide:true})
+    + field('notes', 'Context notes', {type:'textarea', wide:true,
+        value: EXTRACT && (EXTRACT.openQuestions || []).length
+          ? 'Open questions from intake analysis:\n- ' + EXTRACT.openQuestions.join('\n- ') : ''})
     + '</div></div>'
 
     + '<div class="sect"><h3>On submit</h3>'
@@ -811,14 +1000,21 @@ function intakeHtml(platforms, options){
     + '<span class="cat">Calls Anthropic — takes ~30s</span></span></label>'
     + '</div></div>'
 
-    + '<div class="bar"><span class="sp"></span>'
+    + '<div class="bar"><button class="btn" id="backSrc">Back</button>'
+    + '<span class="sp"></span>'
     + '<span class="note" id="formMsg"></span>'
     + '<button class="btn pri" id="submit">Create client</button></div></div>';
+  return h;
 }
+
 function wireIntake(){
   [].forEach.call(document.querySelectorAll('.chk input'), function(i){
     i.addEventListener('change', function(){ i.closest('.chk').classList.toggle('on', i.checked); });
   });
+  var back = function(){ drawSources(); };
+  if (el('backSrc')) el('backSrc').addEventListener('click', back);
+  if (el('backStep')) el('backStep').addEventListener('click', back);
+
   el('submit').addEventListener('click', function(){
     var b = el('submit');
     var company = el('company').value.trim();
@@ -859,7 +1055,7 @@ function wireIntake(){
     el('formMsg').textContent = 'This can take a moment.';
     api('submitIntake', payload).then(function(r){
       CACHE.overview = null; CACHE.queue = null;
-      toast(r.company || company ? 'Created ' + company + ' (' + r.clientId + ')' : 'Created.');
+      toast('Created ' + company + ' (' + r.clientId + ')');
       openClient(r.clientId);
     }).catch(function(e){
       b.disabled = false; b.textContent = 'Create client';
@@ -868,6 +1064,7 @@ function wireIntake(){
     });
   });
 }
+
 </script>
 </body>
 </html>
