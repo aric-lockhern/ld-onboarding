@@ -11,7 +11,7 @@ Intake, AI onboarding plan, instruction emails, Drive structure, due dates, and 
    | `Code.gs` | script |
    | `PlanGen.gs` | script |
    | `Templates.gs` | script |
-   | `Admin.gs` | script |
+   | `AdminServer.gs` | script |
    | `Digest.gs` | script |
    | `Send.gs` | script |
    | `Phases.gs` | script |

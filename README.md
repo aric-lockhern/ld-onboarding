@@ -76,7 +76,7 @@ There is no web host involved anywhere. Apps Script runs inside Google, and the 
 | `src/Send.gs` | Preview, send, queue, preflight |
 | `src/Templates.gs` | Email copy, merge tags, composer |
 | `src/PlanGen.gs` | Anthropic call, prompt, plan Doc |
-| `src/Admin.gs` | PIN gate, dashboard reads, field writes |
+| `src/AdminServer.gs` | PIN gate, dashboard reads, field writes |
 | `src/Digest.gs` | Daily overdue email |
 | `src/Intake.html` | Intake sidebar |
 | `src/Admin.html` | Dashboard modal |
@@ -110,7 +110,7 @@ Phase and Gate are columns on `Platforms`. Nothing is hardcoded.
 
 ## Security
 
-- Secrets live in `PropertiesService` Script Properties: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`. Neither is in this repo, and `.clasp.json` / `.clasprc.json` are gitignored — `.clasprc.json` holds your Google OAuth token, so never commit it.
+- Secrets live in `PropertiesService` Script Properties: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`. Neither is in this repo. `.clasprc.json` is gitignored and must stay that way — it holds your Google OAuth token. `.clasp.json` *is* committed: it holds only the script ID, which is an address rather than a credential.
 - The dashboard PIN is a convenience lock, not access control. Anyone with edit access to the Sheet can read around it through the script editor. Sheet sharing permissions are the real boundary.
 - No credentials are stored in the Drive folder structure, deliberately. Shared logins belong in a password manager.
 - Gmail caps sending at 500/day on Workspace, 100/day on consumer accounts.

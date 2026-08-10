@@ -130,5 +130,27 @@ for (const [mapName, tabConst] of [['C', 'CLIENTS'], ['A', 'ACCESS']]) {
     : fail(`${mapName}.WIDTH is ${w} but ${tabConst} has ${headers} headers`);
 }
 
+// ---- 6. no two src files share a basename
+// Apps Script drops the extension: Admin.gs and Admin.html both want to be
+// "Admin", and names are unique across types. clasp fails the push with
+// "A file with this name already exists in the current project: Admin" —
+// after some files have already uploaded, so the project is left half-written.
+console.log('\nChecking for filename collisions');
+const byBase = new Map();
+for (const f of files) {
+  if (f === 'appsscript.json') continue;
+  const base = f.replace(/\.[^.]*$/, '');
+  if (!byBase.has(base)) byBase.set(base, []);
+  byBase.get(base).push(f);
+}
+let collisions = 0;
+for (const [base, group] of byBase) {
+  if (group.length > 1) {
+    fail(`${group.join(' and ')} both become "${base}" in Apps Script — rename one`);
+    collisions++;
+  }
+}
+if (!collisions) pass(`${byBase.size} file names are unique once extensions are dropped`);
+
 console.log(failures ? `\n${failures} problem(s)\n` : '\nAll checks passed\n');
 process.exit(failures ? 1 : 0);

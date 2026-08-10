@@ -88,9 +88,18 @@ jobs:
                         : rc.access_token ? "legacy v1 (flat access_token)"
                         : null;
             if (!shape) {
+              // Key names, never values — enough to identify the wrong file
+              // without printing anything sensitive.
+              const keys = Object.keys(rc);
               console.log("::error::CLASPRC_JSON has no recognisable credential shape.");
               console.log("::error::Expected one of: tokens.default, token, or access_token.");
-              console.log("::error::Run `npx clasp login` again and copy the whole file.");
+              console.log("::error::Top-level keys found: " + (keys.join(", ") || "(none)"));
+              if (keys.includes("scriptId")) {
+                console.log("::error::Those are .clasp.json keys. CLASPRC_JSON needs the OTHER file:");
+                console.log("::error::  ~/.clasprc.json  (the login token, in your home directory)");
+              } else {
+                console.log("::error::Run `npx clasp login`, then copy all of: cat ~/.clasprc.json");
+              }
               process.exit(1);
             }
             console.log("Credential format: " + shape);

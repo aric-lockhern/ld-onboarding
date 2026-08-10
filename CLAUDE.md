@@ -2,7 +2,19 @@
 
 Google Apps Script project. Client onboarding CRM for a paid-search agency, bound to a Google Sheet that acts as the database.
 
-## The five things that will bite you
+## The six things that will bite you
+
+### 0. Two files cannot share a basename
+
+Apps Script drops the extension. `Admin.gs` and `Admin.html` both want to be `Admin`, and names are unique across types — so a project holding both fails the push with:
+
+```
+A file with this name already exists in the current project: Admin
+```
+
+It fails *partway through*, leaving the script project half-written. This shipped broken; the server file is now `AdminServer.gs` so it doesn't collide with `Admin.html`. `npm run check` enforces it.
+
+Never name a `.gs` file after an HTML file.
 
 ### 1. Trailing underscore means "not callable from the browser"
 
@@ -49,7 +61,7 @@ src/
   Send.gs        preview, send, queue construction, preflight
   Templates.gs   email copy + merge + composer
   PlanGen.gs     Anthropic API call, prompt, plan Doc output
-  Admin.gs       PIN gate, dashboard reads, field writes
+  AdminServer.gs PIN gate, dashboard reads, field writes
   Digest.gs      daily overdue email + trigger installer
   Intake.html    intake sidebar (~300px)
   Admin.html     dashboard modal (760px)
