@@ -86,7 +86,7 @@ const FAKE = {
   hasClickUpToken: true,
   extractIntake: {
     ok:true,
-    sourcesUsed:['Sales call transcript','Scope of work'],
+    sourcesUsed:['Sales call transcript','Scope of work','ClickUp onboarding form'],
     problems:[],
     fields:{
       company:{value:'Harbor & Sons',confidence:'high',quote:'Great, so Harbor and Sons — we are the family furniture business out of Leeds.',source:'Sales call transcript'},
