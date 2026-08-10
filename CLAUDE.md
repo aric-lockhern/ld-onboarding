@@ -55,6 +55,12 @@ src/
   Admin.html     dashboard modal (760px)
 design/
   mockup.html    standalone UI reference, fake data, no Apps Script calls
+docs/
+  OPERATIONS.md  install, phases, daily use, deploying, adjusting
+scripts/
+  check.mjs      static validation — node builtins only, no dependencies
+.github/workflows/
+  deploy.yml     check on PRs, clasp push on merge to main
 ```
 
 `design/mockup.html` is documentation, not shipped code. It duplicates the UI intentionally so the design can be reviewed without a deployment. If you change the dashboard's structure, either update it or delete it — a stale mockup is worse than none.
@@ -88,3 +94,14 @@ npm run pull     pull remote changes (overwrites src/)
 ```
 
 `clasp pull` overwrites local files. If someone edited in the browser, pull before you push or you'll clobber them.
+
+## Merging to main deploys
+
+`.github/workflows/deploy.yml` runs `check` on every PR and `clasp push --force` when a commit lands on `main`. There is no staging sheet — a merge reaches the live tool people are using that day.
+
+Two consequences worth holding onto:
+
+- **`--force` clobbers browser edits silently.** It's required because a non-interactive runner hangs on the manifest prompt. Nothing warns you, and there's no undo.
+- **`check` passing is not evidence the change works.** It parses and cross-references; that's all. Per rule 5 above, a behavioural change is unverified until someone clicks through the sheet. Say so rather than implying the deploy proved anything.
+
+Setup and secrets: `docs/OPERATIONS.md`.

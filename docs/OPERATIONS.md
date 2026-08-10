@@ -141,6 +141,45 @@ Things deliberately left out, in rough order of value:
 4. **Renewal triggers** — the `Renewal Date` field is captured but nothing reads it yet. A 60-day-out task would close the loop.
 5. **The five API request flows** — the biggest lift but the most setup. Google Ads and Meta first; between them they cover ad accounts, Pages, Instagram, pixels, and catalogs.
 
+## Deploying code changes
+
+Code lives in this repo. `clasp push` uploads it to the script bound to the sheet — there is never a reason to paste files into the browser editor.
+
+**From your machine:**
+
+```bash
+npm run pull     # first, if anyone edited in the browser — see the warning below
+npm run check    # parse, resolve google.script.run targets, verify column maps
+npm run push     # runs check, then clasp push
+```
+
+**Automatically, on merge to `main`:** `.github/workflows/deploy.yml` runs the static checks on every pull request, and pushes to Apps Script when a commit lands on `main`. Merging a PR is the deploy.
+
+### One-time CI setup
+
+Two repository secrets, at **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|---|---|
+| `CLASPRC_JSON` | The entire contents of `~/.clasprc.json`, verbatim, after running `npx clasp login` locally |
+| `SCRIPT_ID` | The script ID — the long string in the script editor URL, also in your local `.clasp.json` |
+
+`~/.clasprc.json` holds an OAuth refresh token for your Google account. Treat it like a password: it is not in this repo, `.gitignore` excludes it, and the workflow writes it to the runner at `chmod 600`, then deletes it in an `always()` step. Anyone with admin access to this repo can use it to act on your Apps Script projects. Revoke it at [myaccount.google.com/permissions](https://myaccount.google.com/permissions) if it ever leaks.
+
+`.clasp.json` is deliberately gitignored — it is per-checkout config, not source — so the runner generates its own from `SCRIPT_ID`.
+
+The workflow pins `@google/clasp@2.5.0` exactly. clasp 3.x reworked auth and the command surface; upgrading is a deliberate change, not something that should happen on its own.
+
+### Three things to know before you turn it on
+
+1. **`clasp push --force` overwrites the remote unconditionally.** The `--force` flag is there because a non-interactive runner would otherwise hang on the manifest-change prompt. The consequence: if someone edits in the browser and a deploy runs afterwards, their edits are gone with no warning and no undo. Either treat the browser editor as read-only, or `npm run pull` and commit before merging anything.
+
+2. **A deploy reaches people mid-task.** The tool is a live sheet your team uses during the day. There is no staging copy, and `check` cannot catch a behavioural break — it only parses and cross-references. Prefer merging when nobody is mid-onboarding.
+
+3. **A deploy pushes code, not configuration.** The `Config` tab, the seeded `Platforms` / `Phases` / `Templates` rows, and anything `setup()` writes are untouched. That is deliberate — the seeds bail when data exists so they never clobber your edits — but it also means a seed change in code does not reach an existing sheet. Clear the tab first, or start from a fresh spreadsheet.
+
+If you would rather approve each deploy by hand, add an [environment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) with a required reviewer and set `environment:` on the `deploy` job.
+
 ## Adjusting
 
 - **Add a task:** row on `Platforms`. Add a matching `Templates` row only if it's client-facing.
