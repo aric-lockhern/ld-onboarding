@@ -83,10 +83,28 @@ function getClientRecord_(clientId) {
     contractStart: fmtDate_(r[C.START - 1]), contractStartRaw: r[C.START - 1],
     mrr: r[C.MRR - 1], owner: r[C.OWNER - 1], scope: r[C.SCOPE - 1],
     cadence: r[C.CADENCE - 1], slack: r[C.SLACK - 1], alias: r[C.ALIAS - 1],
-    drive: r[C.DRIVE - 1], billing: r[C.BILLING - 1], approvals: r[C.APPROVALS - 1],
-    renewal: fmtDate_(r[C.RENEWAL - 1]), call: r[C.CALL - 1],
+    drive: r[C.DRIVE - 1], approvals: r[C.APPROVALS - 1],
+    term: r[C.TERM - 1], call: r[C.CALL - 1],
+    bizType: r[C.BIZTYPE - 1], onboarding: r[C.ONBOARDING - 1],
+    services: r[C.SERVICES - 1],
+    // Raw comma strings, kept separate from the display fields because
+    // platformsForClient_ parses them.
+    platformsRaw: r[C.PLATFORMS - 1], servicesRaw: r[C.SERVICES - 1],
+    fees: parseFees_(r[C.FEES - 1]),
     planStatus: r[C.PLAN_STATUS - 1], planDoc: r[C.PLAN_DOC - 1]
   };
+}
+
+/** Fees are stored as JSON in one cell. A hand-edited cell must not break the
+    whole client record, so a bad parse degrades to no breakdown. */
+function parseFees_(raw) {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(String(raw));
+    return Array.isArray(v) ? v : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 function getClientTasks_(clientId) {
@@ -195,7 +213,10 @@ function getClientDetail(token, clientId) {
     client: client,
     tasks: tasks,
     statuses: STATUSES,
-    billingOptions: BILLING,
+    terms: TERMS,
+    bizTypes: BIZ_TYPES,
+    cadences: CADENCES,
+    serviceList: getServiceList(),
     summary: {
       done: done, total: counted.length,
       pct: counted.length ? Math.round((done / counted.length) * 100) : 0
@@ -242,8 +263,9 @@ function updateClientField(token, clientId, field, value) {
   checkToken_(token);
   const cols = {
     status: C.STATUS, owner: C.OWNER, scope: C.SCOPE, cadence: C.CADENCE,
-    slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE, billing: C.BILLING,
-    approvals: C.APPROVALS, renewal: C.RENEWAL, call: C.CALL
+    slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE, services: C.SERVICES,
+    approvals: C.APPROVALS, term: C.TERM, call: C.CALL,
+    bizType: C.BIZTYPE, mrr: C.MRR, platforms: C.PLATFORMS
   };
   const col = cols[field];
   if (!col) return { ok: false, message: 'Unknown field.' };

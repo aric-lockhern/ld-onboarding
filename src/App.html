@@ -257,6 +257,23 @@
   .drop .clr:hover{color:var(--critical)}
   .f textarea:disabled{background:var(--paper); color:var(--faint)}
 
+  .feerow{display:flex; gap:9px; align-items:center; margin-bottom:8px}
+  .feerow .fl{flex:1; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+    font:14px/1.4 "Inter",sans-serif; background:var(--surface); color:var(--ink)}
+  .feerow .fa{width:132px; flex:none; padding:9px 11px; border:1px solid var(--line);
+    border-radius:8px; font:14px/1.4 "Inter",sans-serif; text-align:right;
+    font-variant-numeric:tabular-nums; background:var(--surface); color:var(--ink)}
+  .feerow input:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
+  .feefoot{display:flex; align-items:center; gap:12px; margin-top:4px}
+  .feetot{font-size:14px; color:var(--muted)}
+  .feetot b{font-size:18px; color:var(--ink); font-variant-numeric:tabular-nums;
+    margin-left:6px}
+  .startrow{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:12px}
+  .startrow .mini{font-size:13.5px; color:var(--blue-ink); display:flex; align-items:center;
+    gap:6px; cursor:pointer}
+  .startrow .mini input{accent-color:var(--blue)}
+  .startrow .btn{margin-left:auto}
+
   @media(max-width:760px){
     #app.on{grid-template-columns:1fr; background:var(--paper)}
     nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
@@ -332,7 +349,7 @@ var SERVER_FNS = [
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
-  'extractIntake', 'hasClickUpToken'
+  'extractIntake', 'hasClickUpToken', 'startOnboarding'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -680,6 +697,20 @@ function openClient(clientId){
 
     var h = '<button class="back" id="back">← All clients</button>';
 
+    // Creating a client and committing it to an onboarding are separate acts.
+    // Once tasks exist there are due dates, owners and a queue entry, so the
+    // second one gets its own deliberate button.
+    if (c.onboarding !== 'Started' && c.onboarding !== 'Complete'){
+      h += '<div class="okbox" style="margin-top:14px"><b>Onboarding not started</b>'
+        + '<div>Check the details below, then start it. That builds the dated task '
+        + 'checklist from the services and platforms, and creates the Drive folder.</div>'
+        + '<div class="startrow">'
+        + '<label class="mini"><input type="checkbox" id="optCall" checked> Weekly onboarding call</label>'
+        + '<label class="mini"><input type="checkbox" id="optDrive" checked> Create Drive folder</label>'
+        + '<label class="mini"><input type="checkbox" id="optPlan"> Generate onboarding plan</label>'
+        + '<button class="btn pri" id="startOnb">Start onboarding</button></div></div>';
+    }
+
     var ps = d.phaseState || {};
     if (ps.phases && ps.phases.length){
       h += '<div class="grp">Phases</div><div class="card"><div class="rail">'
@@ -717,13 +748,13 @@ function openClient(clientId){
     h += '<div class="grp">Profile</div><div class="card"><div class="sect"><div class="fields">'
       + pField('status', 'Status', c.status, CLIENT_STATUSES)
       + pField('owner', 'Onboarding owner', c.owner)
-      + pField('cadence', 'Meeting cadence', c.cadence, CACHE.options.cadences)
-      + pField('billing', 'Media billing', c.billing, d.billingOptions || CACHE.options.billing)
+      + pField('cadence', 'Meeting cadence', c.cadence, d.cadences || CACHE.options.cadences)
+      + pField('term', 'Contract term', c.term, d.terms)
+      + pField('bizType', 'Business type', c.bizType, d.bizTypes)
       + pField('call', 'Onboarding call', c.call, CALL_STATES)
       + pField('slack', 'Slack channel', c.slack)
       + pField('alias', 'Email alias', c.alias)
       + pField('approvals', 'Approvals contact', c.approvals)
-      + pField('renewal', 'Renewal date', c.renewal)
       + pField('scope', 'Scope', c.scope, null, true)
       + '</div></div></div>';
 
@@ -756,6 +787,24 @@ function openClient(clientId){
           }).catch(fail);
       });
     });
+    var so = el('startOnb');
+    if (so) so.addEventListener('click', function(){
+      so.disabled = true; so.textContent = 'Starting…';
+      api('startOnboarding', TOKEN, clientId, {
+        weeklyCall: el('optCall').checked,
+        makeDrive: el('optDrive').checked,
+        generatePlan: el('optPlan').checked
+      }).then(function(r){
+        if (!r.ok){ so.disabled = false; so.textContent = 'Start onboarding';
+                    toast(r.message || 'Could not start.', true); return; }
+        CACHE.overview = null; CACHE.queue = null;
+        toast(r.tasks + ' task' + (r.tasks === 1 ? '' : 's') + ' created.');
+        openClient(clientId);
+      }).catch(function(e){
+        so.disabled = false; so.textContent = 'Start onboarding'; fail(e);
+      });
+    });
+
     var mk = el('mkDrive');
     if (mk) mk.addEventListener('click', function(){
       mk.disabled = true; mk.textContent = 'Creating…';
@@ -806,6 +855,8 @@ var SOURCES = [
     hint:'Who does what, meeting cadence, approvals, launch expectations.' },
   { key:'sow', label:'Scope of work',
     hint:'The contract. Where MRR, start date, renewal and the platform list actually live.' },
+  { key:'deck', label:'Pitch deck',
+    hint:'Google Slides link, or upload the PDF. The fees and payment slide is where the monthly figure and its breakdown by channel live.' },
   { key:'form', label:'ClickUp onboarding form',
     hint:'The submitted form as a ClickUp task link — app.clickup.com/t/… . The answers are read from its custom fields, not just the description.' }
 ];
@@ -926,6 +977,21 @@ function showFile(key){
   el('src_' + key).disabled = true;
 }
 
+function wireFees(){
+  [].forEach.call(document.querySelectorAll('.feerow .fa'), function(i){
+    i.oninput = recalcFees;
+  });
+  [].forEach.call(document.querySelectorAll('[data-delfee]'), function(b){
+    b.onclick = function(){
+      if (document.querySelectorAll('.feerow').length > 1) b.closest('.feerow').remove();
+      else { b.closest('.feerow').querySelector('.fl').value = '';
+             b.closest('.feerow').querySelector('.fa').value = ''; }
+      recalcFees();
+    };
+  });
+  recalcFees();
+}
+
 function readFile(f){
   return new Promise(function(res, rej){
     if (f.size > MAX_UPLOAD){ rej(new Error(f.name + ' is over the 12 MB limit.')); return; }
@@ -1026,22 +1092,23 @@ function intakeHtml(platforms, options){
     + field('vertical', 'Vertical', {value:exVal('vertical'), quote:exQuote('vertical')})
     + '</div></div>'
 
-    + '<div class="sect"><h3>Commercial</h3>'
+    + '<div class="sect"><h3>Contract breakdown</h3>'
     + '<div class="hint">Contract start drives every task due date. Blank uses today.</div>'
     + '<div class="fields">'
     + field('contractStart', 'Contract start', {type:'date', value:exVal('contractStart'), quote:exQuote('contractStart')})
-    + field('mrr', 'MRR', {type:'number', ph:'0', value:exVal('mrr'), quote:exQuote('mrr')})
-    + field('owner', 'Onboarding owner', {note:'Blank uses the Config default.', value:exVal('owner'), quote:exQuote('owner')})
+    + field('term', 'Contract term', {options:options.terms, value:exVal('term') || 'Month to month', quote:exQuote('term')})
+    + field('bizType', 'Business type', {options:options.bizTypes, blank:true, value:exVal('bizType'), quote:exQuote('bizType')})
     + field('cadence', 'Meeting cadence', {options:options.cadences, blank:true, value:exVal('cadence'), quote:exQuote('cadence')})
-    + field('billing', 'Media billing', {options:options.billing, blank:true, value:exVal('billing'), quote:exQuote('billing')})
-    + field('renewal', 'Renewal date', {type:'date', value:exVal('renewal'), quote:exQuote('renewal')})
+    + field('owner', 'Onboarding owner', {note:'Blank uses the Config default.', value:exVal('owner'), quote:exQuote('owner')})
     + field('approvals', 'Approvals contact', {value:exVal('approvals'), quote:exQuote('approvals')})
     + field('slack', 'Slack channel', {ph:'#client-name', value:exVal('slack'), quote:exQuote('slack')})
     + field('scope', 'Scope', {type:'textarea', wide:true, ph:'What we are contracted to do.', value:exVal('scope'), quote:exQuote('scope')})
     + '</div></div>'
 
+    + servicesSection(options)
+
     + '<div class="sect"><h3>Platforms</h3>'
-    + '<div class="hint">Pick what this client runs. Internal setup tasks are always added.'
+    + '<div class="hint">What we need access to. Ticking a service above adds its platforms automatically; add anything else here.'
     + (picked.length ? ' Pre-selected from the documents.' : '') + '</div>'
     + (EXTRACT && EXTRACT.platforms ? exQuote('__platforms__placeholder') : '')
     + '<div class="checks">' + platforms.map(function(p){
@@ -1068,18 +1135,10 @@ function intakeHtml(platforms, options){
           ? 'Open questions from intake analysis:\n- ' + EXTRACT.openQuestions.join('\n- ') : ''})
     + '</div></div>'
 
-    + '<div class="sect"><h3>On submit</h3>'
-    + '<div class="checks">'
-    + '<label class="chk on"><input type="checkbox" id="makeDrive" checked>'
-    + '<span><span class="nm">Create Drive folder</span><br>'
-    + '<span class="cat">With the standard subfolders</span></span></label>'
-    + '<label class="chk on"><input type="checkbox" id="weeklyCall" checked>'
-    + '<span><span class="nm">Weekly onboarding call</span><br>'
-    + '<span class="cat">Adds the recurring call task</span></span></label>'
-    + '<label class="chk"><input type="checkbox" id="generatePlan">'
-    + '<span><span class="nm">Generate onboarding plan</span><br>'
-    + '<span class="cat">Calls Anthropic — takes ~30s</span></span></label>'
-    + '</div></div>'
+    + '<div class="sect"><h3>What happens next</h3>'
+    + '<div class="hint">This creates the client record only. Nothing is sent, '
+    + 'no tasks exist yet, and every field above stays editable. You start the '
+    + 'onboarding from the client page once the details are right.</div></div>'
 
     + '<div class="bar"><button class="btn" id="backSrc">Back</button>'
     + '<span class="sp"></span>'
@@ -1088,10 +1147,113 @@ function intakeHtml(platforms, options){
   return h;
 }
 
+/**
+ * Services are what the client bought. Platforms are what we need access to.
+ * They are not the same list and conflating them is how an access email ends
+ * up asking for a Merchant Center on a lead-gen account.
+ *
+ * The fee table mirrors the pricing slide line for line, discounts included,
+ * so a mid-term upsell is one more row rather than an edit to a single number
+ * nobody can explain later.
+ */
+function servicesSection(options){
+  var sold = (EXTRACT && EXTRACT.services && EXTRACT.services.value) || [];
+  var lines = (EXTRACT && EXTRACT.fees && EXTRACT.fees.value) || [];
+  var list = options.services || [];
+
+  var h = '<div class="sect"><h3>Services sold</h3>'
+    + '<div class="hint">What we are being paid to do. Each one pulls in the '
+    + 'platform access it needs.</div>'
+    + '<div class="checks">' + list.map(function(sv){
+        var on = sold.indexOf(sv.name) !== -1;
+        return '<label class="chk' + (on ? ' on' : '') + '">'
+          + '<input type="checkbox" data-service="' + esc(sv.name) + '"'
+          + ' value="' + esc(sv.name) + '"' + (on ? ' checked' : '') + '>'
+          + '<span><span class="nm">' + esc(sv.name) + '</span><br>'
+          + '<span class="cat">' + esc(sv.platforms.join(', ') || 'no platform access') + '</span>'
+          + '</span></label>';
+      }).join('') + '</div>'
+    + (EXTRACT && EXTRACT.services && EXTRACT.services.quote
+        ? '<div class="src"><span class="cf">' + esc(EXTRACT.services.confidence || 'medium')
+          + '</span><span class="qt">“' + esc(String(EXTRACT.services.quote).slice(0,220))
+          + '”</span></div>' : '')
+    + '</div>';
+
+  h += '<div class="sect"><h3>Monthly fees</h3>'
+    + '<div class="hint">One line per channel, discounts as negative numbers. '
+    + 'The total is the MRR written to the client record.</div>'
+    + '<div id="feeRows">'
+    + (lines.length ? lines.map(feeRow).join('') : feeRow({label:'', amount:''}))
+    + '</div>'
+    + '<div class="feefoot">'
+    + '<button type="button" class="btn sm" id="addFee">Add line</button>'
+    + '<span class="sp"></span><span class="feetot">Monthly total '
+    + '<b id="feeTotal">0</b></span></div>'
+    + (EXTRACT && EXTRACT.fees && EXTRACT.fees.quote
+        ? '<div class="src"><span class="cf">' + esc(EXTRACT.fees.confidence || 'medium')
+          + '</span><span class="qt">“' + esc(String(EXTRACT.fees.quote).slice(0,220))
+          + '”</span></div>' : '')
+    + '</div>';
+  return h;
+}
+
+function feeRow(l){
+  l = l || {};
+  return '<div class="feerow">'
+    + '<input class="fl" placeholder="Channel or line item" value="' + esc(l.label || '') + '">'
+    + '<input class="fa" type="number" step="any" placeholder="0" value="'
+    + (l.amount === 0 || l.amount ? esc(l.amount) : '') + '">'
+    + '<button type="button" class="clr" data-delfee="1">Remove</button></div>';
+}
+
+function readFees(){
+  return [].map.call(document.querySelectorAll('.feerow'), function(r){
+    return { label: r.querySelector('.fl').value.trim(),
+             amount: Number(r.querySelector('.fa').value || 0) };
+  }).filter(function(l){ return l.label || l.amount; });
+}
+
+function recalcFees(){
+  var t = readFees().reduce(function(a, l){ return a + (l.amount || 0); }, 0);
+  el('feeTotal').textContent = t.toLocaleString();
+}
+
+/** Ticking a service ticks the platforms it implies. Unticking never removes
+    them — the platform may have been wanted on its own, and silently dropping
+    an access request is worse than an extra tick to clear. */
+function applyServicePlatforms(name){
+  var sv = (CACHE.options.services || []).find(function(x){ return x.name === name; });
+  if (!sv) return;
+  sv.platforms.forEach(function(p){
+    var box = document.querySelector('.checks .chk input[value="' + p.replace(/"/g, '\\"') + '"]:not([data-service])');
+    if (box && !box.checked){
+      box.checked = true;
+      box.closest('.chk').classList.add('on');
+    }
+  });
+}
+
 function wireIntake(){
   [].forEach.call(document.querySelectorAll('.chk input'), function(i){
     i.addEventListener('change', function(){ i.closest('.chk').classList.toggle('on', i.checked); });
   });
+  [].forEach.call(document.querySelectorAll('[data-service]'), function(i){
+    i.addEventListener('change', function(){
+      if (i.checked) applyServicePlatforms(i.value);
+    });
+    // Services arriving pre-ticked from the extraction never fire a change
+    // event, so their platforms have to be applied on first render too —
+    // otherwise AI Search SEO is selected with no Search Console access.
+    if (i.checked) applyServicePlatforms(i.value);
+  });
+  if (el('addFee')){
+    el('addFee').addEventListener('click', function(){
+      el('feeRows').insertAdjacentHTML('beforeend', feeRow({}));
+      wireFees();
+    });
+    wireFees();
+  }
+
   var back = function(){ drawSources(); };
   if (el('backSrc')) el('backSrc').addEventListener('click', back);
   if (el('backStep')) el('backStep').addEventListener('click', back);
@@ -1115,11 +1277,14 @@ function wireIntake(){
       website: el('website').value.trim(),
       vertical: el('vertical').value.trim(),
       contractStart: el('contractStart').value,
-      mrr: el('mrr').value,
       owner: el('owner').value.trim(),
       cadence: el('cadence').value,
-      billing: el('billing').value,
-      renewal: el('renewal').value,
+      term: el('term').value,
+      bizType: el('bizType').value,
+      services: [].filter.call(document.querySelectorAll('[data-service]'),
+        function(i){ return i.checked; }).map(function(i){ return i.value; }),
+      fees: readFees(),
+      mrr: readFees().reduce(function(a, l){ return a + (l.amount || 0); }, 0),
       approvals: el('approvals').value.trim(),
       slack: el('slack').value.trim(),
       scope: el('scope').value.trim(),
@@ -1127,16 +1292,14 @@ function wireIntake(){
       transcript: el('transcript').value,
       contract: el('contract').value,
       notes: el('notes').value,
-      makeDrive: el('makeDrive').checked,
-      weeklyCall: el('weeklyCall').checked,
-      generatePlan: el('generatePlan').checked
+      makeDrive: false
     };
     b.disabled = true;
-    b.textContent = payload.generatePlan ? 'Creating & generating…' : 'Creating…';
-    el('formMsg').textContent = 'This can take a moment.';
+    b.textContent = 'Creating…';
+    el('formMsg').textContent = '';
     api('submitIntake', payload).then(function(r){
       CACHE.overview = null; CACHE.queue = null;
-      toast('Created ' + company + ' (' + r.clientId + ')');
+      toast('Created ' + company + ' — review, then start onboarding.');
       openClient(r.clientId);
     }).catch(function(e){
       b.disabled = false; b.textContent = 'Create client';

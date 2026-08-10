@@ -6,6 +6,7 @@
 
 const TABS = {
   CLIENTS: 'Clients',
+  SERVICES: 'Services',
   INTAKE: 'Intake',
   ACCESS: 'Access',
   PLANS: 'Plans',
@@ -17,7 +18,17 @@ const TABS = {
 
 const STATUSES = ['Not started', 'Info needed', 'Requested', 'Complete', 'Blocked', 'N/A'];
 const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
-const BILLING = ['Client card on account', 'Agency billed / rebilled', 'Hybrid', 'Not set'];
+/**
+ * What we sell. Distinct from Platforms, which is what we need ACCESS to —
+ * one service usually implies several platforms, and some platforms (GA4,
+ * Tag Manager) are needed no matter what was sold. The mapping lives on the
+ * Services tab so it can be changed without a deploy.
+ */
+const SERVICES = ['Google Ads', 'Microsoft Ads', 'Meta Ads', 'Reddit Ads',
+  'AI Search SEO', 'Google Business Profile', 'Landing Page', 'Web Design'];
+
+const TERMS = ['Month to month', '3 months', '6 months', '12 months', 'Custom'];
+const BIZ_TYPES = ['Lead Gen', 'eCommerce'];
 
 const INK = '#14181D';
 
@@ -25,8 +36,9 @@ const INK = '#14181D';
 const C = {
   ID: 1, COMPANY: 2, CONTACT: 3, EMAIL: 4, WEBSITE: 5, VERTICAL: 6, STATUS: 7,
   PLATFORMS: 8, START: 9, MRR: 10, OWNER: 11, SCOPE: 12, CADENCE: 13, SLACK: 14,
-  ALIAS: 15, DRIVE: 16, BILLING: 17, APPROVALS: 18, RENEWAL: 19, CALL: 20,
-  PROGRESS: 21, PLAN_STATUS: 22, PLAN_DOC: 23, CREATED: 24, WIDTH: 24
+  ALIAS: 15, DRIVE: 16, SERVICES: 17, APPROVALS: 18, TERM: 19, CALL: 20,
+  BIZTYPE: 21, FEES: 22, ONBOARDING: 23,
+  PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, WIDTH: 27
 };
 
 // Access column map (1-based)
@@ -70,8 +82,9 @@ function setup() {
     'Client ID', 'Company', 'Primary Contact', 'Contact Email', 'Website',
     'Vertical', 'Status', 'Platforms', 'Contract Start', 'MRR',
     'Onboarding Owner', 'Scope', 'Meeting Cadence', 'Slack Channel', 'Email Alias',
-    'Drive Folder', 'Media Billing', 'Approvals Contact', 'Renewal Date',
-    'Onboarding Call', 'Progress', 'Plan Status', 'Plan Doc', 'Created'
+    'Drive Folder', 'Services', 'Approvals Contact', 'Contract Term',
+    'Onboarding Call', 'Business Type', 'Fees', 'Onboarding',
+    'Progress', 'Plan Status', 'Plan Doc', 'Created'
   ]);
 
   mkTab_(ss, TABS.INTAKE, [
@@ -95,11 +108,16 @@ function setup() {
     'Always Include', 'Active'
   ]);
 
+  mkTab_(ss, TABS.SERVICES, [
+    'Service', 'Category', 'Platforms Needed', 'Default Monthly Fee', 'Active'
+  ]);
+
   mkTab_(ss, TABS.PHASES, ['Phase', 'Name', 'Client Email', 'What it means']);
 
   mkTab_(ss, TABS.TEMPLATES, ['Task', 'Subject', 'Body']);
 
   seedPlatforms_(ss);
+  seedServices_(ss);
   seedPhases_(ss);
   seedTemplates_(ss);
   seedConfig_(ss);
@@ -226,6 +244,45 @@ function seedPlatforms_(ss) {
   sh.setColumnWidth(5, 320);
 }
 
+/**
+ * What we sell, and the access each one implies.
+ *
+ * Platforms Needed is a comma list of Platforms-tab task names. Selecting a
+ * service ticks these automatically; anything marked Always Include on the
+ * Platforms tab arrives regardless, which is why measurement is not repeated
+ * against every row here.
+ *
+ * Default Monthly Fee seeds the fee table on intake. It is a starting point,
+ * not a price list — the contract wins, and every line stays editable.
+ */
+function seedServices_(ss) {
+  const sh = ss.getSheetByName(TABS.SERVICES);
+  if (sh.getLastRow() > 1) return;
+
+  const rows = [
+    // service, category, platforms needed, default fee, active
+    ['Google Ads', 'Paid',
+      'Google Ads, Google Analytics (GA4), Google Tag Manager', 6000, true],
+    ['Microsoft Ads', 'Paid', 'Microsoft Ads', 1500, true],
+    ['Meta Ads', 'Paid',
+      'Meta Ads, Meta / Instagram Organic, Google Analytics (GA4)', 3000, true],
+    ['Reddit Ads', 'Paid', 'Reddit Ads, Reddit Organic', 2000, true],
+    ['AI Search SEO', 'Organic',
+      'Google Search Console, Google Analytics (GA4), WordPress', 2000, true],
+    ['Google Business Profile', 'Local', 'Google Business Profile', 750, true],
+    ['Landing Page', 'Build', 'WordPress, Google Tag Manager', 1500, true],
+    ['Web Design', 'Build', 'WordPress', 2500, true]
+  ];
+
+  sh.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+  sh.getRange(2, 1, rows.length, rows[0].length)
+    .setVerticalAlignment('top').setWrap(true).setFontSize(10);
+  sh.setColumnWidth(1, 170);
+  sh.setColumnWidth(2, 110);
+  sh.setColumnWidth(3, 380);
+  sh.setColumnWidth(4, 160);
+}
+
 function seedPhases_(ss) {
   const sh = ss.getSheetByName(TABS.PHASES);
   if (sh.getLastRow() > 1) return;
@@ -284,7 +341,10 @@ function applyValidation_(ss) {
   clients.getRange(2, C.STATUS, 500).setDataValidation(
     list(['Intake', 'Access Pending', 'Auditing', 'Building', 'Live', 'Paused', 'Churned']));
   clients.getRange(2, C.CADENCE, 500).setDataValidation(list(CADENCES));
-  clients.getRange(2, C.BILLING, 500).setDataValidation(list(BILLING));
+  clients.getRange(2, C.TERM, 500).setDataValidation(list(TERMS));
+  clients.getRange(2, C.BIZTYPE, 500).setDataValidation(list(BIZ_TYPES));
+  clients.getRange(2, C.ONBOARDING, 500).setDataValidation(
+    list(['Not started', 'Started', 'Complete']));
   clients.getRange(2, C.CALL, 500).setDataValidation(
     list(['Not applicable', 'To schedule', 'Scheduled', 'Running']));
   clients.getRange(2, C.PLAN_STATUS, 500).setDataValidation(
@@ -339,7 +399,30 @@ function getPlatformList() {
 }
 
 function getIntakeOptions() {
-  return { cadences: CADENCES, billing: BILLING };
+  return {
+    cadences: CADENCES, terms: TERMS, bizTypes: BIZ_TYPES,
+    services: getServiceList()
+  };
+}
+
+/**
+ * The service catalogue, with the platforms each one implies. Sheet first so
+ * it can be edited without a deploy, falling back to the seed constants when
+ * the tab has not been created yet.
+ */
+function getServiceList() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.SERVICES);
+  if (!sh || sh.getLastRow() < 2) {
+    return SERVICES.map(n => ({ name: n, category: '', platforms: [], fee: '' }));
+  }
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
+    .filter(r => r[0] && r[4] !== false)
+    .map(r => ({
+      name: String(r[0]).trim(),
+      category: String(r[1] || '').trim(),
+      platforms: String(r[2] || '').split(',').map(x => x.trim()).filter(Boolean),
+      fee: r[3] === '' || r[3] === null ? '' : Number(r[3])
+    }));
 }
 
 function submitIntake(payload) {
@@ -368,9 +451,12 @@ function submitIntake(payload) {
   vals[C.CADENCE - 1] = payload.cadence || '';
   vals[C.SLACK - 1] = payload.slack || '';
   vals[C.ALIAS - 1] = alias;
-  vals[C.BILLING - 1] = payload.billing || 'Not set';
+  vals[C.SERVICES - 1] = (payload.services || []).join(', ');
+  vals[C.FEES - 1] = payload.fees ? JSON.stringify(payload.fees) : '';
+  vals[C.BIZTYPE - 1] = payload.bizType || '';
+  vals[C.ONBOARDING - 1] = 'Not started';
   vals[C.APPROVALS - 1] = payload.approvals || '';
-  vals[C.RENEWAL - 1] = payload.renewal || '';
+  vals[C.TERM - 1] = payload.term || 'Month to month';
   vals[C.CALL - 1] = payload.weeklyCall ? 'To schedule' : 'Not applicable';
   vals[C.PLAN_STATUS - 1] = 'Not started';
   vals[C.CREATED - 1] = now;
@@ -386,23 +472,74 @@ function submitIntake(payload) {
     payload.notes || '', [transcript.docUrl, contract.docUrl].filter(Boolean).join('\n'), now
   ]);
 
-  buildAccessRows_(clientId, payload.company, payload.platforms || [], !payload.weeklyCall);
+  // Creating the client and starting the onboarding are deliberately separate.
+  // The record can be corrected freely; the moment tasks exist there are due
+  // dates, owners and a queue entry, and undoing that means deleting rows.
+  return { clientId: clientId, row: row, alias: alias };
+}
 
-  let driveUrl = '';
-  if (payload.makeDrive !== false) {
-    try {
-      driveUrl = createDriveFolder_(clientId, payload.company);
-    } catch (e) {
-      driveUrl = '';
-    }
+/**
+ * Turns a client record into an actual onboarding: task rows, Drive folder,
+ * and the plan if asked for. Safe to re-run — buildAccessRows_ skips tasks
+ * that already exist, and createDriveFolder_ reuses a folder of the same name.
+ *
+ * @param {Object} opts { generatePlan, makeDrive, weeklyCall }
+ */
+function startOnboarding(token, clientId, opts) {
+  checkToken_(token);
+  opts = opts || {};
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+
+  const platforms = platformsForClient_(client);
+  const n = buildAccessRows_(clientId, client.company, platforms, !opts.weeklyCall);
+
+  let driveUrl = client.drive || '';
+  if (!driveUrl && opts.makeDrive !== false) {
+    try { driveUrl = createDriveFolder_(clientId, client.company); } catch (e) { driveUrl = ''; }
   }
 
   let planResult = { ok: false, message: 'Plan generation skipped.' };
-  if (payload.generatePlan) planResult = generatePlan_(row);
+  if (opts.generatePlan) {
+    const row = clientRowNumber_(clientId);
+    if (row) planResult = generatePlan_(row);
+  }
 
-  return {
-    clientId: clientId, row: row, alias: alias, drive: driveUrl, plan: planResult
-  };
+  setClientField_(clientId, C.ONBOARDING, 'Started');
+  setClientField_(clientId, C.STATUS, 'Access Pending');
+
+  return { ok: true, tasks: n, drive: driveUrl, plan: planResult, platforms: platforms };
+}
+
+/**
+ * The platforms a client needs: whatever was ticked explicitly, plus
+ * everything implied by the services sold. Union, not replacement — a service
+ * mapping is a shortcut for the common case, never a cap on it.
+ */
+function platformsForClient_(client) {
+  const explicit = String(client.platformsRaw || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  const sold = String(client.servicesRaw || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  const map = {};
+  getServiceList().forEach(s => { map[s.name] = s.platforms; });
+
+  const out = explicit.slice();
+  sold.forEach(name => {
+    (map[name] || []).forEach(p => { if (out.indexOf(p) === -1) out.push(p); });
+  });
+  return out;
+}
+
+function clientRowNumber_(clientId) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.CLIENTS);
+  if (sh.getLastRow() < 2) return 0;
+  const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) if (ids[i][0] === clientId) return i + 2;
+  return 0;
 }
 
 function makeClientId_(company) {

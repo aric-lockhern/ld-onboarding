@@ -106,6 +106,9 @@ These encode decisions that took real thought. Changing them is fine; changing t
 - **Preview and send run identical checks in the same order** (phase gates, then preflight) so the preview can't show something the send would refuse. If you add a check, add it to `buildPhaseEmail_` where both paths share it.
 - **Access is granted to a client alias, never a person.** Every template says so. This survives staffing changes and makes offboarding a clean revoke.
 - **No credentials in Drive.** `DRIVE_SUBFOLDERS` deliberately has no credentials folder, and the Reddit Organic template tells clients to use a password manager.
+- **Services and Platforms are different lists.** Services are what the client bought (the contract); Platforms are what we need access to. One service implies several platforms via the `Services` tab, and some platforms arrive regardless via Always Include. Conflating them puts a Merchant Center request in a lead-gen client's access email.
+- **Creating a client and starting its onboarding are separate acts.** `submitIntake` writes the record only. `startOnboarding` builds the task rows, and from that moment there are due dates, owners and a queue entry — undoing it means deleting rows. The split exists so the record can be corrected freely first.
+- **Fees are stored per line, not as a total.** The pricing slide's channels and discounts survive into the `Fees` cell as JSON; MRR is their sum. A mid-term upsell is a new line, so the history of what changed stays readable.
 - **Gate vs non-gate is a real distinction.** Brand assets is intentionally not a gate — it always trails and gating on it would stall every account. Media billing is a gate because a failed card pauses campaigns.
 
 ## Commands
