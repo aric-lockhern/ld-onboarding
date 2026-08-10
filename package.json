@@ -9,9 +9,13 @@
     "push": "npm run check && clasp push",
     "push:force": "clasp push --force",
     "pull": "clasp pull",
-    "open": "clasp open"
+    "open": "clasp open",
+    "ui": "node scripts/uicheck.mjs"
   },
   "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "@google/clasp": "^3.3.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.49.0"
   }
 }

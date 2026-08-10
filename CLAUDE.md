@@ -2,7 +2,19 @@
 
 Google Apps Script project. Client onboarding CRM for a paid-search agency, bound to a Google Sheet that acts as the database.
 
-## The five things that will bite you
+## The six things that will bite you
+
+### 0. Two files cannot share a basename
+
+Apps Script drops the extension. `Admin.gs` and `Admin.html` both want to be `Admin`, and names are unique across types — so a project holding both fails the push with:
+
+```
+A file with this name already exists in the current project: Admin
+```
+
+It fails *partway through*, leaving the script project half-written. This shipped broken; the server file is now `AdminServer.gs` so it doesn't collide with `Admin.html`. `npm run check` enforces it.
+
+Never name a `.gs` file after an HTML file.
 
 ### 1. Trailing underscore means "not callable from the browser"
 
@@ -34,31 +46,36 @@ Consequence: **changing a seed array does not update an existing sheet.** To tes
 
 `getTemplate_()` reads the `Templates` tab first and falls back to the constants in `Templates.gs`. Editing email copy in the code has no effect on a deployed sheet whose `Templates` tab is populated. Same pattern for `Platforms` and `Phases`.
 
-### 5. There is no local runtime
+### 5. There is no local runtime for the server half
 
-Apps Script only executes inside Google. You cannot run this code, hit a breakpoint, or write a unit test that exercises `SpreadsheetApp`. `npm run check` does syntax parsing and cross-reference validation — that is the ceiling of what's automatable here.
+Apps Script only executes inside Google. You cannot run a `.gs` file, hit a breakpoint, or unit-test anything touching `SpreadsheetApp`. `npm run check` does syntax parsing and cross-reference validation — that is the ceiling for server code.
 
-Anything beyond that needs `npm run push` and a manual click-through. Don't report a behavioural change as verified when only `check` has run.
+The *client* half is testable. `npm run ui` renders `App.html` in headless Chromium with `google.script.run` stubbed, walks every view at desktop and mobile widths, fails on any JS error, and writes screenshots to `.uicheck/`. It has already caught a duplicated client row, clipped `<select>` text, and a mobile layout that squeezed company names to zero width.
+
+It proves nothing about the server: every response is fake. A behavioural change still needs `clasp push` and a click-through. Don't report one as verified when only `check` and `ui` have run.
 
 ## Layout
 
 ```
 src/
   Code.gs        setup(), menu, column maps, intake, task board, Drive folders
+  WebApp.gs      doGet — serves App.html at a URL; menu pages still available
   Phases.gs      phase state, gate evaluation, send eligibility
   Send.gs        preview, send, queue construction, preflight
   Templates.gs   email copy + merge + composer
   PlanGen.gs     Anthropic API call, prompt, plan Doc output
-  Admin.gs       PIN gate, dashboard reads, field writes
+  AdminServer.gs PIN gate, dashboard reads, field writes
   Digest.gs      daily overdue email + trigger installer
-  Intake.html    intake sidebar (~300px)
-  Admin.html     dashboard modal (760px)
+  Intake.html    intake sidebar (~300px, in-sheet menu)
+  Admin.html     dashboard modal (760px, in-sheet menu)
+  App.html       the web app UI — own nav, four views, built for a browser
 design/
   mockup.html    standalone UI reference, fake data, no Apps Script calls
 docs/
   OPERATIONS.md  install, phases, daily use, deploying, adjusting
 scripts/
   check.mjs      static validation — node builtins only, no dependencies
+  uicheck.mjs    renders App.html in headless Chromium with a stubbed backend
 .github/workflows/
   deploy.yml     check on PRs, clasp push on merge to main
 ```
@@ -69,6 +86,9 @@ scripts/
 
 - Plain ES2015+ on V8. No build step, no bundler, no TypeScript. Files are pushed verbatim.
 - HTML files are referenced without extension: `createHtmlOutputFromFile('Admin')`.
+- `SpreadsheetApp.getUi()` exists only in the sheet. Menu wrappers may call it; anything reachable from `Admin.html`, `Intake.html`, or `doGet` may not, or the web app URL breaks while the menu keeps working.
+- A `clasp push` does not update the web app URL. That needs a new deployment version in the editor, so the menu and the URL can run different code.
+- `App.html` dispatches server calls dynamically through `api()`, which hides them from `check.mjs`. Its targets are declared in the `SERVER_FNS` array, which `check.mjs` validates by name — add a call there or `api()` rejects it.
 - Inline `<script>` in HTML runs in an iframe sandbox. `localStorage` and `sessionStorage` are unavailable — keep state in JS variables.
 - Secrets live in `PropertiesService.getScriptProperties()`, never in a cell and never in the repo. Currently: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`.
 - The dashboard PIN is a convenience lock. Anyone with edit access to the Sheet can read around it via the script editor. Don't describe it as access control.
@@ -88,6 +108,7 @@ These encode decisions that took real thought. Changing them is fine; changing t
 
 ```
 npm run check    syntax + cross-reference validation
+npm run ui       render App.html in a browser, screenshot every view
 npm run push     clasp push to the bound script
 npm run open     open the script editor
 npm run pull     pull remote changes (overwrites src/)

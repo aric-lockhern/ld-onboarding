@@ -65,7 +65,20 @@ Merging to `main` deploys. `.github/workflows/deploy.yml` runs the static checks
 
 It needs one repository secret — `CLASPRC_JSON`, the contents of your local `~/.clasprc.json` after `npx clasp login`. The script ID isn't a secret and is committed in `.clasp.json`. Setup, the credential-handling details, and three things worth understanding before enabling it are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#deploying-code-changes). The short version: the push force-overwrites the remote, it lands on a sheet people are actively using, and it deploys code but never configuration.
 
-There is no web host involved anywhere. Apps Script runs inside Google, and the dashboard and intake UI are served by `HtmlService` from within the bound sheet — they are not static pages and will not work anywhere else.
+No external web host is involved. Apps Script runs inside Google and `HtmlService` serves the UI — these are not static pages and will not work on Netlify, Vercel, or anywhere else.
+
+## The web app URL
+
+The dashboard and intake also run at their own URL, so staff can use the tool without opening the spreadsheet:
+
+```
+<url>/exec              dashboard
+<url>/exec?page=intake  new client intake
+```
+
+Deploy it once from the script editor — **Deploy → New deployment → Web app** — then **Onboarding → Show web app URL** prints it whenever you need it.
+
+Two things to know: **`clasp push` does not update that URL** (it needs a new deployment version in the editor, so the menu and the URL can run different code), and the deployment runs as *you*, meaning client emails sent from the URL come from your account and count against your Gmail quota. Both are covered in [`docs/OPERATIONS.md`](docs/OPERATIONS.md#the-web-app-url).
 
 ## Layout
 
@@ -76,8 +89,9 @@ There is no web host involved anywhere. Apps Script runs inside Google, and the 
 | `src/Send.gs` | Preview, send, queue, preflight |
 | `src/Templates.gs` | Email copy, merge tags, composer |
 | `src/PlanGen.gs` | Anthropic call, prompt, plan Doc |
-| `src/Admin.gs` | PIN gate, dashboard reads, field writes |
+| `src/AdminServer.gs` | PIN gate, dashboard reads, field writes |
 | `src/Digest.gs` | Daily overdue email |
+| `src/WebApp.gs` | `doGet` — serves the UI at a URL |
 | `src/Intake.html` | Intake sidebar |
 | `src/Admin.html` | Dashboard modal |
 | `design/mockup.html` | Standalone UI reference with fake data — open it in a browser, PIN `1234` |
@@ -110,7 +124,7 @@ Phase and Gate are columns on `Platforms`. Nothing is hardcoded.
 
 ## Security
 
-- Secrets live in `PropertiesService` Script Properties: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`. Neither is in this repo, and `.clasp.json` / `.clasprc.json` are gitignored — `.clasprc.json` holds your Google OAuth token, so never commit it.
+- Secrets live in `PropertiesService` Script Properties: `ANTHROPIC_API_KEY`, `DASH_PIN_HASH`. Neither is in this repo. `.clasprc.json` is gitignored and must stay that way — it holds your Google OAuth token. `.clasp.json` *is* committed: it holds only the script ID, which is an address rather than a credential.
 - The dashboard PIN is a convenience lock, not access control. Anyone with edit access to the Sheet can read around it through the script editor. Sheet sharing permissions are the real boundary.
 - No credentials are stored in the Drive folder structure, deliberately. Shared logins belong in a password manager.
 - Gmail caps sending at 500/day on Workspace, 100/day on consumer accounts.

@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Brand tokens carried over from Admin.html so the two UIs don't diverge.
+     Status colours are the validated status palette — they are reserved for
+     state and never reused as decoration, and every one ships with a text
+     label beside it so meaning is never carried by colour alone. */
+  :root{
+    --ink:#14181D; --muted:#5A6470; --faint:#8B939C; --line:#E3E5E1;
+    --accent:#0F5C5B; --accent-dk:#0B4443; --paper:#FBFBF9; --surface:#fff;
+    --ochre:#A8641B; --tick-off:#DFE2DE;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --nav:#11201F;
+    --sidebar-w:208px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .mono,.eyebrow,.pill,.tab,.stat .v,.frac,button,input,select,textarea{
+    font-family:ui-monospace,"Roboto Mono",Menlo,monospace}
+  .eyebrow{font:600 9px/1; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+  h1,h2,h3{margin:0; font-weight:600}
+  a{color:var(--accent)}
+
+  /* ---------------------------------------------------------------- gate */
+  #gate{max-width:300px; margin:15vh auto; text-align:left}
+  #gate .mark{width:34px; height:34px; border-radius:4px; background:var(--accent);
+    display:grid; place-items:center; color:#fff; font:600 14px/1 ui-monospace,Menlo,monospace;
+    margin-bottom:14px}
+  #gate h1{font-size:18px; margin:0 0 4px}
+  #gate p{color:var(--muted); font-size:12px; margin:0 0 16px}
+  #pin{width:100%; padding:11px; border:1px solid var(--line); border-radius:4px;
+    font:15px/1 ui-monospace,Menlo,monospace; letter-spacing:.25em; text-align:center;
+    background:var(--surface)}
+  #pin:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  #gateMsg{margin-top:10px; font-size:12px; color:var(--critical); min-height:16px}
+
+  /* --------------------------------------------------------------- shell */
+  #app{display:none; min-height:100%}
+  /* The gradient paints the sidebar's column for the full document height.
+     nav itself is 100vh and sticky, so on a long page the column would
+     otherwise run out of dark and show paper beneath it. */
+  #app.on{display:grid; grid-template-columns:var(--sidebar-w) 1fr;
+    background:linear-gradient(90deg, var(--nav) 0, var(--nav) var(--sidebar-w),
+      var(--paper) var(--sidebar-w))}
+
+  nav{background:var(--nav); color:#fff; padding:16px 0; position:sticky; top:0;
+    height:100vh; display:flex; flex-direction:column}
+  nav .brand{display:flex; align-items:center; gap:9px; padding:0 16px 18px}
+  nav .brand .mark{width:24px; height:24px; border-radius:3px; background:var(--accent);
+    display:grid; place-items:center; font:600 11px/1 ui-monospace,Menlo,monospace}
+  nav .brand b{font-size:12.5px; font-weight:600; letter-spacing:.01em}
+  nav button{display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+    background:none; border:0; color:rgba(255,255,255,.68); padding:9px 16px; cursor:pointer;
+    font:600 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.09em; text-transform:uppercase}
+  nav button:hover{color:#fff; background:rgba(255,255,255,.05)}
+  nav button.on{color:#fff; background:rgba(255,255,255,.09);
+    box-shadow:inset 2px 0 0 var(--accent)}
+  nav button .ic{width:14px; text-align:center; font-size:12px; opacity:.9}
+  nav .spacer{flex:1}
+  nav .foot{padding:12px 16px 0; font-size:10px; color:rgba(255,255,255,.4); line-height:1.5}
+  nav .foot button{padding:6px 0; text-transform:none; letter-spacing:0; font-size:10px}
+
+  main{min-width:0; display:flex; flex-direction:column}
+  header{display:flex; align-items:center; gap:12px; padding:14px 24px; background:var(--surface);
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5}
+  header h1{font-size:15px; margin-right:auto}
+  header .sub{color:var(--muted); font-size:11.5px}
+  .wrap{padding:20px 24px 40px; max-width:1080px; width:100%}
+
+  /* --------------------------------------------------------------- bits */
+  button.btn{border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    padding:7px 12px; border-radius:4px; cursor:pointer; font:600 10px/1;
+    letter-spacing:.08em; text-transform:uppercase}
+  button.btn:hover{border-color:var(--accent); color:var(--accent)}
+  button.btn.pri{background:var(--accent); border-color:var(--accent); color:#fff}
+  button.btn.pri:hover{background:var(--accent-dk); border-color:var(--accent-dk); color:#fff}
+  button.btn:disabled{opacity:.45; cursor:default}
+  button.btn.sm{padding:5px 9px; font-size:9px}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:6px}
+  .grp{font:600 9px/1; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+    padding:24px 0 10px; display:flex; align-items:center; gap:8px}
+  .grp .n{color:var(--faint); font-weight:400}
+
+  /* KPI row — stat tiles, not charts: these are single headline numbers,
+     so a plot would add nothing. */
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px}
+  .stat{padding:14px 15px}
+  .stat .k{display:flex; align-items:center; gap:6px; margin-bottom:7px}
+  .stat .k .eyebrow{color:var(--muted)}
+  .stat .v{font-size:26px; font-weight:600; line-height:1; letter-spacing:-.01em}
+  .stat .cap{font-size:11px; color:var(--faint); margin-top:5px}
+  .dot{width:8px; height:8px; border-radius:50%; flex:none; display:inline-block}
+  .dot.good{background:var(--good)} .dot.warning{background:var(--warning)}
+  .dot.serious{background:var(--serious)} .dot.critical{background:var(--critical)}
+  .dot.idle{background:var(--tick-off)}
+
+  .row{display:flex; align-items:center; gap:11px; padding:11px 15px;
+    border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row .who{flex:1; min-width:0}
+  .row .co{font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap}
+  .row .meta{color:var(--muted); font-size:11.5px; margin-top:2px}
+  .row .act{display:flex; gap:6px; flex:none}
+  .row.clickable{cursor:pointer}
+  .row.clickable:hover{background:#F6F8F6}
+
+  .pill{font:600 9px/1; letter-spacing:.06em; text-transform:uppercase; padding:4px 7px;
+    border-radius:3px; background:#EEF0EE; color:var(--muted); flex:none;
+    display:inline-flex; align-items:center; gap:5px}
+  .pill.critical{background:#FBEBEB; color:#8f2020}
+  .pill.warning{background:#FDF4E0; color:#7a5406}
+  .pill.serious{background:#FCEEE7; color:#8a4326}
+  .pill.good{background:#E7F6E7; color:#0a6b0a}
+
+  /* Progress: one tick per task, filled = complete. A bar, not a chart —
+     the job is magnitude against a known whole. */
+  .ticks{display:flex; gap:2px; flex:none}
+  .tick{width:5px; height:13px; border-radius:1px; background:var(--tick-off)}
+  .tick.on{background:var(--accent)}
+  .frac{font-size:11px; color:var(--muted); flex:none; min-width:46px; text-align:right}
+
+  .empty{padding:26px 16px; text-align:center; color:var(--faint); font-size:12.5px}
+  .empty b{display:block; color:var(--muted); font-weight:600; margin-bottom:3px; font-size:13px}
+  .skel{height:12px; background:linear-gradient(90deg,#EDEFED,#F6F7F6,#EDEFED);
+    background-size:200% 100%; animation:sh 1.2s infinite; border-radius:3px}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  .toast{position:fixed; right:18px; bottom:18px; background:var(--ink); color:#fff;
+    padding:11px 15px; border-radius:5px; font-size:12px; max-width:340px; z-index:50;
+    box-shadow:0 6px 22px rgba(0,0,0,.18)}
+  .toast.bad{background:#7d1f1f}
+
+  /* --------------------------------------------------------------- forms */
+  .form{max-width:680px}
+  .sect{padding:18px 20px; border-top:1px solid var(--line)}
+  .sect:first-child{border-top:0}
+  .sect h3{font-size:12.5px; margin-bottom:2px}
+  .sect .hint{color:var(--faint); font-size:11.5px; margin-bottom:14px}
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .f{display:flex; flex-direction:column; gap:5px}
+  .f.wide{grid-column:1/-1}
+  .f label{font:600 9px/1; letter-spacing:.11em; text-transform:uppercase; color:var(--muted)}
+  .f input,.f select,.f textarea{padding:8px 9px; border:1px solid var(--line); border-radius:4px;
+    font:12px/1.4 inherit; background:var(--surface); color:var(--ink); width:100%}
+  .f textarea{min-height:78px; resize:vertical; font-family:inherit}
+  .f input:focus,.f select:focus,.f textarea:focus{outline:2px solid var(--accent);
+    outline-offset:-1px}
+  .f .note{font-size:11px; color:var(--faint)}
+  .checks{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:7px}
+  .chk{display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border:1px solid var(--line);
+    border-radius:4px; cursor:pointer; background:var(--surface)}
+  .chk:hover{border-color:var(--accent)}
+  .chk.on{border-color:var(--accent); background:#F2F7F6}
+  .chk input{margin:1px 0 0}
+  .chk .nm{font-size:12px; font-weight:600}
+  .chk .cat{font-size:10.5px; color:var(--faint)}
+  .bar{display:flex; gap:9px; align-items:center; padding:14px 20px; border-top:1px solid var(--line);
+    background:#F7F9F7; border-radius:0 0 6px 6px}
+  .bar .sp{flex:1}
+
+  /* -------------------------------------------------------------- detail */
+  .back{background:none; border:0; color:var(--muted); cursor:pointer; padding:0;
+    font:600 10px/1 ui-monospace,Menlo,monospace; letter-spacing:.08em; text-transform:uppercase}
+  .back:hover{color:var(--accent)}
+  .rail{display:flex; gap:5px; padding:14px 15px; overflow-x:auto}
+  .step{flex:1; min-width:96px; padding:8px 9px; border-radius:4px; background:#F1F3F1;
+    border:1px solid var(--line)}
+  .step.done{background:#EAF3EE; border-color:#CBE0D4}
+  .step.cur{background:var(--accent); border-color:var(--accent); color:#fff}
+  .step .p{font:600 8.5px/1; letter-spacing:.1em; text-transform:uppercase; opacity:.75}
+  .step .n{font-size:11.5px; font-weight:600; margin-top:4px}
+  .task{display:flex; align-items:center; gap:10px; padding:9px 15px; border-top:1px solid var(--line)}
+  .task .n{flex:1; min-width:0; font-size:12.5px}
+  .task select{padding:5px 7px; border:1px solid var(--line); border-radius:3px;
+    font:11px/1 inherit; background:var(--surface); width:136px; flex:none}
+  .modal{position:fixed; inset:0; background:rgba(10,14,18,.45); display:grid; place-items:center;
+    padding:20px; z-index:40}
+  .modal .box{background:var(--surface); border-radius:7px; max-width:620px; width:100%;
+    max-height:86vh; overflow:auto}
+  .modal .hd{padding:15px 18px; border-bottom:1px solid var(--line); display:flex;
+    align-items:center; gap:10px; position:sticky; top:0; background:var(--surface)}
+  .modal .hd h3{font-size:13px; margin-right:auto}
+  .modal .bd{padding:16px 18px; font-size:12.5px; white-space:pre-wrap; line-height:1.55}
+  .modal .subj{font-size:12px; color:var(--muted); padding:0 18px 12px}
+  @media(max-width:760px){
+    #app.on{grid-template-columns:1fr; background:var(--paper)}
+    /* A single non-wrapping flex row squeezes the company name to nothing
+       and pushes the fraction off-screen. Stack the identity above the
+       status pills, and drop the per-task ticks — at this width they are
+       sub-pixel and the fraction carries the same information. */
+    .row{flex-wrap:wrap; row-gap:8px}
+    .row .who{flex:1 0 100%}
+    .row .act{width:100%}
+    .ticks{display:none}
+    .frac{min-width:0; text-align:left}
+    .wrap{padding:16px 14px 30px}
+    header{padding:12px 14px}
+    .task select{width:120px}
+    nav{height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
+      padding:10px}
+    nav .brand{padding:0 10px 0 6px}
+    nav .spacer,nav .foot{display:none}
+    .fields{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="mark">LD</div>
+  <h1>Onboarding</h1>
+  <p>Enter the dashboard PIN.</p>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+  <div id="gateMsg"></div>
+</div>
+
+<div id="app">
+  <nav>
+    <div class="brand"><div class="mark">LD</div><b>Onboarding</b></div>
+    <button data-v="overview" class="on"><span class="ic">◇</span>Overview</button>
+    <button data-v="queue"><span class="ic">▸</span>Queue</button>
+    <button data-v="clients"><span class="ic">▤</span>Clients</button>
+    <button data-v="new"><span class="ic">+</span>New client</button>
+    <div class="spacer"></div>
+    <div class="foot">
+      <button class="mono" id="refresh">↻ Refresh</button>
+      <div id="stamp"></div>
+    </div>
+  </nav>
+  <main>
+    <header>
+      <h1 id="hTitle">Overview</h1>
+      <span class="sub" id="hSub"></span>
+    </header>
+    <div class="wrap" id="view"></div>
+  </main>
+</div>
+
+<script>
+// ---------------------------------------------------------------- plumbing
+
+var TOKEN = '';           // no localStorage in the Apps Script sandbox
+var VIEW  = 'overview';
+var CACHE = { overview:null, queue:null, platforms:null, options:null };
+var DETAIL = null;
+
+/**
+ * Every server function this page calls. api() dispatches dynamically, which
+ * hides the call sites from scripts/check.mjs — its whole job is proving each
+ * google.script.run target exists and is public. So the list is declared here
+ * and check.mjs validates it by name instead. Adding a call means adding it
+ * here, or api() throws before the round trip.
+ */
+var SERVER_FNS = [
+  'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
+  'updateTaskStatus', 'updateClientField', 'dashCreateDrive',
+  'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
+  'getPlatformList', 'getIntakeOptions', 'submitIntake'
+];
+
+/** google.script.run as a promise, so views can chain instead of nest. */
+function api(fn){
+  var args = [].slice.call(arguments, 1);
+  if (SERVER_FNS.indexOf(fn) === -1){
+    return Promise.reject(new Error('Unregistered server call: ' + fn));
+  }
+  return new Promise(function(res, rej){
+    google.script.run
+      .withSuccessHandler(res)
+      .withFailureHandler(function(e){ rej(e); })[fn].apply(null, args);
+  });
+}
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function el(id){ return document.getElementById(id); }
+function toast(msg, bad){
+  var t = document.createElement('div');
+  t.className = 'toast' + (bad ? ' bad' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, bad ? 6000 : 3200);
+}
+function fail(e){ toast((e && e.message) || String(e), true); }
+function ticks(done, total){
+  var n = Math.min(total || 0, 26), out = '';
+  var on = total ? Math.round((done / total) * n) : 0;
+  for (var i = 0; i < n; i++) out += '<div class="tick' + (i < on ? ' on' : '') + '"></div>';
+  return '<div class="ticks">' + out + '</div>';
+}
+/** Status colour always ships with its own text label — never colour alone. */
+function pill(kind, label){
+  return '<span class="pill ' + kind + '"><span class="dot ' + kind + '"></span>'
+    + esc(label) + '</span>';
+}
+function loading(){
+  var r = '';
+  for (var i = 0; i < 4; i++){
+    r += '<div class="row"><div class="who"><div class="skel" style="width:38%"></div>'
+      + '<div class="skel" style="width:22%; margin-top:7px; height:9px"></div></div></div>';
+  }
+  return '<div class="card">' + r + '</div>';
+}
+function emptyState(title, body){
+  return '<div class="card"><div class="empty"><b>' + esc(title) + '</b>' + esc(body) + '</div></div>';
+}
+
+// ---------------------------------------------------------------- gate
+
+el('pin').addEventListener('keydown', function(e){
+  if (e.key !== 'Enter') return;
+  var v = el('pin').value;
+  el('gateMsg').textContent = 'Checking…';
+  api('verifyPin', v).then(function(r){
+    if (!r.ok){ el('gateMsg').textContent = r.message; el('pin').select(); return; }
+    TOKEN = r.token;
+    el('gate').style.display = 'none';
+    el('app').classList.add('on');
+    go('overview');
+  }).catch(function(e){ el('gateMsg').textContent = (e && e.message) || 'Failed.'; });
+});
+el('pin').focus();
+
+// ---------------------------------------------------------------- routing
+
+var TITLES = {
+  overview:['Overview','How onboarding is tracking right now'],
+  queue:['Queue','What can be sent, and what is blocking the rest'],
+  clients:['Clients','Every account and where it has got to'],
+  'new':['New client','One submit builds the record, tasks, folder and plan']
+};
+[].forEach.call(document.querySelectorAll('nav button[data-v]'), function(b){
+  b.addEventListener('click', function(){ go(b.getAttribute('data-v')); });
+});
+el('refresh').addEventListener('click', function(){
+  CACHE.overview = null; CACHE.queue = null; go(VIEW);
+});
+
+function go(v){
+  VIEW = v; DETAIL = null;
+  [].forEach.call(document.querySelectorAll('nav button[data-v]'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-v') === v);
+  });
+  el('hTitle').textContent = TITLES[v][0];
+  el('hSub').textContent = TITLES[v][1];
+  if (v === 'overview') renderOverview();
+  else if (v === 'queue') renderQueue();
+  else if (v === 'clients') renderClients();
+  else renderIntake();
+}
+function stamp(){
+  var d = new Date();
+  el('stamp').textContent = 'Updated ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+
+// ---------------------------------------------------------------- overview
+
+function renderOverview(){
+  el('view').innerHTML = loading();
+  var p = CACHE.overview ? Promise.resolve(CACHE.overview) : api('getDashboardOverview', TOKEN);
+  p.then(function(d){
+    CACHE.overview = d; stamp();
+    var t = d.totals || {clients:0, overdue:0, blocked:0, stale:0};
+    var live = (d.clients || []).filter(function(c){
+      return c.status !== 'Churned' && c.status !== 'Paused';
+    });
+    // A client belongs to exactly one section. Overdue/blocked outranks
+    // waiting, otherwise the same row appears twice and the counts read as
+    // more clients in trouble than there are.
+    var attention = live.filter(function(c){ return c.overdue || c.blocked; });
+    var seen = {};
+    attention.forEach(function(c){ seen[c.clientId] = 1; });
+    var waiting = live.filter(function(c){
+      return !seen[c.clientId] && c.daysWaiting !== null && c.daysWaiting >= 5;
+    });
+
+    var h = '<div class="stats">'
+      + statTile('idle', 'Onboarding', live.length, live.length === 1 ? 'client active' : 'clients active')
+      + statTile('critical', 'Overdue', t.overdue, t.overdue === 1 ? 'client past due' : 'clients past due')
+      + statTile('serious', 'Blocked', t.blocked, 'have a blocked task')
+      + statTile('warning', 'Waiting', t.stale, 'chased 5+ days ago')
+      + '</div>';
+
+    h += '<div class="grp">Needs attention <span class="n">' + attention.length + '</span></div>';
+    h += attention.length
+      ? '<div class="card">' + attention.map(clientRow).join('') + '</div>'
+      : emptyState('Nothing overdue or blocked', 'Every active client is on schedule.');
+
+    if (waiting.length){
+      h += '<div class="grp">Waiting on client <span class="n">' + waiting.length + '</span></div>';
+      h += '<div class="card">' + waiting.map(clientRow).join('') + '</div>';
+    }
+    el('view').innerHTML = h;
+    wireClientRows();
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+function statTile(kind, label, value, cap){
+  return '<div class="card stat">'
+    + '<div class="k"><span class="dot ' + kind + '"></span>'
+    + '<span class="eyebrow">' + esc(label) + '</span></div>'
+    + '<div class="v">' + (value || 0) + '</div>'
+    + '<div class="cap">' + esc(cap) + '</div></div>';
+}
+function clientRow(c){
+  var tags = '';
+  if (c.overdue) tags += pill('critical', c.overdue + ' overdue');
+  if (c.blocked) tags += pill('serious', c.blocked + ' blocked');
+  if (c.daysWaiting !== null && c.daysWaiting >= 5) tags += pill('warning', c.daysWaiting + 'd waiting');
+  if (!tags && c.pct === 100) tags = pill('good', 'complete');
+  return '<div class="row clickable" data-id="' + esc(c.clientId) + '">'
+    + '<div class="who"><div class="co">' + esc(c.company) + '</div>'
+    + '<div class="meta">' + esc(c.status || '—') + (c.owner ? ' · ' + esc(c.owner) : '') + '</div></div>'
+    + tags + ticks(c.done, c.total)
+    + '<div class="frac">' + c.done + '/' + c.total + '</div></div>';
+}
+/** One editable Clients-tab field. Saves on change; no explicit save button. */
+function pField(field, label, value, options, area){
+  var v = value == null ? '' : value;
+  var input;
+  if (options){
+    var has = options.indexOf(v) !== -1;
+    input = '<select data-field="' + field + '">'
+      + (has ? '' : '<option value="' + esc(v) + '" selected>' + esc(v || '—') + '</option>')
+      + options.map(function(o){
+          return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
+        }).join('') + '</select>';
+  } else if (area){
+    input = '<textarea data-field="' + field + '">' + esc(v) + '</textarea>';
+  } else {
+    input = '<input data-field="' + field + '" value="' + esc(v) + '">';
+  }
+  return '<div class="f' + (area ? ' wide' : '') + '"><label>' + esc(label) + '</label>'
+    + input + '</div>';
+}
+
+function wireClientRows(){
+  [].forEach.call(document.querySelectorAll('.row.clickable[data-id]'), function(r){
+    r.addEventListener('click', function(){ openClient(r.getAttribute('data-id')); });
+  });
+}
+
+// ---------------------------------------------------------------- queue
+
+function renderQueue(){
+  el('view').innerHTML = loading();
+  var p = CACHE.queue ? Promise.resolve(CACHE.queue) : api('getSendQueue', TOKEN);
+  p.then(function(q){
+    CACHE.queue = q; stamp();
+    var h = '';
+    h += section('Ready to send', q.ready, function(r){
+      return actions(r, [['pri', 'Preview', 'preview']]);
+    }, 'Nothing is ready', 'Every phase email is either sent or waiting on internal work.');
+
+    h += section('Waiting on client', q.waiting, function(r){
+      return (r.days != null ? pill('warning', r.days + 'd') : '')
+        + actions(r, [['', 'Nudge', 'nudge']]);
+    }, 'Nobody is waiting', 'No outstanding client requests.');
+
+    h += section('Held by internal work', q.gated, function(r){
+      return '<div class="frac">' + (r.reasons || []).length + ' gate'
+        + ((r.reasons || []).length === 1 ? '' : 's') + '</div>';
+    }, 'Nothing held', 'No phase is blocked by internal setup.');
+
+    h += section('Needs fixing', q.blocked, function(r){
+      return pill('critical', (r.problems || []).length + ' problem'
+        + ((r.problems || []).length === 1 ? '' : 's'));
+    }, 'Nothing broken', 'No preflight problems.');
+
+    el('view').innerHTML = h;
+    wireQueue();
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+function section(title, rows, right, emptyTitle, emptyBody){
+  rows = rows || [];
+  var h = '<div class="grp">' + esc(title) + ' <span class="n">' + rows.length + '</span></div>';
+  if (!rows.length) return h + emptyState(emptyTitle, emptyBody);
+  h += '<div class="card">' + rows.map(function(r){
+    var detail = [];
+    if (r.phaseName) detail.push('Phase ' + r.phase + ' · ' + r.phaseName);
+    if (r.owner) detail.push(r.owner);
+    if (r.count) detail.push(r.count + ' task' + (r.count === 1 ? '' : 's'));
+    var sub = (r.reasons || r.problems || []).slice(0, 2).join(' · ');
+    return '<div class="row"><div class="who">'
+      + '<div class="co">' + esc(r.company) + '</div>'
+      + '<div class="meta">' + esc(detail.join(' · ')) + (sub ? ' — ' + esc(sub) : '') + '</div>'
+      + '</div>' + right(r) + '</div>';
+  }).join('') + '</div>';
+  return h;
+}
+function actions(r, list){
+  return '<div class="act">' + list.map(function(a){
+    return '<button class="btn sm ' + a[0] + '" data-act="' + a[2] + '" data-id="'
+      + esc(r.clientId) + '" data-phase="' + (r.phase || '') + '">' + a[1] + '</button>';
+  }).join('') + '</div>';
+}
+function wireQueue(){
+  [].forEach.call(document.querySelectorAll('[data-act]'), function(b){
+    b.addEventListener('click', function(){
+      var id = b.getAttribute('data-id'), ph = b.getAttribute('data-phase');
+      var nudge = b.getAttribute('data-act') === 'nudge';
+      b.disabled = true; b.textContent = '…';
+      var call = nudge ? api('dashPreviewNudge', TOKEN, id) : api('dashPreview', TOKEN, id, Number(ph));
+      call.then(function(p){
+        b.disabled = false; b.textContent = nudge ? 'Nudge' : 'Preview';
+        if (!p.ok){ toast(p.message || 'Cannot preview.', true); return; }
+        showPreview(p, id, ph, nudge);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = nudge ? 'Nudge' : 'Preview'; fail(e);
+      });
+    });
+  });
+}
+
+/** Preview is read-only by contract — opening this must never mark anything. */
+function showPreview(p, clientId, phase, nudge){
+  var m = document.createElement('div');
+  m.className = 'modal';
+  m.innerHTML = '<div class="box">'
+    + '<div class="hd"><h3>' + (nudge ? 'Nudge' : 'Phase email') + ' preview</h3>'
+    + '<button class="btn sm" data-x="1">Close</button>'
+    + '<button class="btn sm pri" data-send="1">Send now</button></div>'
+    + '<div class="subj"><b>To</b> ' + esc(p.to || '—') + '<br><b>Subject</b> ' + esc(p.subject || '')
+    + '</div><div class="bd">' + esc(p.body || '') + '</div></div>';
+  document.body.appendChild(m);
+  m.addEventListener('click', function(e){ if (e.target === m) m.remove(); });
+  m.querySelector('[data-x]').addEventListener('click', function(){ m.remove(); });
+  m.querySelector('[data-send]').addEventListener('click', function(){
+    var b = m.querySelector('[data-send]');
+    b.disabled = true; b.textContent = 'Sending…';
+    var call = nudge ? api('dashSendNudge', TOKEN, clientId)
+                     : api('dashSend', TOKEN, clientId, Number(phase));
+    call.then(function(r){
+      m.remove();
+      toast(r.ok ? ('Sent to ' + (r.to || 'client')) : (r.message || 'Send failed.'), !r.ok);
+      CACHE.queue = null; CACHE.overview = null;
+      if (VIEW === 'queue') renderQueue();
+    }).catch(function(e){ m.remove(); fail(e); });
+  });
+}
+
+// ---------------------------------------------------------------- clients
+
+function renderClients(){
+  el('view').innerHTML = loading();
+  var p = CACHE.overview ? Promise.resolve(CACHE.overview) : api('getDashboardOverview', TOKEN);
+  p.then(function(d){
+    CACHE.overview = d; stamp();
+    var all = d.clients || [];
+    var h = '<div class="f" style="max-width:280px; margin-bottom:4px">'
+      + '<input id="q" placeholder="Search company or owner…" autocomplete="off"></div>'
+      + '<div id="list"></div>';
+    el('view').innerHTML = h;
+    var draw = function(){
+      var term = (el('q').value || '').toLowerCase();
+      var rows = all.filter(function(c){
+        return !term || (c.company + ' ' + (c.owner || '')).toLowerCase().indexOf(term) !== -1;
+      });
+      el('list').innerHTML = rows.length
+        ? '<div class="grp">' + rows.length + (rows.length === 1 ? ' client' : ' clients')
+          + '</div><div class="card">' + rows.map(clientRow).join('') + '</div>'
+        : emptyState('No match', 'Nothing matches “' + term + '”.');
+      wireClientRows();
+    };
+    el('q').addEventListener('input', draw);
+    draw();
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+/**
+ * Mirrors the Clients!Status validation list in applyValidation_(). There is no
+ * server function that returns it, so it is duplicated here — change both
+ * together or the dropdown will offer a value the sheet rejects.
+ */
+var CLIENT_STATUSES = ['Intake','Access Pending','Auditing','Building','Live','Paused','Churned'];
+var CALL_STATES = ['Not applicable','To schedule','Scheduled','Running'];
+
+function openClient(clientId){
+  el('hTitle').textContent = 'Client';
+  el('hSub').textContent = '';
+  el('view').innerHTML = loading();
+  // getClientDetail returns billingOptions but not cadences, so the intake
+  // options are fetched alongside rather than duplicating CADENCES here.
+  Promise.all([
+    api('getClientDetail', TOKEN, clientId),
+    CACHE.options ? Promise.resolve(CACHE.options) : api('getIntakeOptions')
+  ]).then(function(res){
+    var d = res[0];
+    CACHE.options = res[1];
+    DETAIL = d;
+    var c = d.client || {};
+    el('hTitle').textContent = c.company || 'Client';
+    el('hSub').textContent = (c.status || '') + (c.owner ? ' · ' + c.owner : '');
+
+    var h = '<button class="back" id="back">← All clients</button>';
+
+    var ps = d.phaseState || {};
+    if (ps.phases && ps.phases.length){
+      h += '<div class="grp">Phases</div><div class="card"><div class="rail">'
+        + ps.phases.map(function(p){
+            var cls = p.phase < ps.current ? 'done' : (p.phase === ps.current ? 'cur' : '');
+            return '<div class="step ' + cls + '"><div class="p">Phase ' + p.phase + '</div>'
+              + '<div class="n">' + esc(p.name) + '</div></div>';
+          }).join('') + '</div></div>';
+    }
+
+    var s = d.summary || {done:0, total:0, pct:0};
+    h += '<div class="grp">Progress</div><div class="card"><div class="row">'
+      + '<div class="who"><div class="co">' + s.done + ' of ' + s.total + ' tasks complete</div>'
+      + '<div class="meta">' + s.pct + '%</div></div>' + ticks(s.done, s.total) + '</div></div>';
+
+    var tasks = d.tasks || [];
+    var byPhase = {};
+    tasks.forEach(function(t){ (byPhase[t.phase] = byPhase[t.phase] || []).push(t); });
+    Object.keys(byPhase).sort().forEach(function(k){
+      h += '<div class="grp">Phase ' + esc(k) + ' <span class="n">'
+        + byPhase[k].length + '</span></div><div class="card">';
+      h += byPhase[k].map(function(t){
+        return '<div class="task"><div class="n">' + esc(t.task)
+          + (t.gate ? ' <span class="pill">gate</span>' : '') + '</div>'
+          + '<select data-task="' + esc(t.task) + '">'
+          + (d.statuses || []).map(function(o){
+              return '<option' + (o === t.status ? ' selected' : '') + '>' + esc(o) + '</option>';
+            }).join('') + '</select></div>';
+      }).join('');
+      h += '</div>';
+    });
+
+    // Only the fields updateClientField accepts — anything else silently
+    // returns { ok:false, message:'Unknown field.' }.
+    h += '<div class="grp">Profile</div><div class="card"><div class="sect"><div class="fields">'
+      + pField('status', 'Status', c.status, CLIENT_STATUSES)
+      + pField('owner', 'Onboarding owner', c.owner)
+      + pField('cadence', 'Meeting cadence', c.cadence, CACHE.options.cadences)
+      + pField('billing', 'Media billing', c.billing, d.billingOptions || CACHE.options.billing)
+      + pField('call', 'Onboarding call', c.call, CALL_STATES)
+      + pField('slack', 'Slack channel', c.slack)
+      + pField('alias', 'Email alias', c.alias)
+      + pField('approvals', 'Approvals contact', c.approvals)
+      + pField('renewal', 'Renewal date', c.renewal)
+      + pField('scope', 'Scope', c.scope, null, true)
+      + '</div></div></div>';
+
+    h += '<div class="grp">Links</div><div class="card"><div class="row">'
+      + '<div class="who"><div class="meta">'
+      + (c.alias ? 'Alias ' + esc(c.alias) : 'No alias yet') + '</div></div>'
+      + (c.drive ? '<a class="btn sm" href="' + esc(c.drive) + '" target="_blank">Drive</a>'
+                 : '<button class="btn sm" id="mkDrive">Create Drive folder</button>')
+      + '</div></div>';
+
+    el('view').innerHTML = h;
+    el('back').addEventListener('click', function(){ go('clients'); });
+
+    [].forEach.call(document.querySelectorAll('[data-field]'), function(inp){
+      inp.addEventListener('change', function(){
+        api('updateClientField', TOKEN, clientId, inp.getAttribute('data-field'), inp.value)
+          .then(function(r){
+            toast(r.ok ? 'Saved.' : (r.message || 'Could not save.'), !r.ok);
+            CACHE.overview = null; CACHE.queue = null;
+          }).catch(fail);
+      });
+    });
+
+    [].forEach.call(document.querySelectorAll('select[data-task]'), function(sel){
+      sel.addEventListener('change', function(){
+        api('updateTaskStatus', TOKEN, clientId, sel.getAttribute('data-task'), sel.value)
+          .then(function(r){
+            toast(r.ok ? 'Saved.' : (r.message || 'Could not save.'), !r.ok);
+            CACHE.overview = null; CACHE.queue = null;
+          }).catch(fail);
+      });
+    });
+    var mk = el('mkDrive');
+    if (mk) mk.addEventListener('click', function(){
+      mk.disabled = true; mk.textContent = 'Creating…';
+      api('dashCreateDrive', TOKEN, clientId).then(function(r){
+        toast(r.ok ? 'Folder created.' : (r.message || 'Failed.'), !r.ok);
+        openClient(clientId);
+      }).catch(function(e){ mk.disabled = false; mk.textContent = 'Create Drive folder'; fail(e); });
+    });
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+// ---------------------------------------------------------------- intake
+
+function renderIntake(){
+  el('view').innerHTML = loading();
+  Promise.all([
+    CACHE.platforms ? Promise.resolve(CACHE.platforms) : api('getPlatformList'),
+    CACHE.options ? Promise.resolve(CACHE.options) : api('getIntakeOptions')
+  ]).then(function(r){
+    CACHE.platforms = r[0]; CACHE.options = r[1];
+    el('view').innerHTML = intakeHtml(r[0], r[1]);
+    wireIntake();
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+function field(id, label, opts){
+  opts = opts || {};
+  var input;
+  if (opts.type === 'textarea'){
+    input = '<textarea id="' + id + '" placeholder="' + esc(opts.ph || '') + '"></textarea>';
+  } else if (opts.options){
+    input = '<select id="' + id + '">' + (opts.blank ? '<option value=""></option>' : '')
+      + opts.options.map(function(o){ return '<option>' + esc(o) + '</option>'; }).join('')
+      + '</select>';
+  } else {
+    input = '<input id="' + id + '" type="' + (opts.type || 'text') + '" placeholder="'
+      + esc(opts.ph || '') + '">';
+  }
+  return '<div class="f' + (opts.wide ? ' wide' : '') + '"><label for="' + id + '">'
+    + esc(label) + '</label>' + input
+    + (opts.note ? '<div class="note">' + esc(opts.note) + '</div>' : '') + '</div>';
+}
+function intakeHtml(platforms, options){
+  return '<div class="card form">'
+    + '<div class="sect"><h3>Company</h3><div class="hint">Only the company name is required.</div>'
+    + '<div class="fields">'
+    + field('company', 'Company', {wide:true})
+    + field('contact', 'Primary contact')
+    + field('email', 'Contact email', {type:'email'})
+    + field('website', 'Website', {ph:'https://'})
+    + field('vertical', 'Vertical')
+    + '</div></div>'
+
+    + '<div class="sect"><h3>Commercial</h3>'
+    + '<div class="hint">Contract start drives every task due date. Blank uses today.</div>'
+    + '<div class="fields">'
+    + field('contractStart', 'Contract start', {type:'date'})
+    + field('mrr', 'MRR', {type:'number', ph:'0'})
+    + field('owner', 'Onboarding owner', {note:'Blank uses the Config default.'})
+    + field('cadence', 'Meeting cadence', {options:options.cadences, blank:true})
+    + field('billing', 'Media billing', {options:options.billing, blank:true})
+    + field('renewal', 'Renewal date', {type:'date'})
+    + field('approvals', 'Approvals contact')
+    + field('slack', 'Slack channel', {ph:'#client-name'})
+    + field('scope', 'Scope', {type:'textarea', wide:true, ph:'What we are contracted to do.'})
+    + '</div></div>'
+
+    + '<div class="sect"><h3>Platforms</h3>'
+    + '<div class="hint">Pick what this client runs. Internal setup tasks are always added.</div>'
+    + '<div class="checks">' + platforms.map(function(p){
+        return '<label class="chk"><input type="checkbox" value="' + esc(p.name) + '">'
+          + '<span><span class="nm">' + esc(p.name) + '</span><br>'
+          + '<span class="cat">' + esc(p.category) + ' · ' + esc(p.method) + '</span></span></label>';
+      }).join('') + '</div></div>'
+
+    + '<div class="sect"><h3>Context</h3>'
+    + '<div class="hint">Paste the sales call transcript and contract. Long text is moved to a '
+    + 'Doc automatically. These feed the generated onboarding plan.</div>'
+    + '<div class="fields">'
+    + field('transcript', 'Sales transcript', {type:'textarea', wide:true})
+    + field('contract', 'Contract text', {type:'textarea', wide:true})
+    + field('notes', 'Context notes', {type:'textarea', wide:true})
+    + '</div></div>'
+
+    + '<div class="sect"><h3>On submit</h3>'
+    + '<div class="checks">'
+    + '<label class="chk on"><input type="checkbox" id="makeDrive" checked>'
+    + '<span><span class="nm">Create Drive folder</span><br>'
+    + '<span class="cat">With the standard subfolders</span></span></label>'
+    + '<label class="chk on"><input type="checkbox" id="weeklyCall" checked>'
+    + '<span><span class="nm">Weekly onboarding call</span><br>'
+    + '<span class="cat">Adds the recurring call task</span></span></label>'
+    + '<label class="chk"><input type="checkbox" id="generatePlan">'
+    + '<span><span class="nm">Generate onboarding plan</span><br>'
+    + '<span class="cat">Calls Anthropic — takes ~30s</span></span></label>'
+    + '</div></div>'
+
+    + '<div class="bar"><span class="sp"></span>'
+    + '<span class="note" id="formMsg"></span>'
+    + '<button class="btn pri" id="submit">Create client</button></div></div>';
+}
+function wireIntake(){
+  [].forEach.call(document.querySelectorAll('.chk input'), function(i){
+    i.addEventListener('change', function(){ i.closest('.chk').classList.toggle('on', i.checked); });
+  });
+  el('submit').addEventListener('click', function(){
+    var b = el('submit');
+    var company = el('company').value.trim();
+    if (!company){
+      el('formMsg').textContent = 'Company is required.';
+      el('company').focus();
+      return;
+    }
+    var platforms = [].filter.call(
+      document.querySelectorAll('.checks .chk input[type=checkbox][value]'),
+      function(i){ return i.checked; }).map(function(i){ return i.value; });
+
+    var payload = {
+      company: company,
+      contact: el('contact').value.trim(),
+      email: el('email').value.trim(),
+      website: el('website').value.trim(),
+      vertical: el('vertical').value.trim(),
+      contractStart: el('contractStart').value,
+      mrr: el('mrr').value,
+      owner: el('owner').value.trim(),
+      cadence: el('cadence').value,
+      billing: el('billing').value,
+      renewal: el('renewal').value,
+      approvals: el('approvals').value.trim(),
+      slack: el('slack').value.trim(),
+      scope: el('scope').value.trim(),
+      platforms: platforms,
+      transcript: el('transcript').value,
+      contract: el('contract').value,
+      notes: el('notes').value,
+      makeDrive: el('makeDrive').checked,
+      weeklyCall: el('weeklyCall').checked,
+      generatePlan: el('generatePlan').checked
+    };
+    b.disabled = true;
+    b.textContent = payload.generatePlan ? 'Creating & generating…' : 'Creating…';
+    el('formMsg').textContent = 'This can take a moment.';
+    api('submitIntake', payload).then(function(r){
+      CACHE.overview = null; CACHE.queue = null;
+      toast(r.company || company ? 'Created ' + company + ' (' + r.clientId + ')' : 'Created.');
+      openClient(r.clientId);
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Create client';
+      el('formMsg').textContent = '';
+      fail(e);
+    });
+  });
+}
+</script>
+</body>
+</html>

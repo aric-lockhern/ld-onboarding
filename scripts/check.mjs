@@ -99,6 +99,15 @@ for (const [f, src] of Object.entries(htmlSrc)) {
       if (!c[1].startsWith('with')) called.set(c[1], f);
     }
   }
+
+  // A page that dispatches dynamically (`run[fn](...)`) is invisible to the
+  // scans above, so it declares its targets in a SERVER_FNS array instead.
+  const decl = src.match(/SERVER_FNS\s*=\s*\[([\s\S]*?)\]/);
+  if (decl) {
+    for (const m of decl[1].matchAll(/'([A-Za-z0-9_]+)'|"([A-Za-z0-9_]+)"/g)) {
+      called.set(m[1] || m[2], f + ' (SERVER_FNS)');
+    }
+  }
 }
 
 if (!called.size) fail('no google.script.run calls found — regex may be stale');
@@ -129,6 +138,28 @@ for (const [mapName, tabConst] of [['C', 'CLIENTS'], ['A', 'ACCESS']]) {
     ? pass(`${mapName}.WIDTH ${w} matches ${headers} ${tabConst} headers`)
     : fail(`${mapName}.WIDTH is ${w} but ${tabConst} has ${headers} headers`);
 }
+
+// ---- 6. no two src files share a basename
+// Apps Script drops the extension: Admin.gs and Admin.html both want to be
+// "Admin", and names are unique across types. clasp fails the push with
+// "A file with this name already exists in the current project: Admin" —
+// after some files have already uploaded, so the project is left half-written.
+console.log('\nChecking for filename collisions');
+const byBase = new Map();
+for (const f of files) {
+  if (f === 'appsscript.json') continue;
+  const base = f.replace(/\.[^.]*$/, '');
+  if (!byBase.has(base)) byBase.set(base, []);
+  byBase.get(base).push(f);
+}
+let collisions = 0;
+for (const [base, group] of byBase) {
+  if (group.length > 1) {
+    fail(`${group.join(' and ')} both become "${base}" in Apps Script — rename one`);
+    collisions++;
+  }
+}
+if (!collisions) pass(`${byBase.size} file names are unique once extensions are dropped`);
 
 console.log(failures ? `\n${failures} problem(s)\n` : '\nAll checks passed\n');
 process.exit(failures ? 1 : 0);

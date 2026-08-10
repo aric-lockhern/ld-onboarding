@@ -11,7 +11,7 @@ Intake, AI onboarding plan, instruction emails, Drive structure, due dates, and 
    | `Code.gs` | script |
    | `PlanGen.gs` | script |
    | `Templates.gs` | script |
-   | `Admin.gs` | script |
+   | `AdminServer.gs` | script |
    | `Digest.gs` | script |
    | `Send.gs` | script |
    | `Phases.gs` | script |
@@ -140,6 +140,40 @@ Things deliberately left out, in rough order of value:
 3. **Offboarding checklist** — the mirror of this. Revoking access is the step that never gets done, and stale agency access on a former client's accounts is a real liability.
 4. **Renewal triggers** — the `Renewal Date` field is captured but nothing reads it yet. A 60-day-out task would close the loop.
 5. **The five API request flows** — the biggest lift but the most setup. Google Ads and Meta first; between them they cover ad accounts, Pages, Instagram, pixels, and catalogs.
+
+## The web app URL
+
+The same two UIs are also served at a URL, so staff can use the tool without opening the spreadsheet.
+
+```
+<url>/exec              dashboard
+<url>/exec?page=intake  new client intake
+```
+
+Nothing is duplicated — `doGet` in `WebApp.gs` hands back the same `Admin.html` and `Intake.html` the menu uses, and `google.script.run` behaves identically in a web app.
+
+### Deploying it
+
+In the script editor: **Deploy → New deployment → Web app**, then Deploy. The URL is shown on the confirmation screen. Afterwards, **Onboarding → Show web app URL** prints it any time.
+
+**Every code change needs a new deployment version to reach that URL.** `clasp push` updates the code; it does not update a deployment. In the editor: **Deploy → Manage deployments → ✏️ edit → Version: New version → Deploy**. The sheet's menu picks up pushed code immediately, so the menu and the URL can run different versions — if a fix appears in the sheet but not at the URL, this is why.
+
+### Who can reach it, and as whom
+
+Set in `src/appsscript.json`:
+
+```json
+"webapp": { "executeAs": "USER_DEPLOYING", "access": "DOMAIN" }
+```
+
+- `access: DOMAIN` — anyone signed in on the Workspace domain. Use `MYSELF` while testing, `ANYONE` only with a real reason.
+- `executeAs: USER_DEPLOYING` — the code runs as whoever deployed it, not as the visitor.
+
+That second setting has teeth. Everyone using the URL is operating as the deploying account: reads and writes to the sheet happen with that account's permissions, **client access emails send from that account**, and they consume that account's Gmail quota (500/day Workspace, 100/day consumer). A colleague who opens the URL and clicks Send has sent mail as you.
+
+The dashboard PIN is the only thing in front of that, and it is a convenience lock — it is not access control. If that trade isn't acceptable, switch `executeAs` to `USER_ACCESSING`, which makes each person act as themselves and requires them to have edit access to the sheet.
+
+Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
 ## Deploying code changes
 
