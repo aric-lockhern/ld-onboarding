@@ -145,7 +145,7 @@ Things deliberately left out, in rough order of value:
 
 The **+ New client** button opens a two-step flow.
 
-**Step 1 — sources.** Three optional boxes: sales call transcript, onboarding/kickoff transcript, scope of work. Each takes pasted text, a ClickUp doc link, or a Google Doc link. The whole step is skippable; not every client arrives with documents, and a flow you cannot skip is a flow people work around.
+**Step 1 — sources.** Three optional boxes: sales call transcript, onboarding/kickoff transcript, scope of work. Each takes pasted text, a ClickUp doc link, a Google Doc link, or an **uploaded file** — PDF, Word, or plain text. Scopes of work are almost always PDFs, which is why uploads exist. The whole step is skippable; not every client arrives with documents, and a flow you cannot skip is a flow people work around.
 
 **Step 2 — review and create.** Anthropic reads whatever was supplied and returns a pre-filled form. Every extracted value carries the sentence it came from and a confidence chip, shown by default rather than behind a hover — the point is checking a number without going hunting for it.
 
@@ -164,6 +164,16 @@ Reading a ClickUp doc needs an API token: **ClickUp → Settings → Apps → AP
 Links look like `doc.clickup.com/{workspaceId}/d/h/{docId}/{pageId}`. The fetch pulls **every page in the doc**, not just the linked one — transcripts are routinely split across pages and grabbing only the deep-linked page silently truncates the input.
 
 Without a token, the step-1 screen says so up front. Pasted text and Google Doc links work regardless.
+
+### Uploads
+
+Anything that is not plain text is converted by Drive: the file is uploaded with a Google Doc mimeType, which makes Drive run its own conversion — including OCR on scanned PDFs — and `DocumentApp` reads the result. The temporary Doc is **trashed immediately**, including when the conversion fails, so reading a scope of work does not leave a copy lying in My Drive.
+
+This needs the advanced Drive service, declared in `src/appsscript.json`. **Enabling it changes the manifest, so the first deploy after this will re-prompt for OAuth consent** — that is expected, not a fault.
+
+Limit is 12 MB, enforced in the browser and again on the server. A PDF that is pure scanned images with no OCR layer converts to almost nothing; the extractor detects that and says so rather than returning a confidently empty form.
+
+Picking a file disables that source's text box. The file wins — choosing one is the more deliberate act, and sending both would double the prompt for no gain.
 
 ### Cost and limits
 

@@ -31,8 +31,9 @@ const SOURCE_KINDS = [
  * Callable from App.html. Every source is optional; with none supplied this
  * returns empty rather than inventing a client out of nothing.
  *
- * @param {Object} sources  { sales: string, kickoff: string, sow: string }
- *   Each value is either pasted text or a URL (ClickUp doc or Google Doc).
+ * @param {Object} sources  { sales, kickoff, sow }
+ *   Each value is pasted text, a URL (ClickUp doc or Google Doc), or an
+ *   uploaded file as { name, mimeType, data } where data is base64.
  */
 function extractIntake(sources) {
   sources = sources || {};
@@ -41,8 +42,9 @@ function extractIntake(sources) {
   const problems = [];
 
   SOURCE_KINDS.forEach(kind => {
-    const raw = String(sources[kind.key] || '').trim();
+    const raw = sources[kind.key];
     if (!raw) return;
+    if (typeof raw === 'string' && !raw.trim()) return;
     try {
       const text = resolveSource_(raw);
       if (text && text.trim()) docs.push({ label: kind.label, text: text.trim() });
@@ -96,8 +98,11 @@ function promptForClickUpToken() {
 
 // ---------------------------------------------------------------- SOURCES
 
-/** Pasted text passes through; a URL is fetched. */
+/** Pasted text passes through; a URL is fetched; a file is converted. */
 function resolveSource_(raw) {
+  if (raw && typeof raw === 'object' && raw.data) return fileToText_(raw);
+
+  raw = String(raw || '');
   if (!/^https?:\/\//i.test(raw) || /\s/.test(raw.trim())) return raw;
 
   const url = raw.trim();
@@ -149,6 +154,62 @@ function fetchClickUpDoc_(url) {
     const title = p.name ? '## ' + p.name + '\n' : '';
     return title + String(p.content || '');
   }).join('\n\n').trim();
+}
+
+// ---------------------------------------------------------------- FILES
+
+/** Anything bigger than this is a recording or a deck, not a document. */
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Turns an uploaded file into text.
+ *
+ * Plain text is decoded directly. Everything else — PDF, DOCX, RTF — goes
+ * through Drive: uploading with a Google Doc mimeType makes Drive run its own
+ * conversion, including OCR on scanned PDFs, and DocumentApp then reads the
+ * result. The temporary Doc is trashed straight after; a scope of work should
+ * not be left lying in My Drive as a side effect of reading it.
+ *
+ * A PDF that is pure scanned images with no OCR layer yields little or
+ * nothing. That reads as a bad extraction rather than a bad file, so it is
+ * called out explicitly.
+ */
+function fileToText_(file) {
+  const bytes = Utilities.base64Decode(file.data);
+  if (bytes.length > MAX_UPLOAD_BYTES) {
+    throw new Error(file.name + ' is ' + Math.round(bytes.length / 1048576)
+      + ' MB. The limit is 12 MB — paste the text instead.');
+  }
+
+  const mime = file.mimeType || 'application/octet-stream';
+  const blob = Utilities.newBlob(bytes, mime, file.name || 'upload');
+
+  if (mime.indexOf('text/') === 0 && mime.indexOf('text/html') !== 0) {
+    return blob.getDataAsString();
+  }
+
+  let docId = null;
+  try {
+    const created = Drive.Files.create(
+      { name: '[tmp] ' + (file.name || 'upload'), mimeType: 'application/vnd.google-apps.document' },
+      blob);
+    docId = created.id;
+    const text = DocumentApp.openById(docId).getBody().getText();
+
+    if (!text || text.trim().length < 40) {
+      throw new Error(file.name + ' converted to almost no text. If it is a '
+        + 'scanned PDF with no text layer, paste the text instead.');
+    }
+    return text;
+  } catch (e) {
+    if (String(e.message).indexOf('almost no text') !== -1) throw e;
+    throw new Error('Could not read ' + (file.name || 'that file') + ': ' + e.message);
+  } finally {
+    // Runs even when the conversion threw, so a failed read leaves nothing behind.
+    if (docId) {
+      try { DriveApp.getFileById(docId).setTrashed(true); } catch (ignore) {}
+    }
+  }
 }
 
 // ---------------------------------------------------------------- PROMPT
