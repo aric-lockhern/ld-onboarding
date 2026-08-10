@@ -50,17 +50,18 @@ jobs:
       - name: Install clasp
         run: npm install -g @google/clasp@2.5.0
 
+      # The script ID lives in the committed .clasp.json. It is an address,
+      # not a credential — reaching that script still requires Google
+      # permission on it — so there is nothing gained by hiding it, and one
+      # fewer secret to get wrong. CLASPRC_JSON is the only real secret here.
       - name: Write credentials
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
-          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
         run: |
           if [ -z "$CLASPRC_JSON" ]; then
-            echo "::error::CLASPRC_JSON secret is empty or unset."
-            exit 1
-          fi
-          if [ -z "$SCRIPT_ID" ]; then
-            echo "::error::SCRIPT_ID secret is empty or unset."
+            echo "::error::CLASPRC_JSON secret is empty or unset. Add it at"
+            echo "::error::Settings -> Secrets and variables -> Actions -> New repository secret."
+            echo "::error::It must be a Secret, not a Variable, and not an Environment secret."
             exit 1
           fi
 
@@ -69,13 +70,16 @@ jobs:
           chmod 600 "$HOME/.clasprc.json"
 
           if ! node -e 'JSON.parse(require("fs").readFileSync(process.env.HOME + "/.clasprc.json", "utf8"))'; then
-            echo "::error::CLASPRC_JSON is not valid JSON. Re-copy ~/.clasprc.json verbatim."
+            echo "::error::CLASPRC_JSON is not valid JSON. Re-copy ~/.clasprc.json verbatim,"
+            echo "::error::from the opening { to the closing }, with nothing added."
             exit 1
           fi
 
-          # .clasp.json is gitignored (it is per-checkout config, not source),
-          # so the runner generates its own from the secret.
-          printf '{"scriptId":"%s","rootDir":"src","fileExtension":"gs"}\n' "$SCRIPT_ID" > .clasp.json
+          if [ ! -f .clasp.json ]; then
+            echo "::error::.clasp.json is missing from the repository."
+            exit 1
+          fi
+          echo "Pushing to script $(node -p "require('./.clasp.json').scriptId")"
 
       # --force skips the interactive manifest-change prompt, which would
       # otherwise hang a non-interactive runner. It also means this push
@@ -83,6 +87,7 @@ jobs:
       - name: clasp push
         run: clasp push --force
 
+      # Only the credential — .clasp.json is tracked now and must survive.
       - name: Shred credentials
         if: always()
-        run: rm -f "$HOME/.clasprc.json" .clasp.json
+        run: rm -f "$HOME/.clasprc.json"
