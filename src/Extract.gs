@@ -23,7 +23,8 @@ const SOURCE_KINDS = [
   { key: 'sales', label: 'Sales call transcript' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript' },
   { key: 'sow', label: 'Scope of work' },
-  { key: 'form', label: 'ClickUp onboarding form' }
+  { key: 'form', label: 'ClickUp onboarding form' },
+  { key: 'deck', label: 'Pitch deck' }
 ];
 
 // ---------------------------------------------------------------- PUBLIC
@@ -75,6 +76,8 @@ function extractIntake(sources) {
     ok: true,
     fields: out.fields || {},
     platforms: out.platforms || null,
+    services: out.services || null,
+    fees: out.fees || null,
     conflicts: out.conflicts || [],
     openQuestions: out.openQuestions || [],
     sourcesUsed: docs.map(d => d.label),
@@ -118,8 +121,11 @@ function resolveSource_(raw) {
   const gdoc = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (gdoc) return DocumentApp.openById(gdoc[1]).getBody().getText();
 
-  throw new Error('Only ClickUp docs and Google Docs links are supported. '
-    + 'Paste the text instead.');
+  const slides = url.match(/docs\.google\.com\/presentation\/d\/([a-zA-Z0-9_-]+)/);
+  if (slides) return slidesToText_(slides[1]);
+
+  throw new Error('Supported links: ClickUp docs and tasks, Google Docs, '
+    + 'Google Slides. Otherwise upload the file or paste the text.');
 }
 
 /**
@@ -264,6 +270,25 @@ function formatCustomField_(f) {
   }
 }
 
+/**
+ * A pitch deck as text. SlidesApp would need another OAuth scope and walks
+ * every shape by hand; Drive's plain-text export gives the same words in one
+ * call, and pricing tables survive it well enough for the fee lines to be
+ * quotable.
+ */
+function slidesToText_(id) {
+  const res = UrlFetchApp.fetch(
+    'https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=text/plain',
+    { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true });
+
+  if (res.getResponseCode() !== 200) {
+    throw new Error('Could not export that Slides deck ('
+      + res.getResponseCode() + '). Check it is shared with you, or upload the PDF.');
+  }
+  return res.getContentText();
+}
+
 // ---------------------------------------------------------------- FILES
 
 /** Anything bigger than this is a recording or a deck, not a document. */
@@ -353,6 +378,9 @@ function buildExtractPrompt_(docs) {
       company: { value: 'string', confidence: 'high|medium|low', quote: 'string', source: 'string' }
     },
     platforms: { value: ['string'], confidence: 'high|medium|low', quote: 'string', source: 'string' },
+    services: { value: ['string'], confidence: 'high|medium|low', quote: 'string', source: 'string' },
+    fees: { value: [{ label: 'string', amount: 0 }], confidence: 'high|medium|low',
+            quote: 'string', source: 'string' },
     conflicts: [{ field: 'string', note: 'string', a: { source: 'string', quote: 'string' },
                   b: { source: 'string', quote: 'string' } }],
     openQuestions: ['string']
@@ -362,13 +390,29 @@ function buildExtractPrompt_(docs) {
     'Extract into these fields. Omit any you cannot support with a quote.',
     '',
     'company, contact (primary contact name), email, website, vertical,',
-    'contractStart (YYYY-MM-DD), mrr (number, no currency symbol),',
+    'contractStart (YYYY-MM-DD), mrr (number, no currency symbol — the TOTAL',
+    'the client actually pays per month, after any bundle discount),',
     'owner (onboarding owner at the agency), scope (2-4 sentences),',
-    'approvals (who signs off on creative), slack (channel name),',
-    'renewal (YYYY-MM-DD)',
+    'approvals (who signs off on creative), slack (channel name)',
     '',
     'cadence must be exactly one of: ' + CADENCES.join(' | '),
-    'billing must be exactly one of: ' + BILLING.join(' | '),
+    'term must be exactly one of: ' + TERMS.join(' | ')
+      + '. Use "Month to month" unless a fixed term is stated.',
+    'bizType must be exactly one of: ' + BIZ_TYPES.join(' | ')
+      + '. eCommerce sells products online; Lead Gen collects enquiries.',
+    '',
+    'services.value must be a subset of exactly these names:',
+    SERVICES.join(' | '),
+    'These are what the client BOUGHT. Do not confuse them with platforms,',
+    'which are what we need access to.',
+    '',
+    'fees: the fee table, usually a "Fees & Payment" or pricing slide, as',
+    'lines: [{ label, amount }]. Use the service name as the label where it',
+    'matches one of the services above. Include discounts as their own line',
+    'with a NEGATIVE amount. Do NOT include the total as a line — mrr is the',
+    'total. Example: a deck listing Google Ads 6000, Reddit 2000, AI Search',
+    'SEO 2000, bundle discount -4000, total 6000 becomes four lines and',
+    'mrr 6000.',
     '',
     'platforms.value must be a subset of exactly these names:',
     platformNames.join(' | '),
