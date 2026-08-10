@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --ink:#14181D; --muted:#5A6470; --faint:#8B939C; --line:#E3E5E1;
+    --accent:#0F5C5B; --accent-dk:#0B4443; --paper:#FBFBF9; --ochre:#A8641B;
+    --red:#8C2F1E; --tick-off:#DFE2DE;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .lbl,.eyebrow,.pill,.frac,.tab,.grp,.step,button{
+    font-family:ui-monospace,"Roboto Mono",Menlo,monospace}
+  .eyebrow{font:600 9px/1; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+
+  #gate{max-width:290px; margin:90px auto}
+  #gate h1{font-size:17px; margin:6px 0}
+  #gate p{color:var(--muted); font-size:12px; margin:0 0 15px}
+  #pin{width:100%; padding:10px; border:1px solid var(--line); border-radius:3px;
+    font:15px/1 ui-monospace,Menlo,monospace; letter-spacing:.25em; text-align:center}
+  #pin:focus{outline:2px solid var(--accent); outline-offset:-1px}
+  #gateMsg{margin-top:9px; font-size:12px; color:var(--red); min-height:16px}
+
+  header{display:flex; align-items:center; gap:9px; padding:12px 20px; background:#fff;
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5}
+  header h1{font-size:15px; margin:0; margin-right:auto}
+  .tab{border:0; background:#EEF0EE; color:var(--muted); padding:6px 11px; border-radius:3px;
+    font:600 9px/1; letter-spacing:.1em; text-transform:uppercase; cursor:pointer}
+  .tab.on{background:var(--accent); color:#fff}
+  .wrap{padding:16px 20px 30px}
+
+  .grp{font:600 9px/1; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+    padding:22px 0 9px; border-bottom:1px solid var(--line); margin-bottom:3px}
+  .grp:first-child{padding-top:0}
+  .grp em{font-style:normal; color:var(--faint); font-weight:400}
+
+  .q{display:flex; align-items:center; gap:12px; padding:13px 0;
+    border-bottom:1px solid var(--line)}
+  .q .who{flex:1; min-width:0}
+  .q .co{font-weight:600; font-size:13.5px}
+  .q .sub{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.45}
+  .q .blockers{font-size:11.5px; color:var(--ochre); margin-top:5px; line-height:1.5}
+
+  button.b{border:0; border-radius:3px; background:var(--accent); color:#fff; cursor:pointer;
+    padding:9px 15px; font:600 10px/1; letter-spacing:.1em; text-transform:uppercase;
+    flex:none; min-width:82px}
+  button.b:hover{background:var(--accent-dk)}
+  button.b:disabled{background:#A8B0AF; cursor:default}
+  button.b.ghost{background:#fff; color:var(--accent); border:1px solid var(--line)}
+  button.b.ghost:hover{background:#F1F4F2}
+  button.b.mute{background:#fff; color:var(--faint); border:1px solid var(--line); cursor:default}
+  button.b.warn{background:#fff; color:var(--ochre); border:1px solid #E2D3BF}
+  button.b.done{background:#E7F0EE; color:var(--accent)}
+
+  /* phase rail — where the client is, and what's holding them */
+  .rail{display:flex; gap:3px; margin:14px 0 4px}
+  .step{flex:1; padding:7px 5px 8px; border-radius:3px; background:#EFF1EF; text-align:center;
+    font:600 8px/1.3; letter-spacing:.07em; text-transform:uppercase; color:var(--faint)}
+  .step b{display:block; font-size:11px; margin-bottom:3px; letter-spacing:0}
+  .step.done{background:#E7F0EE; color:var(--accent)}
+  .step.open{background:var(--accent); color:#fff}
+  .phasenote{font-size:11.5px; color:var(--muted); line-height:1.5; margin:9px 0 4px}
+  .gatelist{font-size:11.5px; color:var(--ochre); line-height:1.55; margin-top:6px}
+
+  /* preview */
+  .pv{border:1px solid var(--line); border-radius:4px; background:#fff; margin:12px 0 0;
+    overflow:hidden}
+  .pv .head{padding:11px 13px; border-bottom:1px solid var(--line); background:#F7F8F7}
+  .pv .head .l{font:600 8px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--muted)}
+  .pv .head .v{font-size:12.5px; margin-top:3px; word-break:break-word}
+  .pv .head .v + .l{margin-top:9px}
+  .pv pre{margin:0; padding:13px; font:11.5px/1.6 ui-monospace,Menlo,monospace;
+    white-space:pre-wrap; max-height:300px; overflow:auto}
+  .pv .foot{display:flex; gap:8px; padding:11px 13px; border-top:1px solid var(--line);
+    background:#F7F8F7}
+  .pv .warns{padding:11px 13px; background:#FBF4EC; color:var(--ochre); font-size:11.5px;
+    line-height:1.55; border-bottom:1px solid var(--line)}
+
+  /* clients + detail */
+  .ticks{display:flex; gap:2px; align-items:center; flex-wrap:wrap; margin-top:8px}
+  .tick{width:6px; height:14px; border-radius:1px; background:var(--tick-off); flex:none}
+  .tick.on{background:var(--accent)} .tick.late{background:var(--ochre)}
+  .tick.blocked{background:var(--red)}
+  .frac{font:600 10px/1; color:var(--muted); margin-left:8px}
+  .crow{padding:13px 0; border-bottom:1px solid var(--line); cursor:pointer}
+  .crow:hover{background:#F4F6F4}
+  .back{background:none; border:0; padding:4px 0 8px; cursor:pointer; color:var(--accent);
+    font:600 9px/1 ui-monospace,Menlo,monospace; letter-spacing:.12em; text-transform:uppercase}
+
+  .task{display:flex; align-items:center; gap:10px; padding:10px 0;
+    border-bottom:1px solid var(--line)}
+  .task .n{flex:1; min-width:0}
+  .task .name{font-weight:600; font-size:12.5px}
+  .task .meta{font-size:11px; color:var(--muted); margin-top:3px}
+  .task select{padding:5px 7px; border:1px solid var(--line); border-radius:3px;
+    font:12px/1 inherit; background:#fff; flex:none; width:118px}
+  .task select.done{border-color:var(--accent); color:var(--accent); font-weight:600}
+  .task select.stuck{border-color:var(--red); color:var(--red); font-weight:600}
+  .task.is-done .name{color:var(--muted); font-weight:500}
+  .gatemark{color:var(--ochre); font-weight:700}
+  .toggle{background:none; border:0; padding:11px 0; cursor:pointer; color:var(--accent);
+    font:600 9px/1 ui-monospace,Menlo,monospace; letter-spacing:.11em; text-transform:uppercase}
+
+  details.det{margin:6px 0}
+  details.det summary{cursor:pointer; list-style:none; padding:9px 0; font:600 9px/1
+    ui-monospace,Menlo,monospace; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--accent); border-bottom:1px solid var(--line)}
+  details.det summary::-webkit-details-marker{display:none}
+  .profile{display:grid; grid-template-columns:repeat(3,1fr); gap:13px 18px; padding:14px 0}
+  .profile .full{grid-column:1/-1}
+  .lbl{display:block; font:600 8px/1; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:5px}
+  .val{font-size:12.5px; word-break:break-word}
+  .val.empty{color:var(--faint); font-style:italic}
+  .profile input,.profile select,.profile textarea{width:100%; padding:6px 8px;
+    border:1px solid var(--line); border-radius:3px; font:12.5px/1.35 inherit; background:#fff}
+  .profile textarea{resize:vertical; min-height:52px}
+
+  #msg{margin-top:13px; font-size:12.5px; min-height:17px; color:var(--accent)}
+  #msg.err{color:var(--red)}
+  .empty{padding:40px 0; text-align:center; color:var(--muted)}
+  .spin{display:inline-block; width:9px; height:9px; margin-right:6px;
+    border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+    animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="eyebrow">Onboarding</div>
+  <h1>Dashboard</h1>
+  <p>Enter your PIN to continue.</p>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+  <div id="gateMsg"></div>
+  <button class="b" id="unlock" style="width:100%;margin-top:11px;padding:11px">Unlock</button>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <h1 id="hTitle">Queue</h1>
+    <button class="tab on" data-v="queue">Queue</button>
+    <button class="tab" data-v="clients">Clients</button>
+  </header>
+  <div class="wrap" id="view"></div>
+</div>
+
+<script>
+var TOKEN = null;
+
+document.getElementById('unlock').addEventListener('click', unlock);
+document.getElementById('pin').addEventListener('keydown', function(e){
+  if (e.key === 'Enter') unlock(); });
+document.getElementById('pin').focus();
+
+function unlock(){
+  var b = document.getElementById('unlock');
+  b.disabled = true; b.textContent = 'Checking…';
+  google.script.run.withSuccessHandler(function(res){
+    b.disabled = false; b.textContent = 'Unlock';
+    if (!res.ok){ document.getElementById('gateMsg').textContent = res.message; return; }
+    TOKEN = res.token;
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadQueue();
+  }).withFailureHandler(function(e){
+    b.disabled = false; b.textContent = 'Unlock';
+    document.getElementById('gateMsg').textContent = e.message;
+  }).verifyPin(document.getElementById('pin').value);
+}
+
+each('.tab', function(t){
+  t.addEventListener('click', function(){
+    t.getAttribute('data-v') === 'queue' ? loadQueue() : loadClients(); });
+});
+
+// ---------------------------------------------------------------- queue
+function loadQueue(){
+  setTitle('Queue'); tabOn('queue'); busy();
+  google.script.run.withSuccessHandler(function(q){
+    var h = '';
+
+    h += '<div class="grp">Ready to send <em>' + q.ready.length + '</em></div>';
+    if (!q.ready.length) h += '<div class="empty">Nothing ready to go out.</div>';
+    q.ready.forEach(function(c){
+      h += qrow(c, 'Phase ' + c.phase + ' · ' + esc(c.phaseName) + ' · '
+        + c.count + ' item' + (c.count === 1 ? '' : 's'),
+        '<button class="b" data-pv="' + esc(c.clientId) + '" data-ph="' + c.phase
+        + '">Preview</button>');
+    });
+
+    if (q.waiting.length){
+      h += '<div class="grp">Waiting on client <em>' + q.waiting.length + '</em></div>';
+      q.waiting.forEach(function(c){
+        h += qrow(c, c.count + ' outstanding · ' + c.days + ' days',
+          '<button class="b ghost" data-nudge="' + esc(c.clientId) + '">Nudge</button>');
+      });
+    }
+
+    if (q.gated.length){
+      h += '<div class="grp">Held by internal work <em>' + q.gated.length + '</em></div>';
+      q.gated.forEach(function(c){
+        h += '<div class="q"><div class="who"><div class="co">' + esc(c.company) + '</div>'
+          + '<div class="sub">Phase ' + c.phase + ' · ' + esc(c.phaseName) + '</div>'
+          + '<div class="blockers">' + c.reasons.map(esc).join('<br>') + '</div></div>'
+          + '<button class="b ghost" data-open="' + esc(c.clientId) + '">Open</button></div>';
+      });
+    }
+
+    if (q.blocked.length){
+      h += '<div class="grp">Needs fixing <em>' + q.blocked.length + '</em></div>';
+      q.blocked.forEach(function(c){
+        h += '<div class="q"><div class="who"><div class="co">' + esc(c.company) + '</div>'
+          + '<div class="blockers">' + c.problems.map(esc).join('<br>') + '</div></div>'
+          + '<button class="b warn" data-open="' + esc(c.clientId) + '">Open</button></div>';
+      });
+    }
+
+    h += '<div id="msg"></div>';
+    document.getElementById('view').innerHTML = h;
+    wireQueue();
+  }).withFailureHandler(fail).getSendQueue(TOKEN);
+}
+
+function qrow(c, sub, btn){
+  return '<div class="q" id="q_' + esc(c.clientId) + '"><div class="who">'
+    + '<div class="co">' + esc(c.company) + '</div>'
+    + '<div class="sub">' + sub + '</div></div>' + btn + '</div>';
+}
+
+function wireQueue(){
+  each('[data-pv]', function(b){
+    b.addEventListener('click', function(){
+      openPreview(b, b.getAttribute('data-pv'), Number(b.getAttribute('data-ph')), false);
+    });
+  });
+  each('[data-nudge]', function(b){
+    b.addEventListener('click', function(){
+      openPreview(b, b.getAttribute('data-nudge'), null, true);
+    });
+  });
+  each('[data-open]', function(b){
+    b.addEventListener('click', function(){ loadDetail(b.getAttribute('data-open')); });
+  });
+}
+
+// ---------------------------------------------------------------- preview
+function openPreview(btn, clientId, phase, isNudge){
+  btn.disabled = true; btn.textContent = 'Loading';
+  var done = function(p){
+    btn.disabled = false; btn.textContent = isNudge ? 'Nudge' : 'Preview';
+    renderPreview(clientId, phase, isNudge, p);
+  };
+  var run = google.script.run.withSuccessHandler(done).withFailureHandler(function(e){
+    btn.disabled = false; btn.textContent = isNudge ? 'Nudge' : 'Preview'; fail(e);
+  });
+  isNudge ? run.dashPreviewNudge(TOKEN, clientId) : run.dashPreview(TOKEN, clientId, phase);
+}
+
+function renderPreview(clientId, phase, isNudge, p){
+  var host = document.getElementById('pvHost');
+  if (!host){
+    host = document.createElement('div');
+    host.id = 'pvHost';
+    var anchor = document.getElementById('q_' + clientId);
+    (anchor || document.getElementById('view')).insertAdjacentElement('afterend', host);
+  }
+
+  if (p.gated || (!p.ok && !p.blocked)){
+    host.innerHTML = '<div class="pv"><div class="warns">'
+      + (p.gated ? 'Held until these close:<br>' : '')
+      + (p.reasons || p.problems || ['Could not build the message.']).map(esc).join('<br>')
+      + '</div><div class="foot">'
+      + '<button class="b ghost" id="pvClose">Close</button></div></div>';
+    document.getElementById('pvClose').addEventListener('click', function(){ host.remove(); });
+    host.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
+  var h = '<div class="pv">';
+  if (p.blocked && p.problems && p.problems.length){
+    h += '<div class="warns">Will not send until fixed:<br>'
+      + p.problems.map(esc).join('<br>') + '</div>';
+  }
+  h += '<div class="head"><div class="l">To</div><div class="v">' + esc(p.to || '—') + '</div>'
+    + '<div class="l">Subject</div><div class="v">' + esc(p.subject) + '</div></div>'
+    + '<pre>' + esc(p.body) + '</pre>'
+    + '<div class="foot">'
+    + (p.blocked
+        ? '<button class="b mute" disabled>Blocked</button>'
+        : '<button class="b" id="pvSend">Send now</button>')
+    + '<button class="b ghost" id="pvClose">Close</button></div></div>';
+
+  host.innerHTML = h;
+  document.getElementById('pvClose').addEventListener('click', function(){ host.remove(); });
+
+  var sb = document.getElementById('pvSend');
+  if (sb) sb.addEventListener('click', function(){
+    sb.disabled = true; sb.textContent = 'Sending';
+    var after = function(r){
+      if (r.ok){
+        sb.className = 'b done'; sb.textContent = 'Sent';
+        note('', 'Sent to ' + r.to + '.');
+        setTimeout(loadQueue, 900);
+      } else {
+        sb.disabled = false; sb.textContent = 'Send now';
+        note('err', (r.reasons || r.problems || []).join(' '));
+      }
+    };
+    var run = google.script.run.withSuccessHandler(after).withFailureHandler(function(e){
+      sb.disabled = false; sb.textContent = 'Send now'; fail(e); });
+    isNudge ? run.dashSendNudge(TOKEN, clientId) : run.dashSend(TOKEN, clientId, phase);
+  });
+
+  host.scrollIntoView({ block: 'nearest' });
+}
+
+// ---------------------------------------------------------------- clients
+function loadClients(){
+  setTitle('Clients'); tabOn('clients'); busy();
+  google.script.run.withSuccessHandler(function(d){
+    if (!d.clients.length){
+      document.getElementById('view').innerHTML = '<div class="empty">No clients yet.</div>';
+      return;
+    }
+    var h = '';
+    d.clients.forEach(function(c){
+      h += '<div class="crow" data-open="' + esc(c.clientId) + '">'
+        + '<div style="font-weight:600">' + esc(c.company) + '</div>'
+        + '<div style="font-size:11.5px;color:var(--muted);margin-top:3px">'
+        + esc(c.status) + ' · ' + esc(c.owner || '—') + '</div>' + ticks(c) + '</div>';
+    });
+    h += '<div id="msg"></div>';
+    document.getElementById('view').innerHTML = h;
+    each('[data-open]', function(b){
+      b.addEventListener('click', function(){ loadDetail(b.getAttribute('data-open')); });
+    });
+  }).withFailureHandler(fail).getDashboardOverview(TOKEN);
+}
+
+function ticks(c){
+  var h = '<div class="ticks">';
+  for (var i = 0; i < c.total; i++){
+    var cls = i < c.done ? 'on' : (i >= c.total - c.blocked ? 'blocked'
+      : (i >= c.total - c.blocked - c.overdue ? 'late' : ''));
+    h += '<i class="tick ' + cls + '"></i>';
+  }
+  return h + '<span class="frac">' + c.done + '/' + c.total + '</span></div>';
+}
+
+// ---------------------------------------------------------------- detail
+function loadDetail(clientId){
+  busy();
+  google.script.run.withSuccessHandler(function(d){
+    var c = d.client, ps = d.phaseState;
+    setTitle(c.company);
+
+    var h = '<button class="back" id="back">← Back</button>';
+
+    h += '<div class="rail">' + ps.phases.map(function(p){
+      return '<div class="step ' + p.state + '"><b>' + p.phase + '</b>' + esc(p.name) + '</div>';
+    }).join('') + '</div>';
+
+    var cur = ps.phases.filter(function(p){ return p.state === 'open'; })[0];
+    if (cur){
+      h += '<div class="phasenote">' + esc(cur.meaning) + '</div>';
+      if (cur.openGates.length){
+        h += '<div class="gatelist">Gates still open:<br>'
+          + cur.openGates.map(function(g){
+              return esc(g.task) + (g.owner ? ' — ' + esc(g.owner) : ''); }).join('<br>')
+          + '</div>';
+      }
+      if (cur.email){
+        h += '<div style="margin-top:12px">'
+          + '<button class="b" id="pvBtn" data-ph="' + cur.phase + '">Preview email</button></div>';
+      }
+    } else {
+      h += '<div class="phasenote">All phases complete.</div>';
+    }
+
+    h += '<details class="det"><summary>Client details</summary><div class="profile">'
+      + f('Stage', c.status) + f('Owner', c.owner) + f('Contact', c.contact)
+      + s('cadence', 'Cadence', c.cadence,
+          ['', 'Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'])
+      + s('call', 'Onboarding call', c.call,
+          ['Not applicable', 'To schedule', 'Scheduled', 'Running'])
+      + s('billing', 'Media billing', c.billing, d.billingOptions)
+      + i('slack', 'Slack', c.slack) + i('approvals', 'Approvals', c.approvals)
+      + f('Renewal', c.renewal)
+      + '<div class="full"><span class="lbl">Alias</span><div class="val">'
+        + esc(c.alias) + '</div></div>'
+      + '<div class="full"><span class="lbl">Links</span><div class="val">'
+        + (c.drive ? '<a href="' + esc(c.drive) + '" target="_blank">Drive folder</a>'
+          : '<button class="toggle" id="mkDrive" style="padding:0">Create Drive folder</button>')
+        + (c.planDoc ? ' · <a href="' + esc(c.planDoc)
+          + '" target="_blank">Onboarding plan</a>' : '')
+      + '</div></div>'
+      + '<div class="full"><span class="lbl">Scope</span><textarea id="f_scope">'
+        + esc(c.scope || '') + '</textarea></div></div></details>';
+
+    // tasks grouped by phase, complete collapsed
+    ps.phases.forEach(function(p){
+      var mine = d.tasks.filter(function(t){ return (t.phase || 1) === p.phase; });
+      if (!mine.length) return;
+      var open = mine.filter(function(t){
+        return t.status !== 'Complete' && t.status !== 'N/A'; });
+      var done = mine.filter(function(t){ return t.status === 'Complete'; });
+
+      h += '<div class="grp">' + p.phase + ' · ' + esc(p.name)
+        + ' <em>' + p.done + '/' + p.total + '</em></div>';
+      if (!open.length) h += '<div style="padding:11px 0;color:var(--muted)">Phase complete.</div>';
+      open.forEach(function(t){ h += taskRow(t, d.statuses); });
+      if (done.length){
+        h += '<button class="toggle" data-dl="p' + p.phase + '">Show ' + done.length
+          + ' complete</button><div id="dl_p' + p.phase + '" style="display:none">'
+          + done.map(function(t){ return taskRow(t, d.statuses); }).join('') + '</div>';
+      }
+    });
+
+    h += '<div style="margin-top:16px">'
+      + '<button class="b ghost" id="nudgeBtn">Preview nudge</button></div><div id="msg"></div>';
+
+    document.getElementById('view').innerHTML = h;
+    wireDetail(clientId, cur);
+  }).withFailureHandler(fail).getClientDetail(TOKEN, clientId);
+}
+
+function taskRow(t, statuses){
+  var cls = t.status === 'Complete' ? 'done' : (t.status === 'Blocked' ? 'stuck' : '');
+  return '<div class="task' + (t.status === 'Complete' ? ' is-done' : '') + '">'
+    + '<div class="n"><span class="name">' + esc(t.task) + '</span>'
+    + (t.gate ? ' <span class="gatemark" title="Gate">▮</span>' : '')
+    + '<div class="meta">' + esc(t.method) + ' · ' + esc(t.owner || '')
+    + (t.due ? ' · ' + esc(t.due) : '')
+    + (t.overdueBy > 0 ? ' · <span style="color:var(--red)">' + t.overdueBy + 'd late</span>' : '')
+    + '</div></div>'
+    + '<select class="' + cls + '" data-task="' + esc(t.task) + '">'
+    + statuses.map(function(x){
+        return '<option' + (x === t.status ? ' selected' : '') + '>' + x + '</option>';
+      }).join('') + '</select></div>';
+}
+
+function wireDetail(clientId, cur){
+  document.getElementById('back').addEventListener('click', loadQueue);
+
+  each('[data-dl]', function(b){
+    b.addEventListener('click', function(){
+      var l = document.getElementById('dl_' + b.getAttribute('data-dl'));
+      var open = l.style.display === 'none';
+      l.style.display = open ? 'block' : 'none';
+      b.textContent = (open ? 'Hide ' : 'Show ') + l.children.length + ' complete';
+    });
+  });
+
+  each('select[data-task]', function(sel){
+    sel.addEventListener('change', function(){
+      sel.className = sel.value === 'Complete' ? 'done'
+        : (sel.value === 'Blocked' ? 'stuck' : '');
+      google.script.run.withSuccessHandler(function(){
+        note('', 'Saved.'); setTimeout(function(){ loadDetail(clientId); }, 500);
+      }).withFailureHandler(fail)
+        .updateTaskStatus(TOKEN, clientId, sel.getAttribute('data-task'), sel.value);
+    });
+  });
+
+  each('[data-field]', function(el){
+    el.addEventListener('change', function(){
+      google.script.run.withSuccessHandler(function(){ note('', 'Saved.'); })
+        .withFailureHandler(fail)
+        .updateClientField(TOKEN, clientId, el.getAttribute('data-field'), el.value);
+    });
+  });
+
+  var sc = document.getElementById('f_scope');
+  if (sc) sc.addEventListener('change', function(){
+    google.script.run.withSuccessHandler(function(){ note('', 'Saved.'); })
+      .withFailureHandler(fail).updateClientField(TOKEN, clientId, 'scope', sc.value);
+  });
+
+  var mk = document.getElementById('mkDrive');
+  if (mk) mk.addEventListener('click', function(){
+    mk.textContent = 'Creating…';
+    google.script.run.withSuccessHandler(function(r){
+      r.ok ? loadDetail(clientId) : note('err', r.message);
+    }).withFailureHandler(fail).dashCreateDrive(TOKEN, clientId);
+  });
+
+  var pv = document.getElementById('pvBtn');
+  if (pv) pv.addEventListener('click', function(){
+    openPreview(pv, clientId, Number(pv.getAttribute('data-ph')), false);
+  });
+
+  document.getElementById('nudgeBtn').addEventListener('click', function(){
+    openPreview(this, clientId, null, true);
+  });
+}
+
+// ---------------------------------------------------------------- helpers
+function f(l, v){ return '<div><span class="lbl">' + l + '</span><div class="val'
+  + (v ? '' : ' empty') + '">' + esc(v || 'Not set') + '</div></div>'; }
+function i(field, l, v){ return '<div><span class="lbl">' + l + '</span>'
+  + '<input data-field="' + field + '" value="' + esc(v || '') + '"></div>'; }
+function s(field, l, v, opts){ return '<div><span class="lbl">' + l + '</span>'
+  + '<select data-field="' + field + '">' + (opts || []).map(function(o){
+      return '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>'; }).join('')
+  + '</select></div>'; }
+
+function each(sel, fn){ [].forEach.call(document.querySelectorAll(sel), fn); }
+function tabOn(v){ each('.tab', function(t){
+  t.classList.toggle('on', t.getAttribute('data-v') === v); }); }
+function setTitle(t){ document.getElementById('hTitle').textContent = t; }
+function busy(){ document.getElementById('view').innerHTML =
+  '<div class="empty"><span class="spin"></span>Loading</div>'; }
+function note(cls, text){ var m = document.getElementById('msg');
+  if (m){ m.className = cls; m.textContent = text; } }
+function fail(e){ note('err', e && e.message ? e.message : 'Something went wrong.'); }
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;')
+  .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
