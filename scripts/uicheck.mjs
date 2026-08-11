@@ -91,6 +91,30 @@ const FAKE = {
     ]
   },
   hasClickUpToken: true,
+  createDraft: { ok:true, draftId:'DR-260811-0930', name:'Harbor & Sons SOW', folderId:'fake-folder' },
+  saveDraft: { ok:true, saved:'11 Aug, 09:41' },
+  deleteDraft: { ok:true },
+  renameDraft: { ok:true },
+  openDraft: { ok:true, draftId:'DR-260810-1612', name:'Harbor & Sons',
+    status:'Analysed', clientId:'', folderId:'fake-folder',
+    folderUrl:'https://drive.google.com/drive/folders/fake', updated:'10 Aug, 16:12',
+    missing:['Pitch deck'],
+    sources:[
+      { key:'sales', label:'Sales call transcript', via:'ClickUp doc', origin:'https://doc.clickup.com/x',
+        fileId:'file_stub_sales', chars:48210, words:8609, read:'10 Aug, 16:04',
+        preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out of Leeds' },
+      { key:'sow', label:'Scope of work', via:'Upload · harbor-sow.pdf', originalName:'harbor-sow.pdf',
+        fileId:'file_stub_sow', chars:9140, words:1602, read:'10 Aug, 16:06',
+        preview:'SCOPE OF WORK — Harbor & Sons Ltd and Lockhern Digital. Term commences 1 September 2026' },
+      { key:'deck', label:'Pitch deck', via:'Google Slides', fileId:'file_stub_deck',
+        chars:3100, words:520, gone:true, preview:'' }
+    ] },
+  listDrafts: { ok:true, drafts:[
+    { draftId:'DR-260810-1612', name:'Harbor & Sons', updated:'10 Aug, 16:12',
+      updatedAt:2, status:'Analysed', clientId:'', sourceCount:3, analysed:true },
+    { draftId:'DR-260807-0904', name:'Verity Outdoors', updated:'7 Aug, 09:04',
+      updatedAt:1, status:'Submitted', clientId:'VERITY-2607', sourceCount:2, analysed:true }
+  ] },
   runExtraction: {
     ok:true,
     sourcesUsed:['Sales call transcript','Scope of work','ClickUp onboarding form'],
@@ -150,6 +174,10 @@ const FAKE = {
     body:'Hi Dana,\n\nTo get started we need access to a few platforms. Please grant access to harborandsons@lockherndigital.com — an alias, not a person, so this survives staffing changes.\n\nGOOGLE ADS\nAdd harborandsons@lockherndigital.com...' }
 };
 
+// A reopened draft carries the last extraction, which is what puts "Use the
+// last analysis" beside "Re-analyse" instead of a bare Analyse button.
+FAKE.openDraft.extraction = FAKE.runExtraction;
+
 // Each withXHandler must return an INDEPENDENT runner, the way Apps Script
 // does — a single shared handler slot breaks any two concurrent calls, which
 // is exactly what Promise.all does.
@@ -179,7 +207,7 @@ const stub = `<script>
         hint:'Open the doc in ClickUp, select all, and paste it in — that always works.' };
     }
     var chars = isLink ? 48210 : String(raw && raw.data ? 'x' : raw || '').length * 40 + 9100;
-    return { ok:true, key:key, label:label, handle:'ex_stub_' + key,
+    return { ok:true, key:key, label:label, fileId:'file_stub_' + key,
       via: raw && raw.data ? 'Upload · ' + raw.name : (isLink ? 'ClickUp doc' : 'Pasted text'),
       chars:chars, words:Math.round(chars / 5.6), warn:'',
       preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out '
@@ -266,6 +294,24 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       const f2 = `${OUT}/${name}-new-review.png`;
       await page.screenshot({ path: f2, fullPage: name === 'desktop' });
       shots.push(f2);
+
+      // Reopening a stored draft: sources come back already read, one of them
+      // with its Drive copy deleted, so the failure row renders from storage.
+      // The header CTA is hidden while the intake view is open, so leave first.
+      await page.click('nav button[data-v="clients"]');
+      await page.waitForTimeout(200);
+      await page.click('#newBtn');
+      await page.waitForSelector('[data-open]', { timeout: 5000 });
+      const fDrafts = `${OUT}/${name}-new-drafts.png`;
+      await page.screenshot({ path: fDrafts, fullPage: name === 'desktop' });
+      shots.push(fDrafts);
+
+      await page.click('[data-open="DR-260810-1612"]');
+      await page.waitForSelector('#rrow_sales.ok', { timeout: 5000 });
+      await page.waitForTimeout(250);
+      const fResume = `${OUT}/${name}-new-resumed.png`;
+      await page.screenshot({ path: fResume, fullPage: name === 'desktop' });
+      shots.push(fResume);
     }
   }
 

@@ -38,18 +38,24 @@ const SOURCE_KINDS = [
 // ---------------------------------------------------------------- READ ONE
 
 /**
- * Fetches a single source and reports what came back. Callable from App.html.
+ * Fetches a single source, stores it on the draft, and reports what came back.
+ * Callable from App.html.
  *
  * Never throws: a failure is a returned object with `ok:false`, because the UI
  * needs the reason next to that document's row, not a rejected promise for the
  * whole batch.
  *
+ * The text lands in the draft's Drive folder rather than in a cache, so it is
+ * still there tomorrow. Re-analysing after changing one source, or correcting a
+ * fee weeks after the client was created, never costs another upload.
+ *
  * @param {string} key  one of SOURCE_KINDS
  * @param {string|Object} raw  pasted text, a URL, or { name, mimeType, data }
- * @return {Object} { ok, key, label, via, chars, words, preview, handle, warn }
+ * @param {string} draftId  the draft to store it against
+ * @return {Object} { ok, key, label, via, chars, words, preview, fileId, warn }
  *                  or { ok:false, error, hint }
  */
-function readSource(key, raw) {
+function readSource(key, raw, draftId) {
   const kind = SOURCE_KINDS.filter(k => k.key === key)[0];
   const label = kind ? kind.label : String(key);
   const via = sourceKindLabel_(raw);
@@ -76,60 +82,71 @@ function readSource(key, raw) {
                  + 'open the document, select all, and paste the text in.' };
   }
 
-  const handle = cachePutText_(text);
-  if (!handle) {
-    return { ok: false, key: key, label: label, via: via,
-             error: 'Read ' + text.length + ' characters but could not hold them '
-                  + 'between steps.',
-             hint: 'Try again. If it keeps happening, paste the text instead of '
-                 + 'linking the document.' };
-  }
-
   // A transcript that reads as three sentences usually means the fetch found a
   // stub — a cover page, an empty doc — rather than the thing itself. Worth
   // saying now, while re-linking is cheap.
   const words = text.split(/\s+/).length;
-  let warn = '';
-  if (words < 120) {
-    warn = 'Only ' + words + ' words. Check this is the full document and not a '
-         + 'cover page or a link to it.';
+  const warn = words < 120
+    ? 'Only ' + words + ' words. Check this is the full document and not a '
+      + 'cover page or a link to it.'
+    : '';
+
+  let record;
+  try {
+    record = storeSource_(draftId, key, label, text, {
+      via: via,
+      origin: (typeof raw === 'string') ? raw : '',
+      original: (raw && typeof raw === 'object' && raw.data) ? raw : null,
+      words: words,
+      preview: text.slice(0, 240).replace(/\s+/g, ' ').trim()
+    });
+  } catch (e) {
+    return { ok: false, key: key, label: label, via: via,
+             error: 'Read ' + text.length + ' characters but could not save them '
+                  + 'to the draft: ' + ((e && e.message) || String(e)),
+             hint: 'Retry. If it keeps failing, check the Drive Root Folder ID '
+                 + 'on the Config tab.' };
   }
 
   return {
-    ok: true, key: key, label: label, via: via, handle: handle,
-    chars: text.length, words: words,
-    preview: text.slice(0, 240).replace(/\s+/g, ' ').trim(),
-    warn: warn
+    ok: true, key: key, label: label, via: via,
+    fileId: record.fileId, originalName: record.originalName,
+    chars: record.chars, words: words, preview: record.preview, warn: warn
   };
 }
 
 // ---------------------------------------------------------------- ANALYSE
 
 /**
- * Sends the sources that read successfully to the model.
+ * Sends the stored sources to the model and saves the result on the draft.
  *
- * @param {Array} items  [{ key, handle }] — handles from readSource
+ * Reads straight from Drive rather than from anything the browser is holding,
+ * which is what makes "re-analyse" work on a draft opened a week later without
+ * a single file being uploaded again.
+ *
+ * @param {Array} items  [{ key, fileId }] — from readSource or a reopened draft
+ * @param {string} draftId  where to save the extraction
  * @return {Object} the extraction, or { ok:false, message }
  */
-function runExtraction(items) {
+function runExtraction(items, draftId) {
   items = items || [];
   if (!items.length) return { ok: false, message: 'No sources to analyse.' };
 
   const docs = [];
-  const expired = [];
+  const missing = [];
 
   items.forEach(it => {
     const kind = SOURCE_KINDS.filter(k => k.key === it.key)[0];
     const label = kind ? kind.label : String(it.key);
-    const text = cacheGetText_(it.handle);
-    if (text) docs.push({ key: it.key, label: label, text: text });
-    else expired.push(label);
+    const text = readStored_(it.fileId);
+    if (text && text.trim()) docs.push({ key: it.key, label: label, text: text });
+    else missing.push(label);
   });
 
   if (!docs.length) {
-    return { ok: false, expired: true,
-             message: 'The documents that were read have expired from the cache '
-                    + '(they are held for six hours). Read them again to continue.' };
+    return { ok: false, missingAll: true, missing: missing,
+             message: 'None of the stored documents could be read back from '
+                    + 'Drive. They may have been deleted — read the sources again.' };
   }
 
   // Character budget, then trim, so the model never silently loses the middle of
@@ -148,10 +165,10 @@ function runExtraction(items) {
     out = callAnthropic_(buildExtractPrompt_(docs), { maxTokens: EXTRACT_MAX_TOKENS });
   } catch (e) {
     return { ok: false, message: (e && e.message) || String(e),
-             trimmed: trimmed, expired: expired };
+             trimmed: trimmed, missing: missing };
   }
 
-  return {
+  const result = {
     ok: true,
     fields: out.fields || {},
     platforms: out.platforms || null,
@@ -161,8 +178,16 @@ function runExtraction(items) {
     openQuestions: out.openQuestions || [],
     sourcesUsed: docs.map(d => d.label),
     trimmed: trimmed,
-    expired: expired
+    missing: missing
   };
+
+  // Saved so reopening the draft shows what the model said last time without
+  // paying for the call again. A failed save is not a failed extraction.
+  if (draftId) {
+    try { saveDraft(draftId, { extraction: result, status: 'Analysed' }); }
+    catch (e) { result.saveWarning = (e && e.message) || String(e); }
+  }
+  return result;
 }
 
 /** Whether a ClickUp token is configured, so the UI can say so up front. */
@@ -179,58 +204,6 @@ function promptForClickUpToken() {
   PropertiesService.getScriptProperties()
     .setProperty('CLICKUP_API_TOKEN', res.getResponseText().trim());
   ui.alert('ClickUp token saved.');
-}
-
-// ---------------------------------------------------------------- HOLDING
-
-/**
- * Read and analyse are two round trips, so the text has to survive between
- * them. CacheService caps a single value at 100KB, which a transcript passes
- * easily, so the text is split across numbered keys with a count key alongside.
- *
- * The alternative — handing the text back to the browser and posting it up
- * again — would push a megabyte through google.script.run twice for no gain.
- */
-const EXTRACT_CACHE_TTL = 21600;   // six hours, the CacheService maximum
-const CACHE_CHUNK = 60000;         // characters; safely inside the 100KB value cap
-
-function cachePutText_(text) {
-  try {
-    const cache = CacheService.getScriptCache();
-    const id = 'ex_' + Utilities.getUuid().replace(/-/g, '').slice(0, 16);
-    const map = {};
-    let n = 0;
-    for (let i = 0; i < text.length; i += CACHE_CHUNK) {
-      map[id + '_' + n] = text.slice(i, i + CACHE_CHUNK);
-      n++;
-    }
-    map[id + '_n'] = String(n);
-    cache.putAll(map, EXTRACT_CACHE_TTL);
-    return id;
-  } catch (e) {
-    return '';
-  }
-}
-
-function cacheGetText_(id) {
-  if (!id) return '';
-  const cache = CacheService.getScriptCache();
-  const n = Number(cache.get(id + '_n') || 0);
-  if (!n) return '';
-
-  const keys = [];
-  for (let i = 0; i < n; i++) keys.push(id + '_' + i);
-  const got = cache.getAll(keys) || {};
-
-  let out = '';
-  for (let i = 0; i < n; i++) {
-    const part = got[id + '_' + i];
-    // A half-evicted document is worse than none — it would read as a complete
-    // one with a hole in it, and the model would answer confidently from it.
-    if (part === null || part === undefined) return '';
-    out += part;
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------- SOURCES

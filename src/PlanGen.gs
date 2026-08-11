@@ -48,7 +48,7 @@ function generatePlan_(clientRow) {
   const docUrl = writePlanDoc_(clientId, meta, plan);
 
   ss.getSheetByName(TABS.PLANS).appendRow([
-    clientId, meta.company, new Date(), cfg('Model') || 'claude-sonnet-5',
+    clientId, meta.company, new Date(), cfg('Model') || 'claude-opus-5',
     docUrl, JSON.stringify(plan)
   ]);
 
@@ -168,7 +168,7 @@ function callAnthropic_(prompt, opts) {
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     muteHttpExceptions: true,
     payload: JSON.stringify({
-      model: cfg('Model') || 'claude-sonnet-5',
+      model: cfg('Model') || 'claude-opus-5',
       max_tokens: opts.maxTokens || 8000,
       system: prompt.system,
       messages: [{ role: 'user', content: prompt.user }]
