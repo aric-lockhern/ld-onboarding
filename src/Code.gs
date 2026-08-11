@@ -232,8 +232,10 @@ function setup() {
   seedPhases_(ss);
   seedTemplates_(ss);
   seedConfig_(ss);
+  // Before applyValidation_, not after: the repair deletes rows, and validation
+  // applied first would be applied to rows that are about to go.
+  repairClientRows_(ss);
   applyValidation_(ss);
-  addProgressFormula_(ss);
 
   SpreadsheetApp.getUi().alert('Setup complete. Reload the sheet to load the Onboarding menu.');
 }
@@ -461,8 +463,21 @@ function seedConfig_(ss) {
   sh.setColumnWidth(3, 340);
 }
 
+/**
+ * Grows the sheet so a fixed-height range can be addressed.
+ *
+ * getRange past the last row throws rather than expanding, and repairClientRows_
+ * can shrink the Clients tab to a handful of rows — at which point asking for
+ * 500 rows of validation fails and takes the whole of setup() with it.
+ */
+function ensureRows_(sh, n) {
+  const have = sh.getMaxRows();
+  if (have < n) sh.insertRowsAfter(have, n - have);
+}
+
 function applyValidation_(ss) {
   const clients = ss.getSheetByName(TABS.CLIENTS);
+  ensureRows_(clients, 501);
   const list = (arr) => SpreadsheetApp.newDataValidation().requireValueInList(arr, true).build();
 
   clients.getRange(2, C.STATUS, 500).setDataValidation(
@@ -477,37 +492,76 @@ function applyValidation_(ss) {
   clients.getRange(2, C.PLAN_STATUS, 500).setDataValidation(
     list(['Not started', 'Generating', 'Ready', 'Approved']));
 
-  ss.getSheetByName(TABS.ACCESS).getRange(2, A.STATUS, 2000).setDataValidation(list(STATUSES));
+  const access = ss.getSheetByName(TABS.ACCESS);
+  ensureRows_(access, 2001);
+  access.getRange(2, A.STATUS, 2000).setDataValidation(list(STATUSES));
 
   const actions = ss.getSheetByName(TABS.ACTIONS);
   if (actions) {
+    ensureRows_(actions, 1001);
     actions.getRange(2, ACT.STATUS, 1000).setDataValidation(list(ACTION_STATUSES));
     actions.getRange(2, ACT.PRIORITY, 1000).setDataValidation(list(ACTION_PRIORITIES));
   }
 }
 
 /**
- * Clears the progress formula off rows that hold no client.
+ * Deletes the rows that look empty but are not, and closes the gap.
  *
- * This used to pre-fill it down 499 rows so a new client got a working cell
- * for free. A formula is content: getLastRow() on an empty Clients tab
- * therefore reported 501, and every read and write built off it was wrong in
- * a different way — the Team page announced "500 clients with no owner", and
- * submitIntake wrote each new client to getLastRow() + 1, which is row 502,
- * five hundred blank rows below anything anyone would scroll to.
+ * The progress formula used to be pre-filled down 499 rows so a new client got
+ * a working cell for free. A formula is content, so getLastRow() on an empty
+ * Clients tab reported 501, and everything built off it was wrong in a
+ * different way: the Team page announced "500 clients with no owner", and
+ * submitIntake wrote each new client to getLastRow() + 1 — five hundred blank
+ * rows below anything anyone would scroll to.
  *
- * submitIntake sets the formula on the row it writes, so nothing is lost.
- * This runs on setup() to repair a sheet that already has the 499.
+ * Clearing one named column is not enough. The live sheet carried its 499 in
+ * column U, not column X: they were written when Progress WAS column 21, and
+ * the columns added since moved the header without moving the formula. A
+ * repair that trusts the current column map misses every one of them.
+ *
+ * So the test is structural rather than positional — a row with no Client ID
+ * whose every cell is either empty or a formula holds no record, whatever
+ * column the leftovers landed in. A row with typed text in it is somebody
+ * part-way through entering a client by hand and is left alone.
+ *
+ * Deleting rather than clearing is deliberate: it also closes the gap, so a
+ * record stranded at row 501 comes back up to the top where it can be seen.
  */
-function addProgressFormula_(ss) {
+function repairClientRows_(ss) {
   const sh = ss.getSheetByName(TABS.CLIENTS);
   const last = sh.getLastRow();
-  if (last < 2) return;
+  if (last < 2) return 0;
 
-  const ids = sh.getRange(2, C.ID, last - 1, 1).getValues();
-  for (let i = ids.length - 1; i >= 0; i--) {
-    if (!String(ids[i][0]).trim()) sh.getRange(i + 2, C.PROGRESS).clearContent();
+  const width = Math.max(sh.getLastColumn(), C.WIDTH);
+  // Two bulk reads rather than a getRange per cell: 500 rows by 28 columns is
+  // 14,000 calls the other way, which is minutes of execution time.
+  const values = sh.getRange(2, 1, last - 1, width).getValues();
+  const formulas = sh.getRange(2, 1, last - 1, width).getFormulas();
+
+  const junk = [];
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][C.ID - 1]).trim()) continue;
+
+    let typed = false;
+    for (let c = 0; c < width; c++) {
+      if (formulas[i][c]) continue;                       // a leftover formula
+      if (String(values[i][c]).trim()) { typed = true; break; }
+    }
+    if (!typed) junk.push(i + 2);
   }
+  if (!junk.length) return 0;
+
+  // Bottom up, in contiguous runs, so the row numbers gathered above stay
+  // valid as the sheet shortens under them.
+  let n = junk.length - 1;
+  while (n >= 0) {
+    const end = junk[n];
+    let start = end;
+    while (n > 0 && junk[n - 1] === start - 1) { n--; start = junk[n]; }
+    sh.deleteRows(start, end - start + 1);
+    n--;
+  }
+  return junk.length;
 }
 
 /**
