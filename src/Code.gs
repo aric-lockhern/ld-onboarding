@@ -14,6 +14,7 @@ const TABS = {
   TEMPLATES: 'Templates',
   PHASES: 'Phases',
   DRAFTS: 'Drafts',
+  TEAM: 'Team',
   CONFIG: 'Config'
 };
 
@@ -22,6 +23,19 @@ const DRAFT_HEADERS = [
   'Draft ID', 'Name', 'Created', 'Updated', 'Status', 'Client ID',
   'Folder ID', 'Sources', 'Extraction', 'Form'
 ];
+
+/**
+ * Who works here, and what they are good at.
+ *
+ * Owner was free text, which made it useless for anything but reading — you
+ * cannot notify "Drake", assign by skill, or add someone to a Slack channel
+ * from a string someone typed. Skills is a comma list matched loosely against
+ * services and platforms, so audit work can land on whoever actually does it.
+ *
+ * Slack ID is the member ID (U01ABC…), not the handle: handles change, IDs do
+ * not, and the API wants the ID anyway.
+ */
+const TEAM_HEADERS = ['Name', 'Email', 'Slack Member ID', 'Skills', 'Role', 'Active'];
 
 const STATUSES = ['Not started', 'Info needed', 'Requested', 'Complete', 'Blocked', 'N/A'];
 const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
@@ -183,6 +197,8 @@ function setup() {
   mkTab_(ss, TABS.TEMPLATES, ['Task', 'Subject', 'Body']);
 
   mkTab_(ss, TABS.DRAFTS, DRAFT_HEADERS);
+
+  mkTab_(ss, TABS.TEAM, TEAM_HEADERS);
 
   seedPlatforms_(ss);
   seedServices_(ss);
@@ -496,6 +512,28 @@ function getIntakeOptions() {
  * it can be edited without a deploy, falling back to the seed constants when
  * the tab has not been created yet.
  */
+/**
+ * The team, for owner dropdowns, Slack invites and skill-based assignment.
+ *
+ * Returns [] when the tab is empty rather than inventing anyone — an empty
+ * directory should show as "nobody added yet", not as a silent fallback that
+ * makes assignment look like it worked.
+ */
+function getTeam() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.TEAM);
+  if (!sh || sh.getLastRow() < 2) return [];
+
+  return sh.getRange(2, 1, sh.getLastRow() - 1, TEAM_HEADERS.length).getValues()
+    .filter(r => r[0] && r[5] !== false)
+    .map(r => ({
+      name: String(r[0]).trim(),
+      email: String(r[1] || '').trim(),
+      slackId: String(r[2] || '').trim(),
+      skills: String(r[3] || '').split(',').map(x => x.trim()).filter(Boolean),
+      role: String(r[4] || '').trim()
+    }));
+}
+
 function getServiceList() {
   const row = r => {
     const rules = parsePlatformSpec_(r[2]);
