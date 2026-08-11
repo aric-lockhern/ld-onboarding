@@ -266,6 +266,58 @@
   .f textarea:disabled{background:var(--paper); color:var(--faint)}
 
   /* Client profile — prose, so it gets reading measure and spacing */
+  /* ------------------------------------------------------- client profile */
+  /* Ten thousand characters of genuinely useful prose is still a wall, and a
+     wall gets skimmed once and never opened again. The lead stays visible; the
+     rest collapses to one line per section so the shape of what is known is
+     readable in three seconds and any part of it is one click away. */
+  .pro-lead{font-size:15.5px; line-height:1.6; color:var(--ink); max-width:74ch;
+    margin:0 0 4px}
+  .pro-bar{display:flex; align-items:center; gap:10px; margin:16px 0 10px;
+    flex-wrap:wrap}
+  .pro-bar .sp{flex:1}
+  .pro-secs{display:grid; gap:8px}
+  .pro-sec{border:1px solid var(--line); border-radius:10px; background:var(--surface);
+    overflow:hidden}
+  .pro-sec.warn{border-color:#F0D9BE}
+  .pro-head{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    padding:12px 14px; background:none; border:0; cursor:pointer; font:inherit;
+    color:var(--ink)}
+  .pro-head:hover{background:var(--paper)}
+  .pro-head .tw{flex:none; width:11px; color:var(--mid); font-size:10px;
+    transition:transform .12s ease}
+  .pro-sec.on .tw{transform:rotate(90deg); color:var(--blue)}
+  .pro-head .ti{font-size:14px; font-weight:600; letter-spacing:-.006em; flex:none}
+  .pro-sec.on .pro-head .ti{color:var(--blue)}
+  /* The teaser is what makes a collapsed section worth having: the section
+     name alone says a topic exists, not what it says. */
+  .pro-head .te{font-size:13px; color:var(--faint); flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pro-head .ct{flex:none; font-size:11.5px; color:var(--faint);
+    background:var(--paper); border-radius:999px; padding:3px 8px;
+    font-variant-numeric:tabular-nums}
+  .pro-sec.warn .pro-head .ct{background:#FDF4E9; color:var(--warning)}
+  .pro-body{display:none; padding:2px 16px 16px 36px; font-size:14px; line-height:1.6}
+  .pro-sec.on .pro-body{display:block}
+  .pro-body p{margin:0 0 10px; max-width:74ch}
+  .pro-pt{margin:0 0 12px; max-width:74ch}
+  .pro-pt:last-child{margin-bottom:0}
+  /* Every bullet in this profile is one claim followed by its evidence.
+     Weighting the claim lets the eye take the section in a glance and read the
+     support only where it matters. */
+  .pro-pt .cl{display:block; font-weight:600; color:var(--ink)}
+  .pro-pt .ev{display:block; color:var(--muted); font-size:13.5px; margin-top:2px}
+  .pro-q{margin:0 0 14px; padding-left:13px; border-left:2px solid var(--blue-line);
+    max-width:74ch}
+  .pro-q:last-child{margin-bottom:0}
+  .pro-q .qt{display:block; font-size:14.5px; color:var(--blue-ink); font-style:italic}
+  .pro-q .qw{display:block; font-size:13px; color:var(--muted); margin-top:4px;
+    font-style:normal}
+  @media (max-width:640px){
+    .pro-body{padding-left:16px}
+    .pro-head .te{display:none}
+  }
+
   .prof{max-width:760px; font-size:14px; line-height:1.65; color:var(--ink)}
   .prof p{margin:0 0 10px}
   .prof h4{font-size:12px; font-weight:600; text-transform:uppercase;
@@ -1638,8 +1690,135 @@ function profileCard(text){
       + 'before the feature existed or without any documents.</div>'
       + '<div class="startrow"><button class="btn" id="mkProfile">Build profile</button></div>';
   }
-  return '<div class="prof">' + mdLite(text) + '</div>'
-    + '<div class="startrow"><button class="btn" id="mkProfile">Rebuild from the documents</button></div>';
+  var p = parseProfile(text);
+
+  // Nothing to collapse — a profile written before the headings existed, or a
+  // short one. Rendering an accordion with a single "everything" section in it
+  // would be furniture around one paragraph.
+  if (!p.sections.length){
+    return '<div class="prof">' + mdLite(text) + '</div>'
+      + '<div class="startrow"><button class="btn" id="mkProfile">'
+      + 'Rebuild from the documents</button></div>';
+  }
+
+  var h = '<div class="pro-lead">' + esc(p.lead) + '</div>';
+
+  h += '<div class="pro-bar">'
+    + '<span class="note">' + p.sections.length + ' sections · '
+    + p.points + ' points</span><div class="sp"></div>'
+    + '<button class="btn sm" id="proAll">Expand all</button></div>';
+
+  h += '<div class="pro-secs">' + p.sections.map(function(s, i){
+    return '<div class="pro-sec' + (s.warn ? ' warn' : '') + '" data-sec="' + i + '">'
+      + '<button class="pro-head" data-sechead="' + i + '">'
+      + '<span class="tw">▶</span>'
+      + '<span class="ti">' + esc(s.title) + '</span>'
+      + '<span class="te">' + esc(s.teaser) + '</span>'
+      + '<span class="ct">' + s.count + '</span></button>'
+      + '<div class="pro-body">' + s.html + '</div></div>';
+  }).join('') + '</div>';
+
+  return h + '<div class="startrow"><button class="btn" id="mkProfile">'
+    + 'Rebuild from the documents</button></div>';
+}
+
+/**
+ * Splits the profile into its lead and its sections.
+ *
+ * The profile is markdown because the Clients tab is read by people and half
+ * the team works in the sheet — so the browser gets the same text everyone
+ * else sees and has to make it skimmable here rather than ask for a second
+ * format nobody would maintain.
+ */
+function parseProfile(text){
+  var lines = String(text).split(/\n/);
+  var lead = [], sections = [], cur = null;
+
+  lines.forEach(function(line){
+    var t = line.trim();
+    if (t.indexOf('## ') === 0){
+      cur = { title: t.slice(3), items: [], paras: [] };
+      sections.push(cur);
+    } else if (!t){
+      return;
+    } else if (!cur){
+      lead.push(t);
+    } else if (t.indexOf('- ') === 0){
+      cur.items.push(t.slice(2));
+    } else {
+      cur.paras.push(t);
+    }
+  });
+
+  var points = 0;
+  sections.forEach(function(s){
+    s.count = s.items.length || s.paras.length;
+    points += s.items.length;
+    // Warning tone for the section that is a list of ways to lose the account.
+    // One section, not a palette: colour here marks the part you must not skip.
+    s.warn = /annoy|avoid|watch/i.test(s.title);
+    s.teaser = teaseFrom_(s.items[0] || s.paras[0] || '');
+    s.html = (s.paras.map(function(x){ return '<p>' + esc(x) + '</p>'; })
+      .concat(s.items.map(renderPoint))).join('');
+  });
+
+  return { lead: lead.join(' '), sections: sections, points: points };
+}
+
+/** The first clause of a point, short enough to sit on one line unwrapped. */
+function teaseFrom_(s){
+  var q = String(s).match(/^["“](.+?)["”]/);
+  var m = q ? null : String(s).match(/^(.+?[.!?])\s/);
+  var t = q ? q[1] : (m ? m[1] : String(s));
+  return t.length > 96 ? t.slice(0, 95).replace(/\s+\S*$/, '') + '…' : t;
+}
+
+/**
+ * One bullet, weighted.
+ *
+ * Two shapes appear in practice. A quote line is `"…" — what it means`, and
+ * gets the quote set apart from the reading of it. Everything else is a claim
+ * followed by its evidence, and bolding the claim is what lets a section be
+ * taken in at a glance instead of read in full every time.
+ */
+function renderPoint(s){
+  var q = String(s).match(/^["“](.+?)["”]\s*[—–-]\s*(.+)$/);
+  if (q){
+    return '<div class="pro-q"><span class="qt">“' + esc(q[1]) + '”</span>'
+      + '<span class="qw">' + esc(q[2]) + '</span></div>';
+  }
+
+  // Only split where the claim really is a short opener. A 200-character first
+  // sentence in bold is worse than no split at all.
+  var m = String(s).match(/^(.{0,120}?[.!?])\s+(\S[\s\S]*)$/);
+  if (!m) return '<div class="pro-pt"><span class="cl">' + esc(s) + '</span></div>';
+  return '<div class="pro-pt"><span class="cl">' + esc(m[1]) + '</span>'
+    + '<span class="ev">' + esc(m[2]) + '</span></div>';
+}
+
+function wireProfileSections(){
+  [].forEach.call(document.querySelectorAll('[data-sechead]'), function(b){
+    b.addEventListener('click', function(){
+      var sec = b.parentNode;
+      sec.classList.toggle('on');
+      syncProAll();
+    });
+  });
+  if (el('proAll')){
+    el('proAll').addEventListener('click', function(){
+      var secs = document.querySelectorAll('.pro-sec');
+      var anyClosed = [].some.call(secs, function(s){ return !s.classList.contains('on'); });
+      [].forEach.call(secs, function(s){ s.classList.toggle('on', anyClosed); });
+      syncProAll();
+    });
+  }
+}
+
+function syncProAll(){
+  if (!el('proAll')) return;
+  var secs = document.querySelectorAll('.pro-sec');
+  var anyClosed = [].some.call(secs, function(s){ return !s.classList.contains('on'); });
+  el('proAll').textContent = anyClosed ? 'Expand all' : 'Collapse all';
 }
 
 /**
@@ -1695,6 +1874,9 @@ function makeProfile(clientId, draftId, btn){
 }
 
 function wireProfile(clientId, draftId){
+  // The accordion is wired first: the build button is absent once a profile
+  // exists, and returning early on that would leave every section stuck shut.
+  wireProfileSections();
   if (!el('mkProfile')) return;
   el('mkProfile').addEventListener('click', function(){
     makeProfile(clientId, draftId, this);

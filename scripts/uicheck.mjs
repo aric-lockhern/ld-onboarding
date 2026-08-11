@@ -58,7 +58,7 @@ const FAKE = {
       slack:'#harbor-sons', alias:'harborandsons@lockherndigital.com',
       approvals:'dana@harborandsons.com', term:'Month to month',
       bizType:'eCommerce', onboarding:'Not started', draftId:'DR-260810-1612',
-      profile:'Family business, second generation, and they say so within the first minute — it is how they want to be seen and it shapes what they will sign off.\n\n## Communication\nShort replies, often from a phone, usually within the hour. Dana asks one question at a time and expects one answer. Long strategy emails go unread; a two-line summary with the number in it gets a response.\n\n## What they care about\n- Margin over revenue. They stopped the last agency for "buying sales we lost money on"\n- Being able to explain the spend to their father, who still signs the cheques\n- Lead times on custom pieces — a spike they cannot fulfil is worse than no spike\n\n## What will annoy them\n- Jargon. Dana asked twice what ROAS meant and then stopped asking\n- Being sold something mid-contract. The previous agency upsold in month two\n- Reporting that leads with impressions\n\n## Decisions\nDana decides day to day up to about £2k. Anything above that waits for her father, which usually means a week.\n\n## Where to pitch it\nCommercially sharp, technically light. They understand margin and stock better than anyone on our side; they do not know what a negative keyword is and do not need to.\n\n## In their words\n- "We are not trying to be the cheapest, we are trying to be the one people trust" — brand safety matters more than volume here\n- "Just tell me what it made us" — lead every report with revenue and margin',
+      profile:'Dana Whitlock is the second-generation owner of Harbor & Sons, a 40-year-old joinery outside Bristol that moved into direct online sales four years ago. She runs about \u00a318k/month of paid media, wants to be told what it made rather than how it works, and left the last agency for buying revenue at a loss. Servicing her well means margin-first reporting, short written answers, and never surprising her father.\n\n## Communication\nShort replies, often from a phone, usually within the hour. Dana asks one question at a time and expects one answer. Long strategy emails go unread \u2014 a two-line summary with the number in it gets a response the same day. She is warm on calls and will happily talk about the workshop, but read brevity as her working style rather than displeasure. She has said twice she would rather have a five-minute call than a written update.\n\n## What they care about\n- Margin over revenue. They stopped the last agency for "buying sales we lost money on" and she repeats the phrase unprompted. Every recommendation needs a margin line, not a ROAS line.\n- Being able to explain the spend to her father, who still signs the cheques. He is not on any call and has never seen a dashboard, so whatever we send has to survive being read aloud.\n- Lead times on custom pieces. A spike they cannot fulfil is worse than no spike \u2014 the workshop runs six weeks out in spring and she will pull budget rather than sell a date she cannot hit.\n- Made-in-Britain as the actual differentiator, not a tagline. Two competitors moved production abroad and she tracks their pricing weekly.\n- Repeat trade customers over one-off consumer sales, because the trade side pays on time.\n\n## What will annoy them\n- Jargon. Dana asked twice what ROAS meant and then stopped asking, which is the signal \u2014 she does not ask a third time, she just disengages.\n- Being sold something mid-contract. The previous agency upsold in month two and she has mentioned it on both calls since.\n- Reporting that leads with impressions. She has said "that is not money" about a slide.\n- Anything that costs her time she has already spent. She filled in the brief twice for the last agency and will not do it again.\n\n## Decisions\nDana decides day to day up to about \u00a32k. Anything above that waits for her father, which usually means a week \u2014 so bring the big asks early and never as a deadline. She is the only contact and the only person on any call. There is no marketing team behind her.\n\n## Where to pitch it\nCommercially sharp, technically light. She understands margin, stock and lead time better than anyone on our side; she does not know what a negative keyword is and does not need to. Explain tactics as outcome and cost. She is fluent on her own market \u2014 she knew which competitor had moved production and what it did to their pricing.\n\n## Context\n- Severely seasonal: spring is the peak and the workshop is capacity-bound through it.\n- Four-year-old D2C arm on top of a 40-year trade business; the trade side still pays the bills.\n- Referred in by an existing client, so a bad outcome here travels further than usual.\n\n## In their words\n- "We are not trying to be the cheapest, we are trying to be the one people trust" \u2014 brand safety matters more than volume here, and discount-led angles will be refused.\n- "Just tell me what it made us" \u2014 lead every report with revenue and margin, in that order.\n- "I have to be able to explain this to my dad" \u2014 the real audience for every number we send is someone who has never seen the account.\n- "That is not money" \u2014 said about an impressions slide. Vanity metrics actively cost credibility here.',
       services:'Google Ads, Reddit Ads, AI Search SEO',
       scope:'Google Ads, Meta, GA4 and Merchant Center. Feed rebuild in month two.',
       drive:'https://drive.google.com/drive/folders/fake',
@@ -571,6 +571,41 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForTimeout(250);
   await page.click('.row.clickable');
   await page.waitForTimeout(350);
+
+  // The profile is ~4,000 characters of prose across seven sections. Collapsed
+  // it has to be readable at a glance, and every section has to open — a
+  // profile that renders but cannot be expanded is worse than the wall it
+  // replaced, because the content is hidden rather than merely long.
+  const proShut = await page.$eval('.pro-secs', function(w){
+    return { secs: w.querySelectorAll('.pro-sec').length,
+             open: w.querySelectorAll('.pro-sec.on').length,
+             teasers: [].filter.call(w.querySelectorAll('.pro-head .te'),
+               function(t){ return t.textContent.trim(); }).length };
+  });
+  if (proShut.secs < 6 || proShut.open !== 0 || proShut.teasers !== proShut.secs) {
+    throw new Error('Profile did not render collapsed with a teaser per section: '
+      + JSON.stringify(proShut));
+  }
+  const fProfShut = `${OUT}/${name}-detail-profile-collapsed.png`;
+  await page.screenshot({ path: fProfShut, fullPage: name === 'desktop' });
+  shots.push(fProfShut);
+
+  await page.click('#proAll');
+  await page.waitForTimeout(200);
+  const proOpen = await page.$eval('.pro-secs', function(w){
+    return { open: w.querySelectorAll('.pro-sec.on').length,
+             claims: w.querySelectorAll('.pro-pt .cl').length,
+             quotes: w.querySelectorAll('.pro-q .qt').length };
+  });
+  if (proOpen.open !== proShut.secs || !proOpen.claims || !proOpen.quotes) {
+    throw new Error('Expand all did not open every section with its parts: '
+      + JSON.stringify(proOpen));
+  }
+  const fProfOpen = `${OUT}/${name}-detail-profile-expanded.png`;
+  await page.screenshot({ path: fProfOpen, fullPage: name === 'desktop' });
+  shots.push(fProfOpen);
+  await page.click('#proAll');
+  await page.waitForTimeout(150);
 
   // Regression: the Slack card painted "Loading the team…" and stayed there
   // forever. wireSlack had been dropped into the action-items click handler,
