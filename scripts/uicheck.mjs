@@ -139,7 +139,7 @@ const FAKE = {
       scope:{value:'Paid search and paid social management across Google Ads and Meta, plus Merchant Center feed management. Includes GA4 and GTM measurement setup and a monthly performance report.',confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'}
     },
     platforms:{value:['Google Ads','Meta Ads','Google Merchant Center','Google Analytics (GA4)','Google Tag Manager'],confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'},
-    services:{value:['Google Ads','Reddit Ads','AI Search SEO'],confidence:'high',quote:'SERVICE / MONTHLY INVESTMENT — Google Ads, Reddit, AI Search SEO',source:'Pitch deck'},
+    services:{value:['Google Ads','Reddit Ads','AI Search SEO','Reddit Organic Social'],confidence:'high',quote:'SERVICE / MONTHLY INVESTMENT — Google Ads, Reddit, AI Search SEO',source:'Pitch deck'},
     fees:{value:[{label:'Google Ads',amount:6000},{label:'Reddit Ads',amount:2000},{label:'AI Search SEO',amount:2000},{label:'Bundle discount',amount:-4000}],confidence:'high',quote:'TOTAL $10,000.00 · BUNDLE DISCOUNT -$4,000.00 · TOTAL AFTER BUNDLE DISCOUNT $6,000.00',source:'Pitch deck'},
     attached:['Scope of work'],
     unmatchedServices:[{name:'Podcast sponsorship placement',source:'Scope of work',
@@ -157,8 +157,8 @@ const FAKE = {
       {name:'Google Ads',category:'Paid',platforms:['Google Ads','Google Analytics (GA4)','Google Tag Manager'],fee:6000},
       {name:'Microsoft Ads',category:'Paid',platforms:['Microsoft Ads'],fee:1500},
       {name:'Meta Ads',category:'Paid',platforms:['Meta Ads','Meta / Instagram Organic'],fee:3000},
+      {name:'Meta Organic Social',category:'Organic',platforms:['Meta / Instagram Organic'],fee:2000},
       {name:'Reddit Ads',category:'Paid',platforms:['Reddit Ads','Reddit Organic'],fee:2000},
-      {name:'Reddit Organic Social',category:'Organic',platforms:['Reddit Organic'],fee:2000},
       {name:'AI Search SEO',category:'Organic',platforms:['Google Search Console','WordPress'],fee:2000},
       {name:'Google Business Profile',category:'Local',platforms:['Google Business Profile'],fee:750},
       {name:'Landing Page',category:'Build',platforms:['WordPress','Google Tag Manager'],fee:1500},

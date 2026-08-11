@@ -31,9 +31,38 @@ const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
  * Tag Manager) are needed no matter what was sold. The mapping lives on the
  * Services tab so it can be changed without a deploy.
  */
-const SERVICES = ['Google Ads', 'Microsoft Ads', 'Meta Ads', 'Reddit Ads',
-  'Reddit Organic Social', 'AI Search SEO', 'Google Business Profile',
-  'Landing Page', 'Web Design'];
+const SERVICES = ['Google Ads', 'Microsoft Ads', 'Meta Ads', 'Meta Organic Social',
+  'Reddit Ads', 'Reddit Organic Social', 'AI Search SEO',
+  'Google Business Profile', 'Landing Page', 'Web Design'];
+
+/**
+ * The Services tab as first written. Shared by seedServices_ (fresh sheet) and
+ * repairServices_ (append what is missing), so a service added in code reaches
+ * an existing sheet on the next setup() instead of only new ones.
+ *
+ * Keep in step with SERVICES above — npm run check enforces it.
+ */
+const SERVICE_SEED = [
+  // service, category, platforms needed, default fee, active
+  ['Google Ads', 'Paid',
+    'Google Ads, Google Analytics (GA4), Google Tag Manager', 6000, true],
+  ['Microsoft Ads', 'Paid', 'Microsoft Ads', 1500, true],
+  ['Meta Ads', 'Paid',
+    'Meta Ads, Meta / Instagram Organic, Google Analytics (GA4)', 3000, true],
+  // Organic social is sold separately from paid on the same platform. Running a
+  // page and buying inventory on it are different products with different
+  // deliverables and different access — a scope that sells one has not bought
+  // the other, and conflating them puts an ad-account request in front of a
+  // client who only wants their posts scheduled.
+  ['Meta Organic Social', 'Organic', 'Meta / Instagram Organic', 2000, true],
+  ['Reddit Ads', 'Paid', 'Reddit Ads, Reddit Organic', 2000, true],
+  ['Reddit Organic Social', 'Organic', 'Reddit Organic', 2000, true],
+  ['AI Search SEO', 'Organic',
+    'Google Search Console, Google Analytics (GA4), WordPress', 2000, true],
+  ['Google Business Profile', 'Local', 'Google Business Profile', 750, true],
+  ['Landing Page', 'Build', 'WordPress, Google Tag Manager', 1500, true],
+  ['Web Design', 'Build', 'WordPress', 2500, true]
+];
 
 const TERMS = ['Month to month', '3 months', '6 months', '12 months', 'Custom'];
 const BIZ_TYPES = ['Lead Gen', 'eCommerce'];
@@ -128,6 +157,7 @@ function setup() {
 
   seedPlatforms_(ss);
   seedServices_(ss);
+  repairServices_(ss);
   seedPhases_(ss);
   seedTemplates_(ss);
   seedConfig_(ss);
@@ -265,28 +295,40 @@ function seedPlatforms_(ss) {
  * Default Monthly Fee seeds the fee table on intake. It is a starting point,
  * not a price list — the contract wins, and every line stays editable.
  */
+/**
+ * Appends services that exist in code but not on the tab.
+ *
+ * seedServices_ bails when row 2 is populated, which protects edits but means a
+ * sheet installed before a service existed never gets it — and the tab is what
+ * the UI renders, so the model can return a service with no checkbox to land in
+ * and the answer vanishes. That is how "Reddit Organic Social" came back from a
+ * scope of work, priced at 2000 on the fee table, and showed up nowhere.
+ *
+ * Append-only: an existing row is never touched, and a service deliberately
+ * deleted from the tab stays deleted only until the next setup(). If you do not
+ * sell something, set Active to FALSE rather than removing the row.
+ */
+function repairServices_(ss) {
+  const sh = ss.getSheetByName(TABS.SERVICES);
+  if (!sh) return;
+
+  const have = sh.getLastRow() < 2 ? []
+    : sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues()
+        .map(r => String(r[0]).trim()).filter(Boolean);
+
+  const missing = SERVICE_SEED.filter(r => have.indexOf(r[0]) === -1);
+  if (!missing.length) return;
+
+  sh.getRange(sh.getLastRow() + 1, 1, missing.length, missing[0].length)
+    .setValues(missing)
+    .setVerticalAlignment('top').setWrap(true).setFontSize(10);
+}
+
 function seedServices_(ss) {
   const sh = ss.getSheetByName(TABS.SERVICES);
   if (sh.getLastRow() > 1) return;
 
-  const rows = [
-    // service, category, platforms needed, default fee, active
-    ['Google Ads', 'Paid',
-      'Google Ads, Google Analytics (GA4), Google Tag Manager', 6000, true],
-    ['Microsoft Ads', 'Paid', 'Microsoft Ads', 1500, true],
-    ['Meta Ads', 'Paid',
-      'Meta Ads, Meta / Instagram Organic, Google Analytics (GA4)', 3000, true],
-    ['Reddit Ads', 'Paid', 'Reddit Ads, Reddit Organic', 2000, true],
-    // Distinct from Reddit Ads on purpose. Posting to subreddits and buying
-    // Reddit inventory are different products with different deliverables, and
-    // a scope that sells one has not bought the other.
-    ['Reddit Organic Social', 'Organic', 'Reddit Organic', 2000, true],
-    ['AI Search SEO', 'Organic',
-      'Google Search Console, Google Analytics (GA4), WordPress', 2000, true],
-    ['Google Business Profile', 'Local', 'Google Business Profile', 750, true],
-    ['Landing Page', 'Build', 'WordPress, Google Tag Manager', 1500, true],
-    ['Web Design', 'Build', 'WordPress', 2500, true]
-  ];
+  const rows = SERVICE_SEED;
 
   sh.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
   sh.getRange(2, 1, rows.length, rows[0].length)
