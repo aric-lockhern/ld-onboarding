@@ -95,6 +95,8 @@ const FAKE = {
   buildClientProfile: { ok:true, sources:['Sales call transcript','Onboarding / kickoff call transcript'],
     profile:'Family business, second generation. Short replies, expects the number first.' },
   getClientProfile: { ok:true, profile:'' },
+  deleteClient: { ok:true, clientId:'HARBOR-2608', draftFreed:'DR-260810-1612',
+    removed:{ tasks:14, intake:1, plans:0 } },
   createDraft: { ok:true, draftId:'DR-260811-0930', name:'Harbor & Sons SOW', folderId:'fake-folder' },
   saveDraft: { ok:true, saved:'11 Aug, 09:41' },
   deleteDraft: { ok:true },
