@@ -117,6 +117,27 @@ jobs:
       - name: clasp push
         run: clasp push --force
 
+      # A push updates the code the SHEET MENU runs. It does not move the web
+      # app URL — that serves whatever version was last deployed, so without
+      # this step the menu and the URL run different code until someone opens
+      # the editor and cuts a version by hand.
+      #
+      # -i redeploys the EXISTING deployment, which is the whole point. Leave it
+      # off and clasp mints a brand new deployment with a brand new URL, and
+      # every redirect in netlify.toml keeps pointing at the old one — silently,
+      # because the old deployment goes on working. A wrong ID fails loudly here
+      # instead, which is the outcome we want.
+      #
+      # The ID is the same public one netlify.toml forwards to. Access is still
+      # gated by the Google domain sign-in on script.google.com.
+      - name: Publish a new version of the web app
+        env:
+          DEPLOYMENT_ID: AKfycbxq2X6YLR_SxQ51-8vYlU2R3Tyev9akVcvzmAYVxkw4AUorfK0coUU-5c-6sHLp9yQskQ
+        run: |
+          clasp create-deployment \
+            -i "$DEPLOYMENT_ID" \
+            -d "main@$(git rev-parse --short HEAD)"
+
       # Only the credential — .clasp.json is tracked now and must survive.
       - name: Shred credentials
         if: always()
