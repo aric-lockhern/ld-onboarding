@@ -158,6 +158,7 @@ const FAKE = {
       {name:'Microsoft Ads',category:'Paid',platforms:['Microsoft Ads'],fee:1500},
       {name:'Meta Ads',category:'Paid',platforms:['Meta Ads','Meta / Instagram Organic'],fee:3000},
       {name:'Meta Organic Social',category:'Organic',platforms:['Meta / Instagram Organic'],fee:2000},
+      {name:'Reddit Organic Social',category:'Organic',platforms:['Reddit Organic'],fee:2000},
       {name:'Reddit Ads',category:'Paid',platforms:['Reddit Ads','Reddit Organic'],fee:2000},
       {name:'AI Search SEO',category:'Organic',platforms:['Google Search Console','WordPress'],fee:2000},
       {name:'Google Business Profile',category:'Local',platforms:['Google Business Profile'],fee:750},

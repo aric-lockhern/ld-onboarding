@@ -467,18 +467,35 @@ function getIntakeOptions() {
  * the tab has not been created yet.
  */
 function getServiceList() {
+  const row = r => ({
+    name: String(r[0]).trim(),
+    category: String(r[1] || '').trim(),
+    platforms: String(r[2] || '').split(',').map(x => x.trim()).filter(Boolean),
+    fee: r[3] === '' || r[3] === null ? '' : Number(r[3])
+  });
+
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.SERVICES);
-  if (!sh || sh.getLastRow() < 2) {
-    return SERVICES.map(n => ({ name: n, category: '', platforms: [], fee: '' }));
-  }
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
-    .filter(r => r[0] && r[4] !== false)
-    .map(r => ({
-      name: String(r[0]).trim(),
-      category: String(r[1] || '').trim(),
-      platforms: String(r[2] || '').split(',').map(x => x.trim()).filter(Boolean),
-      fee: r[3] === '' || r[3] === null ? '' : Number(r[3])
-    }));
+  const rows = (!sh || sh.getLastRow() < 2) ? []
+    : sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().filter(r => r[0]);
+
+  const fromTab = rows.filter(r => r[4] !== false).map(row);
+
+  // A service the tab has never heard of is an absence, not an edit, so the code
+  // definition fills it in rather than the name simply not existing. Without
+  // this, adding a service required someone to re-run setup() before it could
+  // be ticked — and until they did, the model would return it off a signed
+  // scope of work and the form had nowhere to put it.
+  //
+  // The tab still wins wherever it has an opinion: a row present there governs
+  // its own fee, platforms and Active flag, and a service switched off stays
+  // off. To retire one that only exists in code, run setup() to write the row,
+  // then set Active to FALSE.
+  const known = rows.map(r => String(r[0]).trim());
+  const fromCode = SERVICE_SEED
+    .filter(r => known.indexOf(String(r[0]).trim()) === -1)
+    .map(row);
+
+  return fromTab.concat(fromCode);
 }
 
 function submitIntake(payload) {
