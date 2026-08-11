@@ -355,3 +355,60 @@ function protectSensitiveRanges() {
     'Note: collaborators can still read them. To hide values entirely, ' +
     'move them to a separate sheet you share more narrowly.');
 }
+
+/**
+ * Removes a client and everything generated for it.
+ *
+ * There was no way to undo a Create client except editing the spreadsheet by
+ * hand, which is a poor answer for a mistyped company name and a worse one
+ * while testing. Deleting the row alone is not enough either — the task rows
+ * and the intake row keep the client ID and reattach themselves to the next
+ * client that happens to be given the same one.
+ *
+ * The DRAFT is deliberately kept, along with its Drive folder. The documents
+ * are the record of the deal; deleting the client is undoing a data-entry step,
+ * not discarding a signed contract. The draft goes back to Analysed so it shows
+ * up in the resume list and can produce a client again.
+ */
+function deleteClient(token, clientId) {
+  checkToken_(token);
+  if (!clientId) return { ok: false, message: 'No client ID given.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const id = String(clientId).trim();
+  const removed = { tasks: 0, intake: 0, plans: 0 };
+
+  // Bottom-up: deleting a row shifts everything below it up, and a descending
+  // walk means the indexes gathered above stay valid.
+  const purge = (tabName, col) => {
+    const sh = ss.getSheetByName(tabName);
+    if (!sh || sh.getLastRow() < 2) return 0;
+    const vals = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+    let n = 0;
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (String(vals[i][0]).trim() === id) { sh.deleteRow(i + 2); n++; }
+    }
+    return n;
+  };
+
+  const row = clientRowNumber_(id);
+  if (!row) return { ok: false, message: 'No row for ' + id + ' on the Clients tab.' };
+
+  removed.tasks = purge(TABS.ACCESS, A.ID);
+  removed.intake = purge(TABS.INTAKE, 1);
+  removed.plans = purge(TABS.PLANS, 1);
+  ss.getSheetByName(TABS.CLIENTS).deleteRow(row);
+
+  // The draft outlives the client it made. Unstamp it so it stops pointing at
+  // a record that no longer exists.
+  let draftFreed = '';
+  try {
+    const draftId = draftIdForClient_(id);
+    if (draftId) {
+      saveDraft(draftId, { clientId: '', status: 'Analysed' });
+      draftFreed = draftId;
+    }
+  } catch (e) { /* the client is gone either way */ }
+
+  return { ok: true, clientId: id, removed: removed, draftFreed: draftFreed };
+}

@@ -295,6 +295,8 @@
   .lnk{background:none; border:0; padding:0; cursor:pointer; color:var(--blue);
     font:500 12.5px/1 "Inter",sans-serif; text-decoration:underline}
   .lnk:hover{color:var(--blue-dk)}
+  .btn.danger{border-color:#F0C9C9; color:var(--critical)}
+  .btn.danger:hover{background:#FDF2F2; border-color:var(--critical)}
 
   /* Reading checklist — one row per source, updated as each one resolves. */
   .rrow{display:flex; gap:12px; padding:14px 0; border-top:1px solid var(--line)}
@@ -460,7 +462,7 @@ var SERVER_FNS = [
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
-  'buildClientProfile', 'getClientProfile'
+  'buildClientProfile', 'getClientProfile', 'deleteClient'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -976,8 +978,49 @@ function openClient(clientId){
                  : '<button class="btn sm" id="mkDrive">Create Drive folder</button>')
       + '</div></div>';
 
+    h += '<div class="grp">Danger zone</div><div class="card"><div class="sect">'
+      + '<h3>Delete this client</h3>'
+      + '<div class="hint">Removes the client row, its task checklist, its intake '
+      + 'row and any generated plans. The draft it came from is kept, along with '
+      + 'every document in Drive — it goes back to the resume list so you can '
+      + 'create the client again.</div>'
+      + '<div class="startrow"><button class="btn danger" id="delClient">'
+      + 'Delete client</button></div></div></div>';
+
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    el('delClient').addEventListener('click', function(){
+      var b = this;
+      if (b.getAttribute('data-armed') !== '1'){
+        b.setAttribute('data-armed', '1');
+        b.textContent = 'Really delete ' + (c.company || clientId) + '?';
+        setTimeout(function(){
+          if (!b.parentNode) return;
+          b.removeAttribute('data-armed'); b.textContent = 'Delete client';
+        }, 5000);
+        return;
+      }
+      b.disabled = true; b.textContent = 'Deleting…';
+      api('deleteClient', TOKEN, clientId).then(function(r){
+        if (!r.ok){
+          b.disabled = false; b.textContent = 'Delete client';
+          toast(r.message || 'Could not delete.', true);
+          return;
+        }
+        CACHE.overview = null; CACHE.queue = null;
+        var bits = [];
+        if (r.removed.tasks) bits.push(r.removed.tasks + ' tasks');
+        if (r.removed.intake) bits.push('the intake row');
+        if (r.removed.plans) bits.push(r.removed.plans + ' plans');
+        toast('Deleted ' + (c.company || clientId)
+          + (bits.length ? ' and ' + bits.join(', ') : '')
+          + (r.draftFreed ? '. The draft is back in the list.' : '.'));
+        go('clients');
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Delete client'; fail(e);
+      });
+    });
 
     // The draft that produced this client is where the documents live, so the
     // profile can be rebuilt months later without re-uploading anything.
