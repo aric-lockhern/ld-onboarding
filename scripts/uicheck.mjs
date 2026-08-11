@@ -142,7 +142,9 @@ const FAKE = {
       approvals:{value:'Dana Whitfield',confidence:'medium',quote:'Dana signs off creative',source:'Onboarding / kickoff call transcript'},
       scope:{value:'Paid search and paid social management across Google Ads and Meta, plus Merchant Center feed management. Includes GA4 and GTM measurement setup and a monthly performance report.',confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'}
     },
-    platforms:{value:['Google Ads','Meta Ads','Google Merchant Center','Google Analytics (GA4)','Google Tag Manager'],confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'},
+    // Deliberately NO Google Merchant Center: an eCommerce client must get one
+    // from the business-type rule, not because a document happened to name it.
+    platforms:{value:['Google Ads','Meta Ads','Google Analytics (GA4)','Google Tag Manager'],confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'},
     services:{value:['Google Ads','Reddit Ads','AI Search SEO','Reddit Organic Social'],confidence:'high',quote:'SERVICE / MONTHLY INVESTMENT — Google Ads, Reddit, AI Search SEO',source:'Pitch deck'},
     fees:{value:[{label:'Google Ads',amount:6000},{label:'Reddit Ads',amount:2000},{label:'AI Search SEO',amount:2000},{label:'Bundle discount',amount:-4000}],confidence:'high',quote:'TOTAL $10,000.00 · BUNDLE DISCOUNT -$4,000.00 · TOTAL AFTER BUNDLE DISCOUNT $6,000.00',source:'Pitch deck'},
     attached:['Scope of work'],
@@ -157,6 +159,7 @@ const FAKE = {
     cadences:['Weekly','Biweekly','Monthly','Quarterly','Ad hoc'],
     terms:['Month to month','3 months','6 months','12 months','Custom'],
     bizTypes:['Lead Gen','eCommerce'],
+    bizPlatforms:{ 'ecommerce':['Google Merchant Center'] },
     services:[
       {name:'Google Ads',category:'Paid',platforms:['Google Ads','Google Analytics (GA4)','Google Tag Manager'],fee:6000},
       {name:'Microsoft Ads',category:'Paid',platforms:['Microsoft Ads'],fee:1500},
@@ -328,6 +331,15 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       const f2 = `${OUT}/${name}-new-review.png`;
       await page.screenshot({ path: f2, fullPage: name === 'desktop' });
       shots.push(f2);
+
+      // An eCommerce client needs a Merchant Center for Shopping and PMax. No
+      // document named one here, so this tick can only come from bizType.
+      const mcTicked = await page.$eval(
+        '.checks .chk input[value="Google Merchant Center"]:not([data-service])',
+        function(i){ return i.checked; });
+      if (!mcTicked) {
+        throw new Error('eCommerce did not pull in Google Merchant Center');
+      }
 
       // Reopening a stored draft: sources come back already read, one of them
       // with its Drive copy deleted, so the failure row renders from storage.

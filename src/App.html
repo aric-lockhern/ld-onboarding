@@ -2078,9 +2078,28 @@ function applyServicePlatforms(name){
     });
 }
 
+/**
+ * Platforms that follow from the kind of business rather than from anything
+ * sold. An eCommerce client needs a Merchant Center whether or not a document
+ * happened to mention one.
+ */
+function applyBizTypePlatforms(){
+  var biz = el('bizType') ? String(el('bizType').value).toLowerCase() : '';
+  var map = (CACHE.options && CACHE.options.bizPlatforms) || {};
+  (map[biz] || []).forEach(function(name){
+    var box = document.querySelector('.checks .chk input[value="'
+      + name.replace(/"/g, '\\"') + '"]:not([data-service])');
+    if (box && !box.checked){
+      box.checked = true;
+      box.closest('.chk').classList.add('on');
+    }
+  });
+}
+
 /** Business type changes what the ticked services need, so re-apply them all. */
 function reapplyPlatformsForBizType(){
   readServices().forEach(applyServicePlatforms);
+  applyBizTypePlatforms();
 }
 
 function wireIntake(){
@@ -2100,6 +2119,10 @@ function wireIntake(){
   // extraction sets both fields, but a correction here has to follow through.
   if (el('bizType')){
     el('bizType').addEventListener('change', reapplyPlatformsForBizType);
+    // The extraction fills bizType in without firing a change event, so the
+    // business-type platforms have to be applied on first render as well —
+    // otherwise eCommerce is selected and no Merchant Center is requested.
+    applyBizTypePlatforms();
   }
   if (el('addFee')){
     el('addFee').addEventListener('click', function(){
