@@ -509,7 +509,7 @@ var SERVER_FNS = [
   'getClientDocs', 'getTeam',
   'buildActionItems', 'getActionItems', 'updateActionItem',
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
-  'hasSlackToken', 'slackInvite',
+  'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
 ];
@@ -1286,17 +1286,24 @@ function slackCard(c){
       + 'grouped by who owns them and tagging them by name. Nothing is sent when '
       + 'nothing is outstanding. Tick people below to add them to the channel.</div>'
       + '<div id="slackPeople" class="hint">Loading the team…</div>'
+      + '<div id="slackPick"></div>'
       + '<div class="startrow">'
       + '<button class="btn" id="slackAdd">Add to channel</button>'
+      + '<button class="btn" id="slackPickBtn">Change channel</button>'
       + '<button class="btn" id="slackCheck">Test connection</button>'
       + '<button class="btn pri" id="slackPing">Ping outstanding items</button></div>';
   }
+  // Two ways in, because most accounts that have been running a while already
+  // have a channel — made the day the deal closed, months before anyone opened
+  // this tool. Creating a second one beside it splits the history in two.
   return '<h3>No channel yet</h3>'
-    + '<div class="hint">Creates a private channel for this client and invites '
-    + 'the people you pick. The list comes from the Team page.</div>'
+    + '<div class="hint">Create a private channel for this client, or point it '
+    + 'at one that already exists. The people list comes from the Team page.</div>'
     + '<div id="slackPeople" class="hint">Loading the team…</div>'
+    + '<div id="slackPick"></div>'
     + '<div class="startrow">'
     + '<label class="mini"><input type="checkbox" id="slackPublic"> Public channel</label>'
+    + '<button class="btn" id="slackPickBtn">Use an existing channel</button>'
     + '<button class="btn" id="slackCheck">Test connection</button>'
     + '<button class="btn pri" id="slackMake">Create channel</button></div>';
 }
@@ -1405,6 +1412,69 @@ function wireSlack(clientId, c){
                    : r.message, !r.ok);
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Add to channel'; fail(e);
+      });
+    });
+  }
+
+  if (el('slackPickBtn')){
+    el('slackPickBtn').addEventListener('click', function(){
+      var b = this, box = el('slackPick');
+      if (box.innerHTML){ box.innerHTML = ''; return; }
+      b.disabled = true; b.textContent = 'Reading channels…';
+      box.innerHTML = '<div class="hint">Reading the workspace…</div>';
+      api('slackChannels').then(function(r){
+        b.disabled = false; b.textContent = c.slack ? 'Change channel' : 'Use an existing channel';
+        if (!r || !r.ok){
+          box.innerHTML = '<div class="hint">'
+            + esc((r && r.message) || 'The server returned nothing.') + '</div>';
+          return;
+        }
+        var chans = r.channels || [];
+        if (!chans.length){
+          box.innerHTML = '<div class="hint">No channels came back. A bot can '
+            + 'only see public channels plus private ones it has been invited '
+            + 'to, so an empty list usually means missing channels:read.</div>';
+          return;
+        }
+        var hidden = chans.filter(function(x){ return x.isPrivate && !x.isMember; }).length;
+        box.innerHTML = '<div class="f" style="margin-top:14px">'
+          + '<label>Existing channel</label>'
+          + '<select id="slackChanSel">'
+          + chans.map(function(x){
+              return '<option value="' + esc(x.id) + '"'
+                + (('#' + x.name) === c.slack ? ' selected' : '') + '>'
+                + (x.isPrivate ? '🔒 ' : '# ') + esc(x.name)
+                + (x.members ? ' · ' + x.members : '')
+                + (x.isMember ? '' : ' · bot not in it') + '</option>';
+            }).join('')
+          + '</select>'
+          // A bot cannot list a private channel it was never invited to. That
+          // is Slack's rule, not a scope, so the manual field stays the way out.
+          + '<span class="note">Public channels, plus private ones the bot is in. '
+          + 'A private channel it has never been invited to cannot be listed at '
+          + 'all — set the Slack channel field under Details by hand for those.</span>'
+          + '</div>'
+          + '<div class="startrow"><button class="btn pri" id="slackLink">'
+          + 'Link this channel</button></div>';
+
+        el('slackLink').addEventListener('click', function(){
+          var lb = this;
+          lb.disabled = true; lb.textContent = 'Linking…';
+          api('slackLinkChannel', TOKEN, clientId, el('slackChanSel').value)
+            .then(function(res){
+              lb.disabled = false; lb.textContent = 'Link this channel';
+              if (!res.ok){ toast(res.message, true); return; }
+              toast('Linked ' + res.name + (res.joined ? ', bot joined' : '') + '.');
+              if (res.warn) toast(res.warn, true);
+              openClient(clientId);
+            }).catch(function(e){
+              lb.disabled = false; lb.textContent = 'Link this channel'; fail(e);
+            });
+        });
+      }).catch(function(e){
+        b.disabled = false; b.textContent = c.slack ? 'Change channel' : 'Use an existing channel';
+        box.innerHTML = '<div class="hint">Could not read the channels: '
+          + esc((e && e.message) || 'unknown error') + '.</div>';
       });
     });
   }

@@ -111,6 +111,16 @@ const FAKE = {
     invited:2, failed:[] },
   slackPingOutstanding: { ok:true, posted:7, channel:'#harbor-sons' },
   slackInvite: { ok:true, invited:2, channel:'#harbor-sons', already:false },
+  slackChannels: { ok:true, channels:[
+    { id:'C01GEN', name:'general', isPrivate:false, isMember:true, members:15, purpose:'' },
+    { id:'C01HARB', name:'harbor-sons', isPrivate:true, isMember:true, members:6, purpose:'Harbor & Sons' },
+    // Private and not joined: linkable, but the bot cannot post until invited,
+    // which is a state the card has to name rather than discover on first ping.
+    { id:'C01CORN', name:'cornhole-co', isPrivate:true, isMember:false, members:4, purpose:'' },
+    { id:'C01PAID', name:'paid-search', isPrivate:false, isMember:false, members:11, purpose:'' }
+  ] },
+  slackLinkChannel: { ok:true, name:'#harbor-sons', channelId:'C01HARB',
+    url:'https://slack.com/app_redirect?channel=C01HARB', joined:false, warn:'' },
   getTeamAdmin: { ok:true, slackReady:true,
     roles:['Account manager','Strategist','Specialist','Analyst','Designer','Owner','Contractor'],
     skillOptions:[
@@ -572,6 +582,28 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('The Slack people picker never resolved: '
       + JSON.stringify(slackBox));
   }
+
+  // An account that has been running a while already has a channel, made long
+  // before anyone opened this tool. Picking it must be possible, and the one
+  // the client already points at has to come back selected rather than
+  // defaulting to whatever sorts first.
+  await page.click('#slackPickBtn');
+  await page.waitForSelector('#slackChanSel', { timeout: 5000 });
+  const sel = await page.$eval('#slackChanSel', function(s){
+    return { value: s.value, count: s.options.length,
+             text: s.options[s.selectedIndex].textContent };
+  });
+  if (sel.value !== 'C01HARB') {
+    throw new Error('The channel picker did not preselect the linked channel: '
+      + JSON.stringify(sel));
+  }
+  if (!/bot not in it/.test(await page.$eval('#slackChanSel', s => s.textContent))) {
+    throw new Error('The picker did not flag a channel the bot is not in');
+  }
+  await page.waitForTimeout(200);
+  const fPick = `${OUT}/${name}-detail-channel-picker.png`;
+  await page.screenshot({ path: fPick, fullPage: name === 'desktop' });
+  shots.push(fPick);
 
   const f = `${OUT}/${name}-detail.png`;
   await page.screenshot({ path: f, fullPage: name === 'desktop' });
