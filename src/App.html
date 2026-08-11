@@ -511,7 +511,7 @@ var SERVER_FNS = [
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
-  'syncTeamSlackIds'
+  'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -737,9 +737,15 @@ function renderTeam(){
         + 'client — reads this list, so it stays unassigned until someone is '
         + 'here.</div>';
     h += '<div class="startrow">'
-      + '<button class="btn" id="syncSlack">Match everyone to Slack</button>'
-      + '<button class="btn pri" id="addPerson">+ Add person</button></div>';
+      + '<button class="btn" id="addPerson">+ Add by hand</button>'
+      + (TEAM.people.length
+          ? '<button class="btn" id="syncSlack">Fill in missing Slack IDs</button>' : '')
+      + '<button class="btn pri" id="importSlack">Import from Slack</button></div>';
     h += '</div></div>';
+
+    // The importer lands here, between the list and the editor, so the two
+    // stages read top to bottom: pick people, then give them specialties.
+    h += '<div id="rosterWrap"></div>';
 
     h += '<div class="grp">Editor</div><div class="card">'
       + '<div class="sect" id="teamEdit">'
@@ -892,6 +898,32 @@ function wireTeam(){
     el('addPerson').addEventListener('click', function(){ openTeamForm(null); });
   }
 
+  if (el('importSlack')){
+    el('importSlack').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Reading Slack…';
+      var box = el('rosterWrap');
+      box.innerHTML = '<div class="grp">From Slack</div>' + loading();
+      api('slackRoster').then(function(r){
+        b.disabled = false; b.textContent = 'Import from Slack';
+        if (!r || !r.ok){
+          box.innerHTML = '<div class="grp">From Slack</div>'
+            + emptyState('Could not read the workspace',
+                (r && r.message) || 'The server returned nothing.');
+          return;
+        }
+        ROSTER = r.people || [];
+        box.innerHTML = '<div class="grp">From Slack <span class="n">'
+          + ROSTER.length + '</span></div><div class="card"><div class="sect">'
+          + rosterCard(r) + '</div></div>';
+        wireRoster();
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Import from Slack';
+        box.innerHTML = '<div class="grp">From Slack</div>'
+          + emptyState('Could not read the workspace', (e && e.message) || 'Unknown error.');
+      });
+    });
+  }
+
   if (el('syncSlack')){
     el('syncSlack').addEventListener('click', function(){
       var b = this; b.disabled = true; b.textContent = 'Matching…';
@@ -919,6 +951,126 @@ function wireTeam(){
         }).catch(fail);
     });
   });
+}
+
+/**
+ * The Slack workspace, as a pick list.
+ *
+ * Building the team by typing eleven names, emails and member IDs is the kind
+ * of setup people abandon halfway, and the half-built directory then assigns
+ * work to nobody without saying so. Slack already holds all three.
+ */
+var ROSTER = [];
+
+function rosterCard(r){
+  var addable = ROSTER.filter(function(p){ return !p.onTeam; });
+
+  var h = '<h3>' + ROSTER.length + ' in the workspace</h3>'
+    + '<div class="hint">Tick who belongs on the team. Names, emails and member '
+    + 'IDs come across as they are. Specialties are left blank — Slack does not '
+    + 'know who does paid search, and a job title is not something to assign '
+    + 'real work off — so set those in the editor afterwards.</div>';
+
+  if (r.emailScopeMissing){
+    h += '<div class="hint" style="color:var(--warning)">Slack returned nobody '
+      + 'with an email, which is what a missing <b>users:read.email</b> scope '
+      + 'looks like. People will import without one and can still be matched by '
+      + 'member ID. Add the scope and reinstall the app to get emails.</div>';
+  }
+  if (!addable.length){
+    return h + '<div class="hint" style="margin:0">Everyone in the workspace is '
+      + 'already on the team.</div>';
+  }
+
+  h += '<div class="f" style="margin-bottom:14px">'
+    + '<input id="rosterFind" placeholder="Filter by name or email">'
+    + '<span class="note" id="rosterCount"></span></div>';
+
+  h += '<div class="checks" id="rosterList">' + ROSTER.map(function(p, i){
+    var sub = p.email || 'no email';
+    if (p.title) sub += ' · ' + p.title;
+    if (p.guest) sub += ' · guest';
+    if (p.onTeam) sub = 'already on the team';
+    return '<label class="chk' + (p.onTeam ? ' off' : '') + '" data-roster="' + i + '" '
+      + 'data-find="' + esc((p.name + ' ' + p.email).toLowerCase()) + '">'
+      + '<input type="checkbox" data-pick="' + i + '"' + (p.onTeam ? ' disabled' : '') + '>'
+      + '<span><span class="nm">' + esc(p.name) + '</span><br>'
+      + '<span class="cat">' + esc(sub) + '</span></span></label>';
+  }).join('') + '</div>';
+
+  h += '<div class="startrow">'
+    + '<button class="btn" id="rosterAll">Select all ' + addable.length + '</button>'
+    + '<button class="btn" id="rosterNone">Clear</button>'
+    + '<button class="btn pri" id="rosterAdd">Add selected</button></div>';
+  return h;
+}
+
+function wireRoster(){
+  function count(){
+    var n = document.querySelectorAll('[data-pick]:checked').length;
+    if (el('rosterCount')) el('rosterCount').textContent = n + ' selected';
+  }
+  [].forEach.call(document.querySelectorAll('[data-pick]'), function(i){
+    i.addEventListener('change', count);
+  });
+  count();
+
+  if (el('rosterFind')){
+    el('rosterFind').addEventListener('input', function(){
+      var q = this.value.trim().toLowerCase();
+      [].forEach.call(document.querySelectorAll('[data-roster]'), function(l){
+        l.style.display = (!q || l.getAttribute('data-find').indexOf(q) !== -1)
+          ? '' : 'none';
+      });
+    });
+  }
+
+  if (el('rosterAll')){
+    el('rosterAll').addEventListener('click', function(){
+      // Only what is on screen: with a filter applied, "select all" meaning
+      // the whole workspace is how you import forty people by accident.
+      [].forEach.call(document.querySelectorAll('[data-roster]'), function(l){
+        var i = l.querySelector('[data-pick]');
+        if (i && !i.disabled && l.style.display !== 'none') i.checked = true;
+      });
+      count();
+    });
+  }
+  if (el('rosterNone')){
+    el('rosterNone').addEventListener('click', function(){
+      [].forEach.call(document.querySelectorAll('[data-pick]'), function(i){ i.checked = false; });
+      count();
+    });
+  }
+
+  if (el('rosterAdd')){
+    el('rosterAdd').addEventListener('click', function(){
+      var b = this;
+      var picked = [].filter.call(document.querySelectorAll('[data-pick]'),
+        function(i){ return i.checked; })
+        .map(function(i){ return ROSTER[Number(i.getAttribute('data-pick'))]; })
+        .filter(Boolean);
+
+      if (!picked.length){ toast('Tick who should be added first.', true); return; }
+      b.disabled = true; b.textContent = 'Adding ' + picked.length + '…';
+      api('importTeamMembers', TOKEN, picked.map(function(p){
+        return { name:p.name, email:p.email, slackId:p.slackId, role:'' };
+      })).then(function(r){
+        b.disabled = false; b.textContent = 'Add selected';
+        if (!r.ok){ toast(r.message, true); return; }
+        toast('Added ' + r.added
+          + (r.skipped.length ? ', skipped ' + r.skipped.length + ' already on the team' : '')
+          + '. Set their specialties next.');
+        if (r.noEmail){
+          toast(r.noEmail + ' came across without an email — they can still be '
+            + 'invited to channels by member ID.', true);
+        }
+        renderTeam();
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Add selected'; fail(e);
+      });
+    });
+  }
 }
 
 function openTeamForm(p){

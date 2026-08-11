@@ -231,6 +231,83 @@ function slackInvite(token, clientId, memberIds) {
            already: r.error === 'already_in_channel' };
 }
 
+/**
+ * Everyone in the Slack workspace, so the team can be built from the roster
+ * rather than typed out.
+ *
+ * users.list is the only call that gets names, emails and member IDs in one
+ * pass. Looking people up one at a time by email is backwards for setup: it
+ * requires already knowing every address, which is the thing being collected.
+ *
+ * Bots, apps, Slackbot and deactivated accounts are dropped. They are members
+ * of the workspace and never members of the team, and leaving them in means
+ * scrolling past a dozen integrations to find a colleague.
+ *
+ * Email needs users:read.email. Without it Slack returns the roster with the
+ * email field simply absent — no error, no warning — so the absence is
+ * detected and reported rather than presented as "nobody has an email".
+ */
+function slackRoster() {
+  if (!slackToken_()) {
+    return { ok: false, noToken: true, message: 'No Slack token set. In the '
+      + 'sheet: Onboarding → Set Slack bot token.' };
+  }
+
+  const members = [];
+  let cursor = '';
+  // Paged rather than one big call: Slack caps the page, and a workspace with
+  // 400 people would silently return the first 200 and look complete.
+  for (let page = 0; page < 25; page++) {
+    const r = slackCall_('users.list', cursor
+      ? { limit: 200, cursor: cursor } : { limit: 200 });
+    if (!r.ok) return { ok: false, message: slackError_(r, 'list the workspace') };
+
+    (r.members || []).forEach(m => members.push(m));
+    cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    if (!cursor) break;
+  }
+
+  const onTeam = {};
+  getTeam().forEach(t => {
+    if (t.slackId) onTeam[t.slackId] = true;
+    if (t.email) onTeam[t.email.toLowerCase()] = true;
+  });
+
+  const people = members
+    .filter(m => m && !m.is_bot && !m.deleted && m.id !== 'USLACKBOT')
+    .map(m => {
+      const p = m.profile || {};
+      const email = String(p.email || '').trim();
+      return {
+        slackId: m.id,
+        // real_name is what people set; display_name is often blank and the
+        // handle is not a name. Fall back down the chain rather than showing
+        // an ID to somebody picking colleagues out of a list.
+        name: String(p.real_name_normalized || p.real_name || m.real_name
+                     || p.display_name || m.name || '').trim(),
+        email: email,
+        title: String(p.title || '').trim(),
+        guest: !!(m.is_restricted || m.is_ultra_restricted),
+        admin: !!(m.is_admin || m.is_owner),
+        // Already on the Team tab by ID or by email — ticking them again
+        // would create a second row answering to the same name.
+        onTeam: !!(onTeam[m.id] || (email && onTeam[email.toLowerCase()]))
+      };
+    })
+    .filter(p => p.name);
+
+  people.sort((a, b) => a.name.localeCompare(b.name));
+
+  const withEmail = people.filter(p => p.email).length;
+  return {
+    ok: true,
+    people: people,
+    // No email on anyone at all is the signature of the missing scope, not of
+    // a workspace where nobody filled their profile in.
+    emailScopeMissing: people.length > 0 && withEmail === 0
+  };
+}
+
 // ---------------------------------------------------------------- PINGS
 
 /**

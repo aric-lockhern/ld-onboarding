@@ -72,6 +72,7 @@ function getTeamAdmin(token) {
   const cl = ss.getSheetByName(TABS.CLIENTS);
   if (cl && cl.getLastRow() > 1) {
     cl.getRange(2, 1, cl.getLastRow() - 1, C.WIDTH).getValues().forEach(r => {
+      if (!r[C.ID - 1]) return;
       const owner = String(r[C.OWNER - 1] || '').trim().toLowerCase();
       const p = byName[owner];
       if (!p) return;
@@ -91,13 +92,21 @@ function getTeamAdmin(token) {
   };
 }
 
-/** Live clients whose owner is not in the directory — the gap worth showing. */
+/**
+ * Live clients whose owner is not in the directory — the gap worth showing.
+ *
+ * getLastRow() on the Clients tab counts formatting and validation, not
+ * records, so a sheet with 500 styled empty rows reports 501. Every list built
+ * off this tab filters on the ID for that reason; this one did not, and the
+ * page said "500 clients with no owner" with 500 blank names underneath.
+ */
 function unassignedClients_(ss, byName) {
   const cl = ss.getSheetByName(TABS.CLIENTS);
   if (!cl || cl.getLastRow() < 2) return [];
 
   return cl.getRange(2, 1, cl.getLastRow() - 1, C.WIDTH).getValues()
     .filter(r => {
+      if (!r[C.ID - 1]) return false;
       const status = safeStr_(r[C.STATUS - 1]);
       if (status === 'Churned' || status === 'Paused') return false;
       const owner = String(r[C.OWNER - 1] || '').trim().toLowerCase();
@@ -198,6 +207,65 @@ function saveTeamMember(token, p) {
 
   sh.appendRow(values);
   return { ok: true, row: sh.getLastRow(), created: true };
+}
+
+/**
+ * Adds a batch of people straight off the Slack roster.
+ *
+ * One call rather than one per person: importing eleven colleagues through
+ * eleven round trips means eleven chances to half-finish, and no way to say
+ * what landed. Specialties are left empty deliberately — nothing in Slack
+ * knows who does paid search, and guessing from a job title would assign real
+ * work off a string somebody typed into their profile.
+ *
+ * @param {Array} people [{ name, email, slackId, role }]
+ */
+function importTeamMembers(token, people) {
+  checkToken_(token);
+  people = people || [];
+  if (!people.length) return { ok: false, message: 'Nobody selected.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(TABS.TEAM) || mkTab_(ss, TABS.TEAM, TEAM_HEADERS);
+
+  // Matched on both keys, because someone typed into the tab by hand has a
+  // name and an email but no ID, and re-importing them would duplicate them.
+  const taken = {};
+  readTeamRows_(sh).forEach(t => {
+    if (t.slackId) taken['id:' + t.slackId] = true;
+    if (t.email) taken['em:' + t.email.toLowerCase()] = true;
+    taken['nm:' + t.name.toLowerCase()] = true;
+  });
+
+  const rows = [];
+  const skipped = [];
+
+  people.forEach(p => {
+    const name = String((p && p.name) || '').trim();
+    if (!name) return;
+    const email = String((p && p.email) || '').trim();
+    const slackId = String((p && p.slackId) || '').trim();
+
+    if (taken['nm:' + name.toLowerCase()]
+        || (slackId && taken['id:' + slackId])
+        || (email && taken['em:' + email.toLowerCase()])) {
+      skipped.push(name);
+      return;
+    }
+    taken['nm:' + name.toLowerCase()] = true;
+    if (slackId) taken['id:' + slackId] = true;
+    if (email) taken['em:' + email.toLowerCase()] = true;
+
+    rows.push([name, email, slackId, '', String((p && p.role) || '').trim(), true]);
+  });
+
+  if (rows.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, TEAM_HEADERS.length)
+      .setValues(rows);
+  }
+
+  return { ok: true, added: rows.length, skipped: skipped,
+           noEmail: rows.filter(r => !r[1]).length };
 }
 
 /**
