@@ -95,6 +95,21 @@ const FAKE = {
   buildClientProfile: { ok:true, sources:['Sales call transcript','Onboarding / kickoff call transcript'],
     profile:'Family business, second generation. Short replies, expects the number first.' },
   getClientProfile: { ok:true, profile:'' },
+  hasSlackToken: true,
+  slackTest: { ok:true, team:'Lockhern Digital', botUser:'onboarding-bot',
+    granted:['channels:manage','groups:write','users:read','users:read.email','chat:write'],
+    missing:[], scopesUnknown:false },
+  slackPeople: { ok:true, people:[
+    { name:'Drake King', email:'drake@lockherndigital.com', slackId:'U01DRAKE',
+      role:'Paid lead', matched:true },
+    { name:'Alexandra McCurdy', email:'alex@lockherndigital.com', slackId:'U01ALEX',
+      role:'Social', matched:true, lookedUp:true },
+    { name:'Cory Botti', email:'cory@lockherndigital.com', slackId:'',
+      role:'Founder', matched:false, why:'no Slack account with that email' }
+  ] },
+  slackCreateChannel: { ok:true, name:'#harbor-and-sons', channelId:'C01ABC',
+    invited:2, failed:[] },
+  slackPingOutstanding: { ok:true, posted:7, channel:'#harbor-sons' },
   getTeam: [
     { name:'Drake King', email:'drake@lockherndigital.com', slackId:'U01DRAKE',
       skills:['Google Ads','Shopping','Merchant Center'], role:'Paid lead' },

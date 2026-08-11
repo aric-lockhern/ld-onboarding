@@ -295,6 +295,7 @@
   .lnk{background:none; border:0; padding:0; cursor:pointer; color:var(--blue);
     font:500 12.5px/1 "Inter",sans-serif; text-decoration:underline}
   .lnk:hover{color:var(--blue-dk)}
+  .chk.off{opacity:.55}
   .pri-h{font-size:11px; font-weight:700; text-transform:uppercase;
     letter-spacing:.06em; color:var(--muted); margin:16px 0 6px}
   .pri-h:first-child{margin-top:4px}
@@ -477,7 +478,8 @@ var SERVER_FNS = [
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
   'buildClientProfile', 'getClientProfile', 'deleteClient',
   'getClientDocs', 'getTeam',
-  'buildActionItems', 'getActionItems', 'updateActionItem'
+  'buildActionItems', 'getActionItems', 'updateActionItem',
+  'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding', 'hasSlackToken'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -828,6 +830,119 @@ var CALL_STATES = ['Not applicable','To schedule','Scheduled','Running'];
  * its own priority. Folding them together would gate onboarding on a
  * negative-keyword sweep.
  */
+/**
+ * Channel creation, membership, and chasing what is outstanding.
+ *
+ * Private by default: a client channel carries spend, fees and enough account
+ * detail that a public channel in a workspace with contractors in it is a
+ * decision nobody consciously made.
+ */
+function slackCard(c){
+  if (c.slack){
+    return '<h3>' + esc(c.slack) + '</h3>'
+      + '<div class="hint">Post the outstanding onboarding items to this channel, '
+      + 'grouped by who owns them and tagging them by name. Nothing is sent when '
+      + 'nothing is outstanding.</div>'
+      + '<div class="startrow">'
+      + '<button class="btn" id="slackPing">Ping outstanding items</button>'
+      + '<button class="btn" id="slackCheck">Test connection</button></div>';
+  }
+  return '<h3>No channel yet</h3>'
+    + '<div class="hint">Creates a private channel for this client and invites '
+    + 'the people you pick from the Team tab.</div>'
+    + '<div id="slackPeople" class="hint">Loading the team…</div>'
+    + '<div class="startrow">'
+    + '<button class="btn pri" id="slackMake">Create channel</button>'
+    + '<label class="mini"><input type="checkbox" id="slackPublic"> Public channel</label>'
+    + '<button class="btn" id="slackCheck">Test connection</button></div>';
+}
+
+function wireSlack(clientId, c){
+  if (el('slackCheck')){
+    el('slackCheck').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Checking…';
+      api('slackTest').then(function(r){
+        b.disabled = false; b.textContent = 'Test connection';
+        if (!r.ok){ toast(r.message, true); return; }
+        if (r.scopesUnknown){
+          toast('Connected to ' + r.team + ' as ' + r.botUser
+            + '. Slack did not report the granted scopes, so try an action to '
+            + 'see whether one is missing.');
+        } else if (r.missing.length){
+          toast('Connected to ' + r.team + ', but missing: ' + r.missing.join(', ')
+            + '. Add them under OAuth & Permissions, then reinstall the app.', true);
+        } else {
+          toast('Connected to ' + r.team + ' as ' + r.botUser + '. All scopes present.');
+        }
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Test connection'; fail(e);
+      });
+    });
+  }
+
+  if (el('slackPing')){
+    el('slackPing').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Posting…';
+      api('slackPingOutstanding', TOKEN, clientId, '').then(function(r){
+        b.disabled = false; b.textContent = 'Ping outstanding items';
+        toast(r.ok ? ('Posted ' + r.posted + ' items to ' + r.channel + '.')
+                   : r.message, !r.ok);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Ping outstanding items'; fail(e);
+      });
+    });
+  }
+
+  if (!el('slackMake')) return;
+
+  // The picker is a second call, so the card paints without waiting on Slack.
+  api('slackPeople').then(function(r){
+    var box = el('slackPeople');
+    if (!box) return;
+    if (r.teamEmpty){
+      box.className = 'hint';
+      box.innerHTML = 'Nobody on the Team tab yet — the channel will be created '
+        + 'empty. Add people in the sheet to pick them here.';
+      return;
+    }
+    box.className = 'checks';
+    box.innerHTML = (r.people || []).map(function(p){
+      return '<label class="chk' + (p.matched ? '' : ' off') + '">'
+        + '<input type="checkbox" data-slack-id="' + esc(p.slackId) + '"'
+        + (p.matched ? '' : ' disabled') + '>'
+        + '<span><span class="nm">' + esc(p.name) + '</span><br>'
+        + '<span class="cat">' + esc(p.matched
+            ? (p.role || p.email) : ('not matched — ' + (p.why || '')))
+        + '</span></span></label>';
+    }).join('');
+    if (r.scopeProblem) toast(r.scopeProblem, true);
+  }).catch(function(){
+    if (el('slackPeople')) el('slackPeople').textContent =
+      'Could not read the team from Slack.';
+  });
+
+  el('slackMake').addEventListener('click', function(){
+    var b = this;
+    var ids = [].filter.call(document.querySelectorAll('[data-slack-id]'),
+      function(i){ return i.checked && i.getAttribute('data-slack-id'); })
+      .map(function(i){ return i.getAttribute('data-slack-id'); });
+
+    b.disabled = true; b.textContent = 'Creating…';
+    api('slackCreateChannel', TOKEN, clientId, {
+      isPrivate: !(el('slackPublic') && el('slackPublic').checked),
+      memberIds: ids
+    }).then(function(r){
+      b.disabled = false; b.textContent = 'Create channel';
+      if (!r.ok){ toast(r.message, true); return; }
+      toast('Created ' + r.name + (r.invited ? ' and invited ' + r.invited : '') + '.');
+      (r.failed || []).forEach(function(f){ toast(f, true); });
+      openClient(clientId);
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Create channel'; fail(e);
+    });
+  });
+}
+
 function loadActions(clientId){
   api('getActionItems', clientId).then(function(r){
     if (!el('actWrap')) return;
@@ -899,7 +1014,8 @@ function wireActions(clientId, r){
         (res.outOfScope || []).forEach(function(o){
           toast('Out of scope: ' + o.item + ' — ' + o.why, true);
         });
-        loadActions(clientId);
+        wireSlack(clientId, c);
+    loadActions(clientId);
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Build action items'; fail(e);
       });
@@ -1069,6 +1185,9 @@ function openClient(clientId){
 
     h += '<div class="grp">Client profile</div><div class="card">'
       + '<div class="sect" id="profWrap">' + profileCard(c.profile) + '</div></div>';
+
+    h += '<div class="grp">Slack</div><div class="card">'
+      + '<div class="sect" id="slackWrap">' + slackCard(c) + '</div></div>';
 
     h += '<div class="grp">Audit action items</div><div class="card">'
       + '<div class="sect" id="actWrap">' + loading() + '</div></div>';
