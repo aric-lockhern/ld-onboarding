@@ -299,6 +299,26 @@ function draftsTab_() {
   return sh;
 }
 
+/**
+ * The draft a client came from, so its documents can be re-read long after.
+ *
+ * Returns '' when the draft was deleted — the profile can then only be written
+ * by hand, which is the cost of deleting the record of a deal.
+ */
+function draftIdForClient_(clientId) {
+  if (!clientId) return '';
+  const sh = draftsTab_();
+  if (sh.getLastRow() < 2) return '';
+
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, D.WIDTH).getValues();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][D.CLIENT - 1]) === String(clientId)) {
+      return String(rows[i][D.ID - 1]);
+    }
+  }
+  return '';
+}
+
 function draftRow_(draftId) {
   if (!draftId) return null;
   const sh = draftsTab_();

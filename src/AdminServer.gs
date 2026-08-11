@@ -91,6 +91,10 @@ function getClientRecord_(clientId) {
     // platformsForClient_ parses them.
     platformsRaw: r[C.PLATFORMS - 1], servicesRaw: r[C.SERVICES - 1],
     fees: parseFees_(r[C.FEES - 1]),
+    // How to work with them, as opposed to what they bought. Built at creation
+    // from the deal documents; see Profile.gs.
+    profile: String(r[C.PROFILE - 1] || ''),
+    draftId: draftIdForClient_(r[C.ID - 1]),
     planStatus: r[C.PLAN_STATUS - 1], planDoc: r[C.PLAN_DOC - 1]
   };
 }
