@@ -15,6 +15,7 @@ const TABS = {
   PHASES: 'Phases',
   DRAFTS: 'Drafts',
   TEAM: 'Team',
+  ACTIONS: 'Actions',
   CONFIG: 'Config'
 };
 
@@ -36,6 +37,28 @@ const DRAFT_HEADERS = [
  * not, and the API wants the ID anyway.
  */
 const TEAM_HEADERS = ['Name', 'Email', 'Slack Member ID', 'Skills', 'Role', 'Active'];
+
+/**
+ * Work the audit says to do, as opposed to access we need before we can start.
+ *
+ * Deliberately not the Access tab. That one is the onboarding checklist — it
+ * has phases, gates, due dates driven off the contract start, and it closes
+ * once the client is live. Audit findings are account work with their own
+ * priority and lifecycle, and folding them in would gate onboarding on a
+ * negative-keyword sweep.
+ */
+const ACTION_HEADERS = [
+  'Client ID', 'Action', 'Why it matters', 'Source', 'Priority',
+  'Effort', 'Owner', 'Status', 'Created'
+];
+
+const ACT = {
+  CLIENT: 1, ACTION: 2, WHY: 3, SOURCE: 4, PRIORITY: 5,
+  EFFORT: 6, OWNER: 7, STATUS: 8, CREATED: 9, WIDTH: 9
+};
+
+const ACTION_STATUSES = ['To do', 'In progress', 'Done', 'Not doing'];
+const ACTION_PRIORITIES = ['Now', 'Next', 'Later'];
 
 const STATUSES = ['Not started', 'Info needed', 'Requested', 'Complete', 'Blocked', 'N/A'];
 const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
@@ -199,6 +222,8 @@ function setup() {
   mkTab_(ss, TABS.DRAFTS, DRAFT_HEADERS);
 
   mkTab_(ss, TABS.TEAM, TEAM_HEADERS);
+
+  mkTab_(ss, TABS.ACTIONS, ACTION_HEADERS);
 
   seedPlatforms_(ss);
   seedServices_(ss);
@@ -452,6 +477,12 @@ function applyValidation_(ss) {
     list(['Not started', 'Generating', 'Ready', 'Approved']));
 
   ss.getSheetByName(TABS.ACCESS).getRange(2, A.STATUS, 2000).setDataValidation(list(STATUSES));
+
+  const actions = ss.getSheetByName(TABS.ACTIONS);
+  if (actions) {
+    actions.getRange(2, ACT.STATUS, 1000).setDataValidation(list(ACTION_STATUSES));
+    actions.getRange(2, ACT.PRIORITY, 1000).setDataValidation(list(ACTION_PRIORITIES));
+  }
 }
 
 function addProgressFormula_(ss) {

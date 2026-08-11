@@ -295,6 +295,19 @@
   .lnk{background:none; border:0; padding:0; cursor:pointer; color:var(--blue);
     font:500 12.5px/1 "Inter",sans-serif; text-decoration:underline}
   .lnk:hover{color:var(--blue-dk)}
+  .pri-h{font-size:11px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--muted); margin:16px 0 6px}
+  .pri-h:first-child{margin-top:4px}
+  .pri-h span{color:var(--faint); font-weight:500}
+  .act{display:flex; gap:12px; align-items:flex-start; padding:10px 0;
+    border-top:1px solid var(--line)}
+  .act .bd{flex:1; min-width:0}
+  .act .nm{font-size:14px; font-weight:500; color:var(--ink)}
+  .act .mt{font-size:13px; color:var(--muted); margin-top:2px}
+  .act .meta{font-size:12px; color:var(--faint); margin-top:3px}
+  .act .meta b{color:var(--warning); font-weight:600}
+  .act.done .nm{text-decoration:line-through; color:var(--faint)}
+  .act select{flex:none; width:124px}
   .btn.danger{border-color:#F0C9C9; color:var(--critical)}
   .btn.danger:hover{background:#FDF2F2; border-color:var(--critical)}
 
@@ -463,7 +476,8 @@ var SERVER_FNS = [
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
   'buildClientProfile', 'getClientProfile', 'deleteClient',
-  'getClientDocs', 'getTeam'
+  'getClientDocs', 'getTeam',
+  'buildActionItems', 'getActionItems', 'updateActionItem'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -806,6 +820,103 @@ var CALL_STATES = ['Not applicable','To schedule','Scheduled','Running'];
  * intake knew that. Someone picking the account up should be able to read the
  * signed contract without asking where it went.
  */
+/**
+ * What the audit says to do, who owns it, and in what order.
+ *
+ * Separate from the onboarding checklist on purpose: that one has phases and
+ * gates and closes when the client goes live, while this is account work with
+ * its own priority. Folding them together would gate onboarding on a
+ * negative-keyword sweep.
+ */
+function loadActions(clientId){
+  api('getActionItems', clientId).then(function(r){
+    if (!el('actWrap')) return;
+    el('actWrap').innerHTML = actionsCard(r);
+    wireActions(clientId, r);
+  }).catch(function(){
+    if (el('actWrap')) el('actWrap').innerHTML =
+      '<h3>Action items</h3><div class="hint">Could not read them.</div>';
+  });
+}
+
+function actionsCard(r){
+  var items = (r && r.items) || [];
+  if (!items.length){
+    return '<h3>None yet</h3>'
+      + '<div class="hint">Reads the audit stored on this client, checks each '
+      + 'finding against what was actually sold and what the calls said, and '
+      + 'writes action items with an owner picked by skill. Anything the audit '
+      + 'recommends that is outside the contract comes back flagged rather than '
+      + 'queued as work.</div>'
+      + '<div class="startrow"><button class="btn" id="mkActions">'
+      + 'Build action items</button></div>';
+  }
+
+  var byPri = { 'Now': [], 'Next': [], 'Later': [] };
+  items.forEach(function(i){ (byPri[i.priority] || byPri.Later).push(i); });
+
+  var h = '';
+  ['Now', 'Next', 'Later'].forEach(function(p){
+    if (!byPri[p].length) return;
+    h += '<div class="pri-h">' + p + ' <span>' + byPri[p].length + '</span></div>';
+    h += byPri[p].map(function(i){
+      return '<div class="act' + (i.status === 'Done' ? ' done' : '') + '">'
+        + '<div class="bd"><div class="nm">' + esc(i.action) + '</div>'
+        + (i.why ? '<div class="mt">' + esc(i.why) + '</div>' : '')
+        + '<div class="meta">' + esc(i.source || '')
+        + (i.effort ? ' · ' + esc(i.effort) : '')
+        + (i.owner ? ' · ' + esc(i.owner) : ' · <b>unassigned</b>') + '</div></div>'
+        + '<select data-act-row="' + i.row + '" data-act-field="status">'
+        + (r.statuses || []).map(function(s){
+            return '<option' + (s === i.status ? ' selected' : '') + '>' + esc(s) + '</option>';
+          }).join('') + '</select></div>';
+    }).join('');
+  });
+
+  return '<h3>' + items.length + ' action item' + (items.length === 1 ? '' : 's')
+    + '</h3><div class="hint">From the audit, in the context of what was sold.</div>'
+    + h
+    + '<div class="startrow"><button class="btn" id="mkActions">Rebuild from the audit</button>'
+    + '<span class="note">Anything already started is kept.</span></div>';
+}
+
+function wireActions(clientId, r){
+  if (el('mkActions')){
+    el('mkActions').addEventListener('click', function(){
+      var b = this;
+      b.disabled = true; b.textContent = 'Reading the audit…';
+      api('buildActionItems', clientId).then(function(res){
+        b.disabled = false; b.textContent = 'Build action items';
+        if (!res.ok){ toast(res.message || 'Could not build them.', true); return; }
+        var bits = [res.written + ' written'];
+        if (res.preserved) bits.push(res.preserved + ' already started, kept');
+        if (res.unassigned) bits.push(res.unassigned + ' unassigned');
+        toast(bits.join(' · ') + '.');
+        if (res.teamEmpty){
+          toast('Nobody on the Team tab, so nothing could be assigned. '
+            + 'Add people in the sheet and rebuild.', true);
+        }
+        (res.outOfScope || []).forEach(function(o){
+          toast('Out of scope: ' + o.item + ' — ' + o.why, true);
+        });
+        loadActions(clientId);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Build action items'; fail(e);
+      });
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-act-row]'), function(sel){
+    sel.addEventListener('change', function(){
+      api('updateActionItem', TOKEN, Number(sel.getAttribute('data-act-row')),
+          sel.getAttribute('data-act-field'), sel.value)
+        .then(function(res){
+          toast(res.ok ? 'Saved.' : (res.message || 'Could not save.'), !res.ok);
+          if (res.ok) loadActions(clientId);
+        }).catch(fail);
+    });
+  });
+}
+
 function docsCard(r){
   var docs = (r && r.docs) || [];
   if (!docs.length){
@@ -959,6 +1070,9 @@ function openClient(clientId){
     h += '<div class="grp">Client profile</div><div class="card">'
       + '<div class="sect" id="profWrap">' + profileCard(c.profile) + '</div></div>';
 
+    h += '<div class="grp">Audit action items</div><div class="card">'
+      + '<div class="sect" id="actWrap">' + loading() + '</div></div>';
+
     // Filled in after the page paints. The documents are a second read and
     // should not hold up everything else on the page.
     h += '<div class="grp">Deal documents</div><div class="card">'
@@ -1029,6 +1143,8 @@ function openClient(clientId){
 
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    loadActions(clientId);
 
     api('getClientDocs', clientId).then(function(r){
       if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(r);
