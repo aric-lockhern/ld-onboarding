@@ -72,6 +72,30 @@ const SERVICE_SEED = [
 const TERMS = ['Month to month', '3 months', '6 months', '12 months', 'Custom'];
 const BIZ_TYPES = ['Lead Gen', 'eCommerce'];
 
+/**
+ * Platforms that follow from the kind of business, whatever was sold.
+ *
+ * An eCommerce client is running Shopping or PMax sooner or later, and both
+ * need a Merchant Center. Waiting for a document to name it means discovering
+ * at build time that nobody asked for it.
+ *
+ * This lives in code and NOT on a tab on purpose. Seeds bail once a tab has
+ * rows, so a rule expressed in seed data cannot reach a sheet that already
+ * exists — which is exactly how the first attempt at this failed: the
+ * qualifier was added to the Google Ads seed row, and every installed sheet
+ * already had its own Google Ads row without it.
+ *
+ * It pre-ticks a box on a review screen. Untick it if a client genuinely has
+ * no feed.
+ */
+const BIZ_TYPE_PLATFORMS = {
+  'ecommerce': ['Google Merchant Center']
+};
+
+function bizTypePlatforms_(bizType) {
+  return BIZ_TYPE_PLATFORMS[String(bizType || '').toLowerCase()] || [];
+}
+
 const INK = '#14181D';
 
 // Clients column map (1-based) — single source of truth for index changes.
@@ -462,7 +486,8 @@ function getPlatformList() {
 function getIntakeOptions() {
   return {
     cadences: CADENCES, terms: TERMS, bizTypes: BIZ_TYPES,
-    services: getServiceList()
+    services: getServiceList(),
+    bizPlatforms: BIZ_TYPE_PLATFORMS
   };
 }
 
@@ -658,6 +683,10 @@ function platformsForClient_(client) {
     (map[name] || [])
       .filter(rule => platformApplies_(rule, client.bizType))
       .forEach(rule => { if (out.indexOf(rule.name) === -1) out.push(rule.name); });
+  });
+
+  bizTypePlatforms_(client.bizType).forEach(p => {
+    if (out.indexOf(p) === -1) out.push(p);
   });
   return out;
 }
