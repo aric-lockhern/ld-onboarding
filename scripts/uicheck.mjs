@@ -138,6 +138,21 @@ const FAKE = {
     unassignedClients:[
       { clientId:'CORNHOLE-2608', company:'Cornhole Co', owner:'' }
     ] },
+  slackRoster: { ok:true, emailScopeMissing:false, people:[
+    { slackId:'U01ARIC', name:'Aric Lockhern', email:'aric@lockherndigital.com',
+      title:'Founder', guest:false, admin:true, onTeam:false },
+    { slackId:'U01DRAKE', name:'Drake King', email:'drake@lockherndigital.com',
+      title:'Paid search', guest:false, admin:false, onTeam:true },
+    { slackId:'U01ALEX', name:'Alexandra McCurdy', email:'alex@lockherndigital.com',
+      title:'Social', guest:false, admin:false, onTeam:true },
+    { slackId:'U01JAMIE', name:'Jamie Okonkwo', email:'jamie@lockherndigital.com',
+      title:'Analytics', guest:false, admin:false, onTeam:false },
+    // A contractor with no email on their profile: importable by member ID,
+    // and the row has to say why they cannot be matched by address.
+    { slackId:'U01SAM', name:'Sam Petrov', email:'', title:'Design',
+      guest:true, admin:false, onTeam:false }
+  ] },
+  importTeamMembers: { ok:true, added:3, skipped:[], noEmail:1 },
   saveTeamMember: { ok:true, row:5, created:true },
   deleteTeamMember: { ok:true, deactivated:false },
   assignClientOwner: { ok:true },
@@ -402,6 +417,43 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       shots.push(fTeamEdit);
       await page.click('#tmCancel');
       await page.waitForTimeout(250);
+
+      // Building the directory by typing eleven names is the setup people
+      // abandon halfway, so the roster import is the primary path and gets
+      // walked: read the workspace, filter it, pick somebody, add them.
+      await page.click('#importSlack');
+      await page.waitForSelector('#rosterList', { timeout: 5000 });
+
+      // Anyone already on the team must come back ticked off and disabled —
+      // importing them again is how one person becomes two rows answering to
+      // the same name, and owner lookup then picks whichever it reached first.
+      const already = await page.$$eval('[data-pick]', els =>
+        els.filter(e => e.disabled).length);
+      if (already !== 2) {
+        throw new Error('Expected 2 roster entries already on the team, got ' + already);
+      }
+
+      await page.fill('#rosterFind', 'jamie');
+      await page.waitForTimeout(150);
+      const shown = await page.$$eval('[data-roster]', els =>
+        els.filter(e => e.style.display !== 'none').length);
+      if (shown !== 1) {
+        throw new Error('The roster filter showed ' + shown + ' people for "jamie"');
+      }
+
+      await page.fill('#rosterFind', '');
+      await page.waitForTimeout(150);
+      const fRoster = `${OUT}/${name}-team-roster.png`;
+      await page.screenshot({ path: fRoster, fullPage: name === 'desktop' });
+      shots.push(fRoster);
+
+      await page.click('#rosterAll');
+      const picked = await page.$$eval('[data-pick]:checked', els => els.length);
+      if (picked !== 3) {
+        throw new Error('Select all ticked ' + picked + ', expected the 3 addable');
+      }
+      await page.click('#rosterAdd');
+      await page.waitForTimeout(400);
     }
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
