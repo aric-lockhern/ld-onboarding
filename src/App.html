@@ -424,6 +424,26 @@
 var TOKEN = '';           // no localStorage in the Apps Script sandbox
 var VIEW  = 'overview';
 var CACHE = { overview:null, queue:null, platforms:null, options:null };
+
+/**
+ * How long a cached read of the sheet stays trustworthy.
+ *
+ * The database is a spreadsheet that people edit by hand — that is the whole
+ * premise — so a cache with no expiry shows deleted clients until someone
+ * thinks to press Refresh. Short enough that a sheet edit shows up on the next
+ * click, long enough that moving between views does not refetch every time.
+ */
+var CACHE_TTL_MS = 30000;
+var CACHE_AT = {};
+
+function cachedRead(key, fetcher){
+  var fresh = CACHE[key] && (Date.now() - (CACHE_AT[key] || 0)) < CACHE_TTL_MS;
+  if (fresh) return Promise.resolve(CACHE[key]);
+  return fetcher().then(function(d){
+    CACHE[key] = d; CACHE_AT[key] = Date.now();
+    return d;
+  });
+}
 var DETAIL = null;
 
 /**
@@ -546,9 +566,9 @@ function stamp(){
 
 function renderOverview(){
   el('view').innerHTML = loading();
-  var p = CACHE.overview ? Promise.resolve(CACHE.overview) : api('getDashboardOverview', TOKEN);
+  var p = cachedRead('overview', function(){ return api('getDashboardOverview', TOKEN); });
   p.then(function(d){
-    CACHE.overview = d; stamp();
+    stamp();
     var t = d.totals || {clients:0, overdue:0, blocked:0, stale:0};
     var live = (d.clients || []).filter(function(c){
       return c.status !== 'Churned' && c.status !== 'Paused';
@@ -634,9 +654,9 @@ function wireClientRows(){
 
 function renderQueue(){
   el('view').innerHTML = loading();
-  var p = CACHE.queue ? Promise.resolve(CACHE.queue) : api('getSendQueue', TOKEN);
+  var p = cachedRead('queue', function(){ return api('getSendQueue', TOKEN); });
   p.then(function(q){
-    CACHE.queue = q; stamp();
+    stamp();
     var h = '';
     h += section('Ready to send', q.ready, function(r){
       return actions(r, [['pri', 'Preview', 'preview']]);
@@ -735,9 +755,9 @@ function showPreview(p, clientId, phase, nudge){
 
 function renderClients(){
   el('view').innerHTML = loading();
-  var p = CACHE.overview ? Promise.resolve(CACHE.overview) : api('getDashboardOverview', TOKEN);
+  var p = cachedRead('overview', function(){ return api('getDashboardOverview', TOKEN); });
   p.then(function(d){
-    CACHE.overview = d; stamp();
+    stamp();
     var all = d.clients || [];
     var h = '<div class="f" style="max-width:280px; margin-bottom:4px">'
       + '<input id="q" placeholder="Search company or owner…" autocomplete="off"></div>'
