@@ -706,9 +706,31 @@ function clientRowNumber_(clientId) {
   return 0;
 }
 
+/**
+ * SLUG-YYMM, with a suffix when that is already taken.
+ *
+ * The bare form is not unique: the same company created twice in one month got
+ * the same ID both times. Every lookup is `find(x => x.id === clientId)`, so the
+ * second record was permanently unreachable — the page said "not found", and any
+ * edit that did resolve landed on the first row instead. Two identical rows is
+ * exactly what that produces.
+ */
 function makeClientId_(company) {
   const slug = String(company).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'CLIENT';
-  return slug + '-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMM');
+  const base = slug + '-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMM');
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.CLIENTS);
+  const taken = {};
+  if (sh && sh.getLastRow() > 1) {
+    sh.getRange(2, C.ID, sh.getLastRow() - 1, 1).getValues()
+      .forEach(r => { if (r[0]) taken[String(r[0]).trim()] = true; });
+  }
+
+  if (!taken[base]) return base;
+  for (let n = 2; n < 100; n++) {
+    if (!taken[base + '-' + n]) return base + '-' + n;
+  }
+  return base + '-' + Utilities.getUuid().slice(0, 4).toUpperCase();
 }
 
 function slugAlias_(company) {
