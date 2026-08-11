@@ -171,6 +171,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Set Anthropic API key', 'promptForApiKey')
     .addItem('Set ClickUp API token', 'promptForClickUpToken')
+    .addItem('Set Slack bot token', 'promptForSlackToken')
     .addItem('Set dashboard PIN', 'promptForPin')
     .addItem('Re-run setup / repair tabs', 'setup')
     .addToUi();
