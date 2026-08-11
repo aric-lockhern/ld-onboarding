@@ -19,8 +19,25 @@
  * instead, so they can be sold properly or dropped.
  */
 
-/** Enough for a page of items with reasons. */
-const ACTIONS_MAX_TOKENS = 8000;
+/**
+ * Enough for a page of items with reasons.
+ *
+ * Raised from 8,000 after the model started running out mid-JSON on a five
+ * document set. A truncated reply is not a smaller answer, it is no answer —
+ * the parse fails and the whole run is lost.
+ */
+const ACTIONS_MAX_TOKENS = 16000;
+
+/**
+ * The documents a commitment is ever found in.
+ *
+ * The deck is where the promises are made, the two calls are where they are
+ * made verbally and sometimes revised, and the scope of work is what decides
+ * whether a promise is inside the contract or a sales lead. The ClickUp intake
+ * form is deliberately absent: it is the client answering questions, not us
+ * committing to anything, and it only crowds the prompt.
+ */
+const ACTION_SOURCE_KEYS = ['deck', 'sales', 'kickoff', 'sow'];
 
 // ---------------------------------------------------------------- PUBLIC
 
@@ -36,29 +53,49 @@ function buildActionItems(clientId) {
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, message: 'Client not found.' };
 
-  const docs = profileSources_(draftIdForClient_(clientId));
+  const all = profileSources_(draftIdForClient_(clientId));
+  const docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1);
+
   if (!docs.length) {
-    return { ok: false, message: 'No stored documents to read an audit from. '
-      + 'The draft they came from may have been deleted.' };
+    return { ok: false,
+             message: all.length
+               ? 'The stored documents are ' + all.map(d => d.label).join(', ')
+                 + ' — none of them is a deck, a call transcript or a scope of '
+                 + 'work, so there is nothing to read commitments from.'
+               : 'No stored documents. The draft they came from may have been '
+                 + 'deleted, or nothing was ever uploaded to it.' };
   }
 
   const team = getTeam();
+  // Named on every outcome, good or bad. "It failed" with no list of what it
+  // read is a bug report nobody can act on — including the deck being absent,
+  // which is the single most common reason for a thin result.
+  const read = docs.map(d => d.label);
 
   let out;
   try {
     out = callAnthropic_(buildActionsPrompt_(client, docs, team),
                          { maxTokens: ACTIONS_MAX_TOKENS });
   } catch (e) {
-    return { ok: false, message: (e && e.message) || String(e) };
+    return { ok: false, read: read,
+             message: ((e && e.message) || String(e))
+               + ' (read: ' + read.join(', ') + ')' };
   }
 
   const items = (out && out.actions) || [];
+  const outOfScope = (out && out.outOfScope) || [];
+
+  // An empty result is an answer, not a failure. It used to come back as
+  // ok:false, so "we did not promise anything specific" and "the API call
+  // broke" arrived on screen as the same red toast.
   if (!items.length) {
-    return { ok: false, noAudit: true,
+    return { ok: true, written: 0, preserved: 0, read: read,
+             outOfScope: outOfScope, unassigned: 0, teamEmpty: !team.length,
+             nothing: true,
              message: (out && out.note)
-               || 'Nothing in these documents reads as an audit finding. If the '
-                + 'audit is a separate deck, add it to the draft as the pitch '
-                + 'deck and re-analyse first.' };
+               || 'Nothing in ' + read.join(', ') + ' reads as a specific '
+                + 'commitment. If the deck is missing from the draft, add it '
+                + 'and re-analyse first.' };
   }
 
   const kept = writeActions_(clientId, items);
@@ -67,7 +104,8 @@ function buildActionItems(clientId) {
     ok: true,
     written: kept.written,
     preserved: kept.preserved,
-    outOfScope: (out && out.outOfScope) || [],
+    read: read,
+    outOfScope: outOfScope,
     unassigned: items.filter(i => !i.owner).length,
     teamEmpty: !team.length
   };
@@ -173,11 +211,28 @@ function buildActionsPrompt_(client, docs, team) {
   const agency = cfg('Agency Name') || 'the agency';
 
   const system = [
-    'You turn account audits into work for ' + agency + ', a paid search and',
-    'organic social agency.',
+    'You turn what ' + agency + ' promised a client into work. ' + agency + ' is',
+    'a paid search and organic social agency.',
     '',
-    'An audit deck is a list of findings. The team needs a list of things to do,',
-    'in an order, with a name against each. Your job is that translation.',
+    'You are reading the pitch deck, the sales call, the kickoff call and the',
+    'signed scope of work. Find everything specific that was said would be done,',
+    'and write each one as a task somebody can pick up.',
+    '',
+    'Commitments come in three shapes and all three count:',
+    '- An audit finding in the deck with a fix attached. "60% impression share',
+    '  lost to ad rank" is a finding; the commitment is the restructure that',
+    '  was proposed beside it.',
+    '- Something said out loud on a call. "We will rebuild the feed in month',
+    '  two", "we will get that Reddit thread sorted" — spoken promises are the',
+    '  ones that get forgotten, because they are not written anywhere.',
+    '- A deliverable named in the scope of work that needs doing rather than',
+    '  simply being ongoing management. "One custom landing page at a time" is',
+    '  a commitment; "campaign management" is the retainer.',
+    '',
+    'Do not pad. Ongoing management, meetings and reporting cadence are the',
+    'contract, not action items — a list padded with "attend the weekly call"',
+    'is a list nobody reads. If something was discussed but explicitly not',
+    'agreed, leave it out of actions.',
     '',
     'The hard part is scope, and it is the part that matters most:',
     '- A deck written to win the deal proposes more than the contract bought.',
@@ -195,7 +250,9 @@ function buildActionsPrompt_(client, docs, team) {
     '  campaign by margin tier so bidding can differ" is.',
     '- why it matters says what it costs to not do it, in the terms this client',
     '  cares about. No generic best-practice language.',
-    '- source names the document and, where you can, the finding it came from.',
+    '- source names the document and, where you can, quotes the promise. Being',
+    '  able to see where a commitment came from is what settles the argument',
+    '  about whether it was one.',
     '- priority: Now for anything losing money or blocking other work; Next for',
     '  the following few weeks; Later for real but not urgent. Be sparing with',
     '  Now — everything urgent means nothing is.',
@@ -214,17 +271,17 @@ function buildActionsPrompt_(client, docs, team) {
     actions: [{
       action: 'string — the thing to do, specific enough to finish',
       why: 'string — what not doing it costs',
-      source: 'string — document and finding',
+      source: 'string — document, and the promise quoted where you can',
       priority: 'Now|Next|Later',
       effort: 'string — rough size',
       owner: 'string — a name from the team list, or empty'
     }],
     outOfScope: [{
-      item: 'string — what the audit recommends',
+      item: 'string — what was proposed',
       why: 'string — why it is outside what was sold',
       needed: 'string — what would have to be agreed to do it'
     }],
-    note: 'string — only if there is no audit in these documents'
+    note: 'string — only if these documents contain no commitments at all'
   };
 
   const user = [
@@ -242,9 +299,10 @@ function buildActionsPrompt_(client, docs, team) {
     'Return:',
     JSON.stringify(shape, null, 2),
     '',
-    'If none of these documents contains an audit or account review, return an',
-    'empty actions array and say so in note. Do not invent findings from a',
-    'scope of work.',
+    'Only return an empty actions array if these documents genuinely contain no',
+    'specific promise of anything — say so in note if that happens. A pitch',
+    'deck almost always contains commitments; if you find none, say what the',
+    'documents did contain instead.',
     '',
     '--- DOCUMENTS ---',
     docs.map(d => '### ' + d.label + '\n'
