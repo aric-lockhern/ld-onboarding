@@ -156,6 +156,7 @@ function runExtraction(items, draftId) {
   const docs = [];
   const missing = [];
   const attached = [];
+  const notAttached = [];
   let attachedBytes = 0;
 
   items.forEach(it => {
@@ -179,7 +180,21 @@ function runExtraction(items, draftId) {
         doc.attach = { mimeType: it.originalMime, data: b64, label: label };
         attachedBytes += b64.length;
         attached.push(label);
+      } else {
+        notAttached.push({ label: label, reason: b64
+          ? 'too large once the other attachments were counted'
+          : 'the stored original could not be read back from Drive' });
       }
+    } else if (!it.originalId) {
+      // Pasted text and links have no original to send, so a fee table that is
+      // an image is simply not there. Worth naming when the fees come back empty.
+      notAttached.push({ label: label,
+        reason: 'no original file — this source was pasted or linked, so only '
+              + 'its text exists' });
+    } else {
+      notAttached.push({ label: label,
+        reason: 'stored as ' + (it.originalMime || 'an unknown type')
+              + ', which cannot be sent as a page' });
     }
     docs.push(doc);
   });
@@ -209,8 +224,33 @@ function runExtraction(items, draftId) {
              trimmed: trimmed, missing: missing };
   }
 
+  // The fee table is the one thing that is routinely a picture, and in a prompt
+  // asking for fifteen other fields it is easy for the model to answer from the
+  // transcription and move on. When the main pass comes back with no fees and
+  // there are pages to look at, ask again with nothing else to do.
+  let feePass = '';
+  if (!hasFees_(out.fees) && docs.some(d => d.attach)) {
+    try {
+      const again = callAnthropic_(buildFeePrompt_(docs), { maxTokens: 2000 });
+      if (hasFees_(again && again.fees)) {
+        out.fees = again.fees;
+        // The total comes from the same reading as the lines, so take it too
+        // rather than leaving MRR blank under a populated fee table.
+        out.fields = out.fields || {};
+        if (again.mrr && Number(again.mrr.value)) out.fields.mrr = again.mrr;
+        feePass = 'second';
+      } else {
+        feePass = 'second-empty';
+      }
+    } catch (e) {
+      feePass = 'second-failed';
+    }
+  }
+
   const result = {
     ok: true,
+    feePass: feePass,
+    notAttached: notAttached,
     fields: out.fields || {},
     platforms: out.platforms || null,
     services: out.services || null,
@@ -719,6 +759,71 @@ function buildExtractPrompt_(docs) {
     user: user,
     documents: docs.filter(d => d.attach).map(d => d.attach)
   };
+}
+
+/** Whether an extraction actually produced fee lines worth keeping. */
+function hasFees_(fees) {
+  const v = fees && fees.value;
+  return Array.isArray(v) && v.some(l => l && Number(l.amount));
+}
+
+/**
+ * A second, narrower request whose only job is the fee table.
+ *
+ * The main prompt asks for fifteen fields at once, and when the pricing is a
+ * picture in the middle of a ten-page contract it is easy for the model to
+ * answer from the transcription — which trails off at "client shall pay:" — and
+ * move on. With nothing else to do and the pages in front of it, it looks.
+ *
+ * Only the attachments go in. Sending the transcription again would reintroduce
+ * exactly the text that lacks the numbers.
+ */
+function buildFeePrompt_(docs) {
+  const attach = docs.filter(d => d.attach);
+
+  const system = [
+    'You read pricing out of agency contracts and pitch decks.',
+    '',
+    'The fee table is very often an IMAGE with no text layer — a screenshot of a',
+    'slide, or a table exported as a picture. Read the attached pages visually.',
+    'Do not answer from any text you were given; look at the pages.',
+    '',
+    'Find the page titled something like "Fees & Payment Terms", "Investment",',
+    'or "Pricing". Return every line on it.',
+    '',
+    'Return ONLY a JSON object, no prose and no code fence.'
+  ].join('\n');
+
+  const user = [
+    'Attached: ' + attach.map(d => d.label).join(', ') + '.',
+    '',
+    'Return:',
+    JSON.stringify({
+      fees: {
+        value: [{ label: 'string', amount: 0 }],
+        confidence: 'high|medium|low',
+        quote: 'string',
+        source: 'string'
+      },
+      mrr: { value: 0, confidence: 'high|medium|low', quote: 'string', source: 'string' }
+    }, null, 2),
+    '',
+    'One line per channel or item, using the service name where it matches:',
+    SERVICES.join(' | '),
+    'Discounts are their own line with a NEGATIVE amount. Do NOT include the',
+    'total as a line — mrr is the total the client pays each month, after any',
+    'discount. Amounts are plain numbers: no currency symbols, no commas.',
+    '',
+    'One-off or setup fees belong in the lines too, labelled as such. If a fee',
+    'is annual or quarterly, convert it to a monthly figure and say so in the',
+    'label.',
+    '',
+    'quote: what the page actually says — read it off the image if that is where',
+    'it is. If there is genuinely no pricing on any attached page, return',
+    '{"fees": null}. Do not guess a number.'
+  ].join('\n');
+
+  return { system: system, user: user, documents: attach.map(d => d.attach) };
 }
 
 /**
