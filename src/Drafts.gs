@@ -305,6 +305,38 @@ function draftsTab_() {
  * Returns '' when the draft was deleted — the profile can then only be written
  * by hand, which is the cost of deleting the record of a deal.
  */
+/**
+ * The draft's call transcript and contract text, for the Intake tab.
+ *
+ * generatePlan_ reads that tab, not the draft, so without this the onboarding
+ * plan is written from the client record alone — no transcript, no contract —
+ * for a deal whose documents are all sitting in Drive. The kickoff call is
+ * preferred over the sales call: it is the one that settled how the work
+ * actually runs.
+ */
+function draftContext_(draftId) {
+  const out = { transcript: '', contract: '' };
+  if (!draftId) return out;
+
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return out;
+
+  const byKey = {};
+  (d.sources || []).forEach(s => { if (s && s.fileId) byKey[s.key] = s.fileId; });
+
+  const pick = keys => {
+    for (let i = 0; i < keys.length; i++) {
+      const text = readStored_(byKey[keys[i]]);
+      if (text && text.trim()) return text;
+    }
+    return '';
+  };
+
+  out.transcript = pick(['kickoff', 'sales']);
+  out.contract = pick(['sow', 'deck', 'form']);
+  return out;
+}
+
 function draftIdForClient_(clientId) {
   if (!clientId) return '';
   const sh = draftsTab_();
