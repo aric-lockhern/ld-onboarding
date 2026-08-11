@@ -167,26 +167,68 @@ function slackPeople() {
   const team = getTeam();
   if (!team.length) return { ok: true, people: [], teamEmpty: true };
 
+  const row = (t, extra) => Object.assign({
+    name: t.name, email: t.email, slackId: t.slackId,
+    role: t.role, skills: t.skills || [], matched: false
+  }, extra);
+
+  // With no token there is nothing to look anyone up against. Say that once,
+  // rather than returning every person "unmatched — no_token" and letting the
+  // reader work out that the problem is the same one nine times.
+  if (!slackToken_()) {
+    return { ok: true, noToken: true,
+             people: team.map(t => row(t, { matched: !!t.slackId,
+                                            why: 'no Slack token set' })) };
+  }
+
   let scopeProblem = '';
   const people = team.map(t => {
-    if (t.slackId) return { name: t.name, email: t.email, slackId: t.slackId,
-                            role: t.role, matched: true };
-    if (!t.email) return { name: t.name, email: '', slackId: '', role: t.role,
-                           matched: false, why: 'no email on the Team tab' };
+    if (t.slackId) return row(t, { matched: true });
+    if (!t.email) return row(t, { why: 'no email on the Team tab' });
 
     const r = slackCall_('users.lookupByEmail', { email: t.email });
-    if (r.ok && r.user) {
-      return { name: t.name, email: t.email, slackId: r.user.id, role: t.role,
-               matched: true, lookedUp: true };
-    }
+    if (r.ok && r.user) return row(t, { slackId: r.user.id, matched: true, lookedUp: true });
+
     if (r.error === 'missing_scope') scopeProblem = slackError_(r, 'look people up by email');
-    return { name: t.name, email: t.email, slackId: '', role: t.role,
-             matched: false,
-             why: r.error === 'users_not_found' ? 'no Slack account with that email'
-                : (r.error || 'lookup failed') };
+    return row(t, {
+      why: r.error === 'users_not_found' ? 'no Slack account with that email'
+         : (r.error || 'lookup failed')
+    });
   });
 
   return { ok: true, people: people, scopeProblem: scopeProblem };
+}
+
+/**
+ * Adds people to a client's existing channel.
+ *
+ * Separate from slackCreateChannel because the common case is a channel that
+ * already exists — someone joins the account three months in — and re-running
+ * creation for that would fail on name_taken and read like a bug.
+ */
+function slackInvite(token, clientId, memberIds) {
+  checkToken_(token);
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+
+  const channel = String(client.slack || '').replace(/^#/, '');
+  if (!channel) return { ok: false, message: 'No Slack channel on this client yet.' };
+
+  const ids = (memberIds || []).filter(Boolean);
+  if (!ids.length) return { ok: false, message: 'Nobody selected.' };
+
+  const r = slackCall_('conversations.invite', {
+    channel: channel.indexOf('C') === 0 ? channel : '#' + channel,
+    users: ids.join(',')
+  });
+  // Everyone already being in the channel is the desired end state, not a
+  // failure — reporting it as one teaches people to ignore the message.
+  if (!r.ok && r.error !== 'already_in_channel') {
+    return { ok: false, message: slackError_(r, 'invite people') };
+  }
+  return { ok: true, invited: ids.length, channel: '#' + channel,
+           already: r.error === 'already_in_channel' };
 }
 
 // ---------------------------------------------------------------- PINGS

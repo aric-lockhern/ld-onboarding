@@ -556,14 +556,18 @@ function getTeam() {
   if (!sh || sh.getLastRow() < 2) return [];
 
   return sh.getRange(2, 1, sh.getLastRow() - 1, TEAM_HEADERS.length).getValues()
-    .filter(r => r[0] && r[5] !== false)
-    .map(r => ({
+    // The sheet row travels with the record so the admin screen can write back
+    // to the person it read, rather than matching on a name someone is editing.
+    .map((r, i) => ({
+      row: i + 2,
       name: String(r[0]).trim(),
       email: String(r[1] || '').trim(),
       slackId: String(r[2] || '').trim(),
       skills: String(r[3] || '').split(',').map(x => x.trim()).filter(Boolean),
-      role: String(r[4] || '').trim()
-    }));
+      role: String(r[4] || '').trim(),
+      active: r[5] !== false
+    }))
+    .filter(t => t.name && t.active);
 }
 
 function getServiceList() {

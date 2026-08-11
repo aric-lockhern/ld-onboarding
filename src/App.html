@@ -309,8 +309,36 @@
   .act .meta b{color:var(--warning); font-weight:600}
   .act.done .nm{text-decoration:line-through; color:var(--faint)}
   .act select{flex:none; width:124px}
+  /* Wider than the status select next to it: a status is one short word, an
+     owner is a person's full name and "Alexandra McCur…" names nobody. */
+  .act .acts{flex:none; display:flex; flex-direction:column; gap:6px}
+  .act .acts select{width:156px}
   .btn.danger{border-color:#F0C9C9; color:var(--critical)}
   .btn.danger:hover{background:#FDF2F2; border-color:var(--critical)}
+
+  /* ----------------------------------------------------------- team admin */
+  .person{display:flex; gap:14px; align-items:flex-start; padding:14px 0;
+    border-top:1px solid var(--line)}
+  .person:first-child{border-top:0}
+  .person .bd{flex:1; min-width:0}
+  .person .nm{font-size:14.5px; font-weight:600}
+  .person .nm .off{font-weight:500; color:var(--faint); font-size:12.5px;
+    margin-left:7px}
+  .person .em{font-size:13px; color:var(--muted); margin-top:1px;
+    overflow-wrap:anywhere}
+  .person .acts{flex:none; display:flex; gap:8px}
+  /* Specialties are a chip list, not a comma string in a cell. The whole point
+     of the admin screen is that the sheet's free text stopped being editable
+     by anyone who is not the person who built the sheet. */
+  .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:7px}
+  .tag{font:500 12px/1 "Inter",sans-serif; padding:5px 9px; border-radius:999px;
+    background:var(--blue-wash); color:var(--blue-ink); border:1px solid var(--blue-line)}
+  .tag.grey{background:var(--paper); color:var(--muted); border-color:var(--line)}
+  .tag.none{background:none; border-style:dashed; border-color:var(--mid);
+    color:var(--warning)}
+  .skillbox{max-height:236px; overflow:auto; border:1px solid var(--line);
+    border-radius:9px; padding:12px}
+  .skillbox .pri-h:first-child{margin-top:0}
 
   /* Reading checklist — one row per source, updated as each one resolves. */
   .rrow{display:flex; gap:12px; padding:14px 0; border-top:1px solid var(--line)}
@@ -418,6 +446,7 @@
     <button data-v="overview" class="on"><span class="ic">◇</span>Overview</button>
     <button data-v="queue"><span class="ic">▸</span>Queue</button>
     <button data-v="clients"><span class="ic">▤</span>Clients</button>
+    <button data-v="team"><span class="ic">◍</span>Team</button>
     <div class="spacer"></div>
     <div class="foot">
       <button class="mono" id="refresh">↻ Refresh</button>
@@ -479,7 +508,10 @@ var SERVER_FNS = [
   'buildClientProfile', 'getClientProfile', 'deleteClient',
   'getClientDocs', 'getTeam',
   'buildActionItems', 'getActionItems', 'updateActionItem',
-  'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding', 'hasSlackToken'
+  'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
+  'hasSlackToken', 'slackInvite',
+  'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
+  'syncTeamSlackIds'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -553,6 +585,7 @@ var TITLES = {
   overview:['Overview','How onboarding is tracking right now'],
   queue:['Queue','What can be sent, and what is blocking the rest'],
   clients:['Clients','Every account and where it has got to'],
+  team:['Team','Who works here, what they cover, and which accounts they own'],
   'new':['New client','One submit builds the record, tasks, folder and plan']
 };
 [].forEach.call(document.querySelectorAll('nav button[data-v]'), function(b){
@@ -573,6 +606,7 @@ function go(v){
   el('newBtn').style.display = (v === 'new') ? 'none' : '';
   if (v === 'overview') renderOverview();
   else if (v === 'queue') renderQueue();
+  else if (v === 'team') renderTeam();
   else if (v === 'clients') renderClients();
   else renderIntake();
 }
@@ -661,6 +695,262 @@ function pField(field, label, value, options, area){
   }
   return '<div class="f' + (area ? ' wide' : '') + '"><label>' + esc(label) + '</label>'
     + input + '</div>';
+}
+
+// ------------------------------------------------------------------- team
+
+/**
+ * The directory, and the only place it can be edited without opening the
+ * spreadsheet.
+ *
+ * Everything downstream that says "owner" resolves through this: the Clients
+ * tab holds a name, audit action items are assigned by matching specialties,
+ * and Slack invites need a member ID. All three were previously fed by free
+ * text typed into a tab, which is why assignment kept coming back empty and
+ * saying nothing about why.
+ */
+var TEAM = { people: [], skillOptions: [], roles: [], editing: null };
+
+function renderTeam(){
+  el('view').innerHTML = loading();
+  api('getTeamAdmin', TOKEN).then(function(r){
+    stamp();
+    TEAM.people = (r && r.people) || [];
+    TEAM.skillOptions = (r && r.skillOptions) || [];
+    TEAM.roles = (r && r.roles) || [];
+    TEAM.slackReady = !!(r && r.slackReady);
+
+    // Two different nothings. An empty tab means nobody has been added; a
+    // missing tab means setup() has not been re-run since the tab was
+    // introduced, and adding someone would fail until it is.
+    if (r && r.tabMissing){
+      el('view').innerHTML = emptyState('No Team tab yet', r.message);
+      return;
+    }
+
+    var h = '<div class="grp">People <span class="n">' + TEAM.people.length + '</span></div>';
+    h += '<div class="card"><div class="sect">';
+    h += TEAM.people.length
+      ? TEAM.people.map(personRow).join('')
+      : '<div class="hint" style="margin:0">Nobody added yet. Everything that '
+        + 'assigns work — audit action items, Slack invites, the owner on a '
+        + 'client — reads this list, so it stays unassigned until someone is '
+        + 'here.</div>';
+    h += '<div class="startrow">'
+      + '<button class="btn" id="syncSlack">Match everyone to Slack</button>'
+      + '<button class="btn pri" id="addPerson">+ Add person</button></div>';
+    h += '</div></div>';
+
+    h += '<div class="grp">Editor</div><div class="card">'
+      + '<div class="sect" id="teamEdit">'
+      + '<h3>Nobody selected</h3><div class="hint" style="margin:0">Pick someone '
+      + 'above to edit their specialties, or add a new person.</div></div></div>';
+
+    var un = (r && r.unassignedClients) || [];
+    if (un.length){
+      h += '<div class="grp">Clients with no owner on the team <span class="n">'
+        + un.length + '</span></div><div class="card"><div class="sect">'
+        + '<div class="hint">These name an owner who is not in the directory, or '
+        + 'no owner at all. Nothing can be assigned or pinged for them.</div>'
+        + un.map(function(c){
+            return '<div class="person"><div class="bd">'
+              + '<div class="nm">' + esc(c.company || c.clientId) + '</div>'
+              + '<div class="em">' + esc(c.owner || 'no owner set') + '</div></div>'
+              + '<div class="acts"><select data-own-client="' + esc(c.clientId) + '">'
+              + '<option value="">Assign to…</option>'
+              + TEAM.people.filter(function(p){ return p.active; })
+                  .map(function(p){ return '<option>' + esc(p.name) + '</option>'; }).join('')
+              + '</select></div></div>';
+          }).join('')
+        + '</div></div>';
+    }
+
+    el('view').innerHTML = h;
+    wireTeam();
+  }).catch(function(e){
+    el('view').innerHTML = emptyState('Could not load the team',
+      (e && e.message) || 'Unknown error.');
+  });
+}
+
+function personRow(p){
+  var tags = (p.skills || []).map(function(s){
+    return '<span class="tag">' + esc(s) + '</span>';
+  }).join('');
+  // No specialties is worth saying out loud: it is the difference between
+  // someone the audit can assign work to and someone it will skip.
+  if (!tags) tags = '<span class="tag none">no specialties — cannot be assigned by skill</span>';
+  if (!p.slackId) tags += '<span class="tag grey">no Slack ID</span>';
+  (p.clients || []).slice(0, 4).forEach(function(c){
+    tags += '<span class="tag grey">' + esc(c) + '</span>';
+  });
+  if ((p.clients || []).length > 4){
+    tags += '<span class="tag grey">+' + (p.clients.length - 4) + ' more</span>';
+  }
+
+  return '<div class="person">'
+    + '<div class="bd"><div class="nm">' + esc(p.name)
+    + (p.active ? '' : '<span class="off">inactive</span>') + '</div>'
+    + '<div class="em">' + esc(p.email || 'no email')
+    + (p.role ? ' · ' + esc(p.role) : '') + '</div>'
+    + '<div class="tags">' + tags + '</div></div>'
+    + '<div class="acts">'
+    + '<button class="btn sm" data-edit-row="' + p.row + '">Edit</button>'
+    + '<button class="btn sm danger" data-del-row="' + p.row + '">Remove</button>'
+    + '</div></div>';
+}
+
+/**
+ * The add/edit form.
+ *
+ * Specialties are checkboxes off a known list rather than a text field. The
+ * audit matches them loosely against services and platforms, and a loose match
+ * against something somebody typed is how "PPC" and "Paid search" become two
+ * skills that assign to nobody.
+ */
+function teamForm(p){
+  p = p || { row:0, name:'', email:'', slackId:'', skills:[], role:'', active:true };
+  var have = {};
+  (p.skills || []).forEach(function(s){ have[s.toLowerCase()] = 1; });
+
+  var groups = {};
+  TEAM.skillOptions.forEach(function(s){
+    (groups[s.group] = groups[s.group] || []).push(s);
+  });
+
+  var picker = '';
+  ['Discipline', 'Service', 'Platform'].forEach(function(g){
+    if (!groups[g]) return;
+    picker += '<div class="pri-h">' + esc(g) + '<span> ' + groups[g].length + '</span></div>';
+    picker += '<div class="checks">' + groups[g].map(function(s){
+      return '<label class="chk"><input type="checkbox" data-skill="' + esc(s.name) + '"'
+        + (have[s.name.toLowerCase()] ? ' checked' : '') + '>'
+        + '<span><span class="nm">' + esc(s.name) + '</span></span></label>';
+    }).join('') + '</div>';
+  });
+
+  return '<h3>' + (p.row ? esc(p.name) : 'Add someone') + '</h3>'
+    + '<div class="hint">Specialties decide who audit action items land on. '
+    + 'The Slack member ID (U01AB…) is what invites and mentions use — leave it '
+    + 'blank and "Match everyone to Slack" will fill it in from the email.</div>'
+    + '<input type="hidden" id="tmRow" value="' + (p.row || 0) + '">'
+    + '<div class="fields">'
+    + '<div class="f"><label>Name</label><input id="tmName" value="' + esc(p.name) + '"></div>'
+    + '<div class="f"><label>Work email</label><input id="tmEmail" value="' + esc(p.email) + '"></div>'
+    + '<div class="f"><label>Role</label><select id="tmRole">'
+    + '<option value="">—</option>'
+    + TEAM.roles.map(function(o){
+        return '<option' + (o === p.role ? ' selected' : '') + '>' + esc(o) + '</option>';
+      }).join('')
+    + (p.role && TEAM.roles.indexOf(p.role) === -1
+        ? '<option selected>' + esc(p.role) + '</option>' : '')
+    + '</select></div>'
+    + '<div class="f"><label>Slack member ID</label>'
+    + '<input id="tmSlack" value="' + esc(p.slackId) + '" placeholder="U01ABC2DEF"></div>'
+    + '<div class="f wide"><label>Specialties</label>'
+    + '<div class="skillbox">' + picker + '</div></div>'
+    + '</div>'
+    + '<div class="startrow">'
+    + '<label class="mini"><input type="checkbox" id="tmActive"'
+    + (p.active === false ? '' : ' checked') + '> Active</label>'
+    + '<button class="btn" id="tmCancel">Cancel</button>'
+    + '<button class="btn pri" id="tmSave">Save</button></div>';
+}
+
+function wireTeam(){
+  [].forEach.call(document.querySelectorAll('[data-edit-row]'), function(b){
+    b.addEventListener('click', function(){
+      var row = Number(b.getAttribute('data-edit-row'));
+      openTeamForm(TEAM.people.filter(function(p){ return p.row === row; })[0]);
+    });
+  });
+
+  [].forEach.call(document.querySelectorAll('[data-del-row]'), function(b){
+    b.addEventListener('click', function(){
+      if (b.getAttribute('data-armed') !== '1'){
+        b.setAttribute('data-armed', '1');
+        b.textContent = 'Sure?';
+        setTimeout(function(){
+          if (!b.parentNode) return;
+          b.removeAttribute('data-armed'); b.textContent = 'Remove';
+        }, 5000);
+        return;
+      }
+      b.disabled = true;
+      api('deleteTeamMember', TOKEN, Number(b.getAttribute('data-del-row')))
+        .then(function(r){
+          if (!r.ok){ b.disabled = false; b.textContent = 'Remove'; toast(r.message, true); return; }
+          toast(r.deactivated ? r.message : 'Removed.', !!r.deactivated);
+          renderTeam();
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Remove'; fail(e);
+        });
+    });
+  });
+
+  if (el('addPerson')){
+    el('addPerson').addEventListener('click', function(){ openTeamForm(null); });
+  }
+
+  if (el('syncSlack')){
+    el('syncSlack').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Matching…';
+      api('syncTeamSlackIds', TOKEN).then(function(r){
+        b.disabled = false; b.textContent = 'Match everyone to Slack';
+        if (!r.ok){ toast(r.message, true); return; }
+        toast(r.matched + ' matched'
+          + (r.unmatched.length ? ', ' + r.unmatched.length + ' not' : '') + '.');
+        if (r.scopeProblem) toast(r.scopeProblem, true);
+        (r.unmatched || []).slice(0, 4).forEach(function(u){ toast(u, true); });
+        renderTeam();
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Match everyone to Slack'; fail(e);
+      });
+    });
+  }
+
+  [].forEach.call(document.querySelectorAll('[data-own-client]'), function(sel){
+    sel.addEventListener('change', function(){
+      if (!sel.value) return;
+      api('assignClientOwner', TOKEN, sel.getAttribute('data-own-client'), sel.value)
+        .then(function(r){
+          toast(r.ok ? 'Assigned to ' + sel.value + '.' : r.message, !r.ok);
+          if (r.ok){ CACHE.overview = null; renderTeam(); }
+        }).catch(fail);
+    });
+  });
+}
+
+function openTeamForm(p){
+  var box = el('teamEdit');
+  if (!box) return;
+  box.innerHTML = teamForm(p);
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  el('tmCancel').addEventListener('click', function(){ renderTeam(); });
+  el('tmSave').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Saving…';
+    var skills = [].filter.call(document.querySelectorAll('[data-skill]'),
+      function(i){ return i.checked; })
+      .map(function(i){ return i.getAttribute('data-skill'); });
+
+    api('saveTeamMember', TOKEN, {
+      row: Number(el('tmRow').value) || 0,
+      name: el('tmName').value,
+      email: el('tmEmail').value,
+      slackId: el('tmSlack').value,
+      role: el('tmRole').value,
+      skills: skills,
+      active: el('tmActive').checked
+    }).then(function(r){
+      b.disabled = false; b.textContent = 'Save';
+      if (!r.ok){ toast(r.message, true); return; }
+      toast(r.created ? 'Added.' : 'Saved.');
+      renderTeam();
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Save'; fail(e);
+    });
+  });
 }
 
 function wireClientRows(){
@@ -842,19 +1132,21 @@ function slackCard(c){
     return '<h3>' + esc(c.slack) + '</h3>'
       + '<div class="hint">Post the outstanding onboarding items to this channel, '
       + 'grouped by who owns them and tagging them by name. Nothing is sent when '
-      + 'nothing is outstanding.</div>'
+      + 'nothing is outstanding. Tick people below to add them to the channel.</div>'
+      + '<div id="slackPeople" class="hint">Loading the team…</div>'
       + '<div class="startrow">'
-      + '<button class="btn" id="slackPing">Ping outstanding items</button>'
-      + '<button class="btn" id="slackCheck">Test connection</button></div>';
+      + '<button class="btn" id="slackAdd">Add to channel</button>'
+      + '<button class="btn" id="slackCheck">Test connection</button>'
+      + '<button class="btn pri" id="slackPing">Ping outstanding items</button></div>';
   }
   return '<h3>No channel yet</h3>'
     + '<div class="hint">Creates a private channel for this client and invites '
-    + 'the people you pick from the Team tab.</div>'
+    + 'the people you pick. The list comes from the Team page.</div>'
     + '<div id="slackPeople" class="hint">Loading the team…</div>'
     + '<div class="startrow">'
-    + '<button class="btn pri" id="slackMake">Create channel</button>'
     + '<label class="mini"><input type="checkbox" id="slackPublic"> Public channel</label>'
-    + '<button class="btn" id="slackCheck">Test connection</button></div>';
+    + '<button class="btn" id="slackCheck">Test connection</button>'
+    + '<button class="btn pri" id="slackMake">Create channel</button></div>';
 }
 
 function wireSlack(clientId, c){
@@ -893,18 +1185,31 @@ function wireSlack(clientId, c){
     });
   }
 
-  if (!el('slackMake')) return;
-
   // The picker is a second call, so the card paints without waiting on Slack.
+  //
+  // Every outcome here has to land as visible text in the box. It painted
+  // "Loading the team…" and stopped, which reads as a hung request when the
+  // real answer might be "no token", "no Team tab" or "the reply came back
+  // empty" — three different fixes behind one identical screen.
   api('slackPeople').then(function(r){
     var box = el('slackPeople');
     if (!box) return;
-    if (r.teamEmpty){
-      box.className = 'hint';
-      box.innerHTML = 'Nobody on the Team tab yet — the channel will be created '
-        + 'empty. Add people in the sheet to pick them here.';
+    box.className = 'hint';
+
+    if (!r){
+      box.innerHTML = 'The server returned nothing for the team. That usually '
+        + 'means a cell on the Team tab holds a formula error.';
       return;
     }
+    if (r.teamEmpty){
+      box.innerHTML = 'Nobody on the team yet — a channel would be created '
+        + 'empty. <a href="#" id="toTeam">Add people on the Team page</a>.';
+      if (el('toTeam')){
+        el('toTeam').addEventListener('click', function(e){ e.preventDefault(); go('team'); });
+      }
+      return;
+    }
+
     box.className = 'checks';
     box.innerHTML = (r.people || []).map(function(p){
       return '<label class="chk' + (p.matched ? '' : ' off') + '">'
@@ -915,17 +1220,48 @@ function wireSlack(clientId, c){
             ? (p.role || p.email) : ('not matched — ' + (p.why || '')))
         + '</span></span></label>';
     }).join('');
+
+    if (r.noToken){
+      toast('No Slack token set, so nobody could be matched. In the sheet: '
+        + 'Onboarding → Set Slack bot token.', true);
+    }
     if (r.scopeProblem) toast(r.scopeProblem, true);
-  }).catch(function(){
-    if (el('slackPeople')) el('slackPeople').textContent =
-      'Could not read the team from Slack.';
+  }).catch(function(e){
+    if (el('slackPeople')){
+      el('slackPeople').className = 'hint';
+      el('slackPeople').textContent = 'Could not read the team: '
+        + ((e && e.message) || 'unknown error') + '.';
+    }
   });
+
+  function pickedIds(){
+    return [].filter.call(document.querySelectorAll('[data-slack-id]'),
+      function(i){ return i.checked && i.getAttribute('data-slack-id'); })
+      .map(function(i){ return i.getAttribute('data-slack-id'); });
+  }
+
+  if (el('slackAdd')){
+    el('slackAdd').addEventListener('click', function(){
+      var b = this;
+      var ids = pickedIds();
+      if (!ids.length){ toast('Tick who should be added first.', true); return; }
+      b.disabled = true; b.textContent = 'Adding…';
+      api('slackInvite', TOKEN, clientId, ids).then(function(r){
+        b.disabled = false; b.textContent = 'Add to channel';
+        toast(r.ok ? (r.already ? 'Everyone picked is already in ' + r.channel + '.'
+                                : 'Added ' + r.invited + ' to ' + r.channel + '.')
+                   : r.message, !r.ok);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Add to channel'; fail(e);
+      });
+    });
+  }
+
+  if (!el('slackMake')) return;
 
   el('slackMake').addEventListener('click', function(){
     var b = this;
-    var ids = [].filter.call(document.querySelectorAll('[data-slack-id]'),
-      function(i){ return i.checked && i.getAttribute('data-slack-id'); })
-      .map(function(i){ return i.getAttribute('data-slack-id'); });
+    var ids = pickedIds();
 
     b.disabled = true; b.textContent = 'Creating…';
     api('slackCreateChannel', TOKEN, clientId, {
@@ -980,11 +1316,23 @@ function actionsCard(r){
         + (i.why ? '<div class="mt">' + esc(i.why) + '</div>' : '')
         + '<div class="meta">' + esc(i.source || '')
         + (i.effort ? ' · ' + esc(i.effort) : '')
-        + (i.owner ? ' · ' + esc(i.owner) : ' · <b>unassigned</b>') + '</div></div>'
+        + (i.owner ? '' : ' · <b>unassigned</b>') + '</div></div>'
+        // Owner is a dropdown off the Team page rather than the name the model
+        // guessed. Skill matching gets it right often enough to be worth doing
+        // and wrong often enough that reassigning has to take one click.
+        + '<div class="acts">'
+        + '<select data-act-row="' + i.row + '" data-act-field="owner">'
+        + '<option value="">Unassigned</option>'
+        + (r.team || []).map(function(n){
+            return '<option' + (n === i.owner ? ' selected' : '') + '>' + esc(n) + '</option>';
+          }).join('')
+        + (i.owner && (r.team || []).indexOf(i.owner) === -1
+            ? '<option selected>' + esc(i.owner) + '</option>' : '')
+        + '</select>'
         + '<select data-act-row="' + i.row + '" data-act-field="status">'
         + (r.statuses || []).map(function(s){
             return '<option' + (s === i.status ? ' selected' : '') + '>' + esc(s) + '</option>';
-          }).join('') + '</select></div>';
+          }).join('') + '</select></div></div>';
     }).join('');
   });
 
@@ -1014,8 +1362,7 @@ function wireActions(clientId, r){
         (res.outOfScope || []).forEach(function(o){
           toast('Out of scope: ' + o.item + ' — ' + o.why, true);
         });
-        wireSlack(clientId, c);
-    loadActions(clientId);
+        loadActions(clientId);
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Build action items'; fail(e);
       });
@@ -1263,6 +1610,7 @@ function openClient(clientId){
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
 
+    wireSlack(clientId, c);
     loadActions(clientId);
 
     api('getClientDocs', clientId).then(function(r){

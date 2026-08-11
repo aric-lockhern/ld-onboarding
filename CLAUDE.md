@@ -69,10 +69,12 @@ src/
   Drafts.gs      draft clients — Drive-backed document storage, resume, re-analyse
   Profile.gs     client profile — how to work with them, written from the calls
   Audit.gs       audit findings turned into owned action items
+  Slack.gs       channel creation, membership, outstanding-item pings
+  Team.gs        the people directory — specialties, Slack IDs, client ownership
   Digest.gs      daily overdue email + trigger installer
   Intake.html    intake sidebar (~300px, in-sheet menu)
   Admin.html     dashboard modal (760px, in-sheet menu)
-  App.html       the web app UI — own nav, four views, built for a browser
+  App.html       the web app UI — own nav, five views, built for a browser
 design/
   mockup.html    standalone UI reference, fake data, no Apps Script calls
 netlify.toml     redirects a short URL to the Apps Script deployment
@@ -129,6 +131,10 @@ These encode decisions that took real thought. Changing them is fine; changing t
 - **Creating a client and starting its onboarding are separate acts.** `submitIntake` writes the record only. `startOnboarding` builds the task rows, and from that moment there are due dates, owners and a queue entry — undoing it means deleting rows. The split exists so the record can be corrected freely first.
 - **Fees are stored per line, not as a total.** The pricing slide's channels and discounts survive into the `Fees` cell as JSON; MRR is their sum. A mid-term upsell is a new line, so the history of what changed stays readable.
 - **Gate vs non-gate is a real distinction.** Brand assets is intentionally not a gate — it always trails and gating on it would stall every account. Media billing is a gate because a failed card pauses campaigns.
+- **The Team page is the directory, and the Team tab is only its storage.** Everything that says "owner" resolves through it: the Clients tab holds a name, `Audit.gs` assigns action items by matching specialties, and a Slack invite needs a member ID. All three used to be fed by free text typed into a tab, which is why assignment kept coming back unassigned and never said why. Specialties are therefore checkboxes off `TEAM_DISCIPLINES` unioned with the Services and Platforms tabs — a loose match against something somebody typed is how "PPC" and "Paid search" become two skills that assign to nobody. `TEAM_DISCIPLINES` is a code constant for the reason in rule 3: a list written into seed data cannot reach a sheet that already exists.
+- **A person who owns clients is deactivated, never deleted.** `deleteTeamMember` flips Active to FALSE when their name is on a client row. Deleting the row leaves an owner name pointing at nobody, and the client page then shows a person who cannot be notified with no hint why.
+- **Slack member IDs are stored, not looked up.** `syncTeamSlackIds` writes them onto the Team tab. Looking people up on every render costs a round trip per person and stops working entirely the moment `users:read.email` is missing; a stored ID keeps working either way, and an ID is stable where a handle is not.
+- **Every state of a background card has to be visible text.** The Slack picker painted "Loading the team…" and stopped, which reads as a hung request when the real answer might be no token, no Team tab, or a reply that came back null — three different fixes behind one identical screen. `slackPeople` returns `noToken` once rather than "unmatched — no_token" nine times, and the card renders the null case explicitly.
 
 ## Commands
 

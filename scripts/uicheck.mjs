@@ -110,6 +110,39 @@ const FAKE = {
   slackCreateChannel: { ok:true, name:'#harbor-and-sons', channelId:'C01ABC',
     invited:2, failed:[] },
   slackPingOutstanding: { ok:true, posted:7, channel:'#harbor-sons' },
+  slackInvite: { ok:true, invited:2, channel:'#harbor-sons', already:false },
+  getTeamAdmin: { ok:true, slackReady:true,
+    roles:['Account manager','Strategist','Specialist','Analyst','Designer','Owner','Contractor'],
+    skillOptions:[
+      { name:'Paid search', group:'Discipline' },
+      { name:'Paid social', group:'Discipline' },
+      { name:'Organic social', group:'Discipline' },
+      { name:'Analytics and tracking', group:'Discipline' },
+      { name:'Google Ads', group:'Service' },
+      { name:'Reddit Organic Social', group:'Service' },
+      { name:'Google Merchant Center', group:'Platform' },
+      { name:'Google Analytics 4', group:'Platform' }
+    ],
+    people:[
+      { row:2, name:'Drake King', email:'drake@lockherndigital.com', slackId:'U01DRAKE',
+        skills:['Paid search','Google Ads','Google Merchant Center'], role:'Specialist',
+        active:true, clients:['Harbor & Sons'], channels:['#harbor-sons'] },
+      { row:3, name:'Alexandra McCurdy', email:'alex@lockherndigital.com', slackId:'U01ALEX',
+        skills:['Organic social','Reddit Organic Social'], role:'Strategist',
+        active:true, clients:[], channels:[] },
+      // No specialties and no Slack ID: the two states the page exists to make
+      // visible, because both silently exclude someone from being assigned.
+      { row:4, name:'Cory Botti', email:'cory@lockherndigital.com', slackId:'',
+        skills:[], role:'Owner', active:true, clients:[], channels:[] }
+    ],
+    unassignedClients:[
+      { clientId:'CORNHOLE-2608', company:'Cornhole Co', owner:'' }
+    ] },
+  saveTeamMember: { ok:true, row:5, created:true },
+  deleteTeamMember: { ok:true, deactivated:false },
+  assignClientOwner: { ok:true },
+  syncTeamSlackIds: { ok:true, matched:1, unmatched:['Cory Botti — no Slack account for cory@lockherndigital.com'],
+    scopeProblem:'' },
   getTeam: [
     { name:'Drake King', email:'drake@lockherndigital.com', slackId:'U01DRAKE',
       skills:['Google Ads','Shopping','Merchant Center'], role:'Paid lead' },
@@ -345,13 +378,31 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.press('#pin', 'Enter');
   await page.waitForSelector('#app.on', { timeout: 5000 });
 
-  for (const view of ['overview', 'queue', 'clients', 'new']) {
+  for (const view of ['overview', 'queue', 'clients', 'team', 'new']) {
     // "New client" is the header CTA, not a sidebar item.
     await page.click(view === 'new' ? '#newBtn' : `nav button[data-v="${view}"]`);
     await page.waitForTimeout(250);
     const f = `${OUT}/${name}-${view}.png`;
     await page.screenshot({ path: f, fullPage: name === 'desktop' });
     shots.push(f);
+
+    // The team page is where owners and specialties come from, and the editor
+    // is a second render — a form that never opens leaves the sheet as the
+    // only way to add anyone, which is the thing this page replaced.
+    if (view === 'team') {
+      await page.click('[data-edit-row="4"]');
+      await page.waitForSelector('#tmName', { timeout: 5000 });
+      const skillCount = await page.$$eval('[data-skill]', els => els.length);
+      if (skillCount < 4) {
+        throw new Error('The specialty picker rendered ' + skillCount + ' options');
+      }
+      await page.waitForTimeout(200);
+      const fTeamEdit = `${OUT}/${name}-team-editor.png`;
+      await page.screenshot({ path: fTeamEdit, fullPage: name === 'desktop' });
+      shots.push(fTeamEdit);
+      await page.click('#tmCancel');
+      await page.waitForTimeout(250);
+    }
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
     if (view === 'new') {
@@ -458,6 +509,18 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForTimeout(250);
   await page.click('.row.clickable');
   await page.waitForTimeout(350);
+
+  // Regression: the Slack card painted "Loading the team…" and stayed there
+  // forever. wireSlack had been dropped into the action-items click handler,
+  // so nothing on the card was ever wired — no picker, no working buttons, and
+  // no error either, because the request that would have failed never ran.
+  const slackBox = await page.$eval('#slackPeople',
+    e => ({ text: e.textContent.trim(), boxes: e.querySelectorAll('input').length }));
+  if (/^Loading the team/.test(slackBox.text) || !slackBox.boxes) {
+    throw new Error('The Slack people picker never resolved: '
+      + JSON.stringify(slackBox));
+  }
+
   const f = `${OUT}/${name}-detail.png`;
   await page.screenshot({ path: f, fullPage: name === 'desktop' });
   shots.push(f);
