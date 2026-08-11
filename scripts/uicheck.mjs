@@ -71,6 +71,19 @@ const FAKE = {
     serviceList:[],
     summary:{ done:4, total:14, pct:29 },
     commitments:[],
+    // Skills are what rank people against a task. Drake covers the paid-search
+    // rows, Jamie the measurement ones, and Dana is the client — a third of the
+    // checklist is access we are waiting on THEM for, which is a different
+    // state from nobody having picked it up.
+    assignees:[
+      { name:'Drake King', role:'Specialist', kind:'team',
+        skills:['Paid search','Google Ads','Google Merchant Center'] },
+      { name:'Alexandra McCurdy', role:'Strategist', kind:'team',
+        skills:['Organic social','Reddit Organic Social'] },
+      { name:'Jamie Okonkwo', role:'Analyst', kind:'team',
+        skills:['Analytics and tracking','Google Analytics 4'] },
+      { name:'Dana Whitlock', role:'Client contact', kind:'client', skills:[] }
+    ],
     phaseState:{ current:2, complete:false, phases:[
       {phase:1,name:'Internal Setup'},{phase:2,name:'Client Requests'},
       {phase:3,name:'Data & Validation'},{phase:4,name:'Launch'},{phase:5,name:'Steady State'}]},
@@ -79,10 +92,16 @@ const FAKE = {
       {task:'Google Drive folder',phase:1,gate:true,status:'Complete',method:'INTERNAL'},
       {task:'ClickUp space',phase:1,gate:false,status:'Complete',method:'INTERNAL'},
       {task:'Client Slack channel',phase:1,gate:false,status:'Complete',method:'INTERNAL'},
-      {task:'Google Ads',phase:2,gate:true,status:'Requested',method:'API'},
-      {task:'Meta Ads',phase:2,gate:true,status:'Requested',method:'API'},
-      {task:'Google Analytics (GA4)',phase:2,gate:true,status:'Not started',method:'EMAIL'},
-      {task:'Media billing setup',phase:2,gate:true,status:'Blocked',method:'EMAIL'},
+      {task:'Google Ads',phase:2,gate:true,status:'Requested',method:'API',
+       category:'Paid search',owner:'Drake King',assigned:'2 Aug 2026',assignedDays:9},
+      {task:'Meta Ads',phase:2,gate:true,status:'Requested',method:'API',
+       category:'Paid social',owner:'',assigned:'',assignedDays:0},
+      {task:'Google Analytics (GA4)',phase:2,gate:true,status:'Not started',method:'EMAIL',
+       category:'Analytics',owner:'',assigned:'',assignedDays:0},
+      // Owned by someone no longer on the team: the option has to survive, or
+      // opening the dropdown silently reassigns the row to nobody.
+      {task:'Media billing setup',phase:2,gate:true,status:'Blocked',method:'EMAIL',
+       category:'Billing',owner:'Sasha Roe',assigned:'28 Jul 2026',assignedDays:14},
       {task:'Brand assets and constraints',phase:2,gate:false,status:'Not started',method:'EMAIL'},
       {task:'Baseline performance snapshot',phase:3,gate:true,status:'Not started',method:'INTERNAL'},
       {task:'Conversion tracking validated',phase:3,gate:true,status:'Not started',method:'INTERNAL'},
@@ -179,6 +198,7 @@ const FAKE = {
       why:'The deck sold it; the signed SOW covers Reddit organic only.',
       needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
   updateActionItem: { ok:true },
+  assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
   getActionItems: { ok:true, statuses:['To do','In progress','Done','Not doing'],
     team:['Drake King','Alexandra McCurdy'],
     items:[
@@ -571,6 +591,47 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForTimeout(250);
   await page.click('.row.clickable');
   await page.waitForTimeout(350);
+
+  // Assignment. The point of ranking is that the right specialist is reachable
+  // without scrolling fourteen names on every one of twenty rows — so the
+  // Google Ads row must offer the paid-search person first, and the GA4 row
+  // must not offer the same person first.
+  const asg = await page.$eval('select[data-assign="Google Ads"]', function(s){
+    return { groups: [].map.call(s.querySelectorAll('optgroup'), function(g){
+               return g.label + ':' + [].map.call(g.querySelectorAll('option'),
+                 function(o){ return o.textContent; }).join('|'); }),
+             value: s.value };
+  });
+  if (!/^Covers this:Drake King/.test(asg.groups[0] || '')) {
+    throw new Error('Google Ads did not suggest the paid-search person first: '
+      + JSON.stringify(asg));
+  }
+  if (!asg.groups.some(g => /^Client:/.test(g))) {
+    throw new Error('The client was not offered as an assignee: ' + JSON.stringify(asg));
+  }
+  if (asg.value !== 'Drake King') {
+    throw new Error('The existing owner was not preselected: ' + asg.value);
+  }
+
+  const ga4 = await page.$eval('select[data-assign="Google Analytics (GA4)"]',
+    s => (s.querySelector('optgroup') || {}).label + ':'
+       + ((s.querySelector('optgroup') || s).querySelector('option') || {}).textContent);
+  if (!/^Covers this:Jamie Okonkwo/.test(ga4)) {
+    throw new Error('GA4 did not suggest the analytics person first: ' + ga4);
+  }
+
+  // An owner who has left the team still has work against their name. Losing
+  // the option means opening the dropdown reassigns the row to nobody.
+  const gone = await page.$eval('select[data-assign="Media billing setup"]', s => s.value);
+  if (gone !== 'Sasha Roe') {
+    throw new Error('An off-team owner was dropped from the list: ' + gone);
+  }
+
+  const ages = await page.$$eval('[data-age]', els =>
+    els.map(e => e.textContent).filter(Boolean));
+  if (!ages.includes('assigned 9d ago')) {
+    throw new Error('The assignment age was not shown: ' + JSON.stringify(ages));
+  }
 
   // The profile is ~4,000 characters of prose across seven sections. Collapsed
   // it has to be readable at a glance, and every section has to open — a

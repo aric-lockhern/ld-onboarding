@@ -144,11 +144,19 @@ const C = {
   PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, PROFILE: 28, WIDTH: 28
 };
 
-// Access column map (1-based)
+/**
+ * Access column map (1-based).
+ *
+ * ASSIGNED is when the task last changed hands, not when it was created. Due
+ * dates come off the contract start and say nothing about whether anyone has
+ * picked the work up — a task can sit unassigned for a fortnight and still not
+ * be late. "Assigned 9 days ago and still Not started" is the sentence that
+ * needs saying, and only this column can say it.
+ */
 const A = {
   ID: 1, COMPANY: 2, TASK: 3, CATEGORY: 4, METHOD: 5, NEEDS: 6, ACCOUNT: 7,
   STATUS: 8, DUE: 9, REQUESTED: 10, COMPLETED: 11, OWNER: 12, NOTES: 13,
-  PHASE: 14, GATE: 15, WIDTH: 15
+  PHASE: 14, GATE: 15, ASSIGNED: 16, WIDTH: 16
 };
 
 // ---------------------------------------------------------------- MENU
@@ -199,7 +207,7 @@ function setup() {
   mkTab_(ss, TABS.ACCESS, [
     'Client ID', 'Company', 'Task', 'Category', 'Method', 'Client Info Needed',
     'Account ID', 'Status', 'Due', 'Requested', 'Completed', 'Owner', 'Notes',
-    'Phase', 'Gate'
+    'Phase', 'Gate', 'Assigned'
   ]);
 
   mkTab_(ss, TABS.PLANS, [
@@ -1030,6 +1038,10 @@ function buildAccessRows_(clientId, company, platforms, skipWeeklyCall) {
     row[A.STATUS - 1] = status;
     row[A.DUE - 1] = due;
     row[A.OWNER - 1] = String(r[7] || '').trim() || defaultOwner;
+    // Stamped at build time when the template names an owner, so "assigned N
+    // days ago" is measured from the moment the work landed on someone rather
+    // than from the first time anyone touched the dropdown.
+    if (row[A.OWNER - 1]) row[A.ASSIGNED - 1] = new Date();
     row[A.PHASE - 1] = Number(r[8]) || 1;
     row[A.GATE - 1] = r[9] === true;
     rows.push(row);

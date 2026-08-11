@@ -157,9 +157,57 @@ function getClientTasks_(clientId) {
         overdueBy: (due && open) ? Math.round((today - midnight_(due)) / 86400000) : 0,
         requested: fmtDate_(r[A.REQUESTED - 1]), completed: fmtDate_(r[A.COMPLETED - 1]),
         owner: safeStr_(r[A.OWNER - 1]), notes: safeStr_(r[A.NOTES - 1]),
-        phase: Number(r[A.PHASE - 1]) || 1, gate: r[A.GATE - 1] === true
+        phase: Number(r[A.PHASE - 1]) || 1, gate: r[A.GATE - 1] === true,
+        assigned: fmtDate_(r[A.ASSIGNED - 1]),
+        // Days since it changed hands, which is a different question from
+        // whether it is overdue: work can be assigned for a fortnight and
+        // untouched without its due date having passed.
+        assignedDays: assignedDays_(r[A.ASSIGNED - 1], open, today)
       };
     });
+}
+
+/** Days a task has been sitting with whoever owns it. 0 once it is closed. */
+function assignedDays_(v, open, today) {
+  if (!open) return 0;
+  const d = parseDate_(v);
+  if (!d) return 0;
+  return Math.max(0, Math.round((today - midnight_(d)) / 86400000));
+}
+
+/**
+ * Puts a task on somebody, and records when.
+ *
+ * The stamp only moves when the owner actually changes. Re-picking the same
+ * name — which happens every time someone opens the dropdown and closes it —
+ * must not reset the clock, or "assigned 9 days ago" quietly becomes "assigned
+ * today" and the one number worth having is destroyed by looking at it.
+ */
+function assignTask(token, clientId, task, owner) {
+  checkToken_(token);
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, message: 'No tasks yet.' };
+
+  const id = String(clientId).trim();
+  const want = String(task).trim();
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+    if (String(rows[i][A.TASK - 1]).trim() !== want) continue;
+
+    const now = String(rows[i][A.OWNER - 1] || '').trim();
+    const next = String(owner || '').trim();
+    if (now === next) return { ok: true, unchanged: true };
+
+    sh.getRange(i + 2, A.OWNER).setValue(next);
+    // Unassigning clears the stamp rather than leaving a date against nobody,
+    // which would read as "assigned 9 days ago" on an unowned task.
+    sh.getRange(i + 2, A.ASSIGNED).setValue(next ? new Date() : '');
+    return { ok: true, owner: next, assigned: next ? fmtDate_(new Date()) : '' };
+  }
+  return { ok: false, message: 'That task is no longer on this client.' };
 }
 
 function fmtDate_(v) {
@@ -263,8 +311,32 @@ function getClientDetail(token, clientId) {
       pct: counted.length ? Math.round((done / counted.length) * 100) : 0
     },
     commitments: getPlanCommitments_(clientId),
-    phaseState: getPhaseState_(clientId)
+    phaseState: getPhaseState_(clientId),
+    assignees: assigneesFor_(client)
   };
+}
+
+/**
+ * Everyone a task on this client can be put on.
+ *
+ * Includes the client. A good third of the onboarding checklist is not our
+ * work at all — granting access, confirming billing, approving creative — and
+ * an unowned row is indistinguishable from one nobody has picked up yet. Naming
+ * the client as the owner is what turns "still Not started" into "waiting on
+ * them", which is the difference between chasing internally and chasing out.
+ *
+ * Skills travel with each person so the browser can rank them against the task
+ * without a round trip per row: a checklist is twenty rows and twenty calls to
+ * work out who does Google Ads is twenty calls too many.
+ */
+function assigneesFor_(client) {
+  const people = getTeam().map(t => ({
+    name: t.name, role: t.role, skills: t.skills || [], kind: 'team'
+  }));
+
+  const who = safeStr_(client.contact) || safeStr_(client.company) || 'Client';
+  people.push({ name: who, role: 'Client contact', skills: [], kind: 'client' });
+  return people;
 }
 
 /** Pulls the commitment list off the stored plan so scope is visible in the profile. */
