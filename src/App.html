@@ -462,7 +462,8 @@ var SERVER_FNS = [
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
-  'buildClientProfile', 'getClientProfile', 'deleteClient'
+  'buildClientProfile', 'getClientProfile', 'deleteClient',
+  'getClientDocs', 'getTeam'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -798,6 +799,40 @@ var CALL_STATES = ['Not applicable','To schedule','Scheduled','Running'];
  * readable in the Clients tab — half the team works in the sheet, and JSON in a
  * cell is unreadable there.
  */
+/**
+ * Everything uploaded at intake, as links anyone can open.
+ *
+ * These already sat in the draft's Drive folder; until now only whoever ran the
+ * intake knew that. Someone picking the account up should be able to read the
+ * signed contract without asking where it went.
+ */
+function docsCard(r){
+  var docs = (r && r.docs) || [];
+  if (!docs.length){
+    return '<h3>No documents stored</h3><div class="hint">'
+      + esc((r && r.message) || 'Nothing was uploaded during intake for this client.')
+      + '</div>';
+  }
+  return '<h3>Uploaded at intake</h3>'
+    + '<div class="hint">The originals, in this client\'s Drive folder. '
+    + (r.folderUrl ? '<a class="lnk" href="' + esc(r.folderUrl)
+        + '" target="_blank" rel="noopener">Open the folder</a>' : '')
+    + '</div>'
+    + '<div id="doclist">' + docs.map(function(d){
+        return '<div class="drow"><div class="bd">'
+          + '<div class="nm">' + esc(d.label)
+          + (d.gone ? '<span class="tag">missing</span>' : '') + '</div>'
+          + '<div class="mt">' + esc(d.name)
+          + (d.words ? ' · ' + fmtNum(d.words) + ' words' : '')
+          + (d.read ? ' · read ' + esc(d.read) : '') + '</div></div>'
+          + (d.url && !d.gone
+              ? '<a class="btn sm" href="' + esc(d.url) + '" target="_blank" '
+                + 'rel="noopener">Open</a>'
+              : '<span class="mt">unavailable</span>')
+          + '</div>';
+      }).join('') + '</div>';
+}
+
 function profileCard(text){
   if (!text || !String(text).trim()){
     return '<h3>Not built yet</h3>'
@@ -924,6 +959,11 @@ function openClient(clientId){
     h += '<div class="grp">Client profile</div><div class="card">'
       + '<div class="sect" id="profWrap">' + profileCard(c.profile) + '</div></div>';
 
+    // Filled in after the page paints. The documents are a second read and
+    // should not hold up everything else on the page.
+    h += '<div class="grp">Deal documents</div><div class="card">'
+      + '<div class="sect" id="docsWrap">' + loading() + '</div></div>';
+
     var ps = d.phaseState || {};
     if (ps.phases && ps.phases.length){
       h += '<div class="grp">Phases</div><div class="card"><div class="rail">'
@@ -989,6 +1029,13 @@ function openClient(clientId){
 
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    api('getClientDocs', clientId).then(function(r){
+      if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(r);
+    }).catch(function(){
+      if (el('docsWrap')) el('docsWrap').innerHTML =
+        '<h3>Documents</h3><div class="hint">Could not read them.</div>';
+    });
 
     el('delClient').addEventListener('click', function(){
       var b = this;

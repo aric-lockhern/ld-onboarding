@@ -95,6 +95,16 @@ const FAKE = {
   buildClientProfile: { ok:true, sources:['Sales call transcript','Onboarding / kickoff call transcript'],
     profile:'Family business, second generation. Short replies, expects the number first.' },
   getClientProfile: { ok:true, profile:'' },
+  getTeam: [],
+  getClientDocs: { ok:true, folderUrl:'https://drive.google.com/drive/folders/fake',
+    docs:[
+      { key:'sales', label:'Sales call transcript', name:'sales-call-07-16.html',
+        words:3075, read:'11 Aug, 10:07', url:'https://drive.google.com/file/d/x/view' },
+      { key:'sow', label:'Scope of work', name:'Signed SOW 8.3.26.pdf',
+        words:2518, read:'11 Aug, 10:54', url:'https://drive.google.com/file/d/y/view' },
+      { key:'deck', label:'Pitch deck', name:'Strategy deck.pdf', words:2979,
+        read:'11 Aug, 10:08', gone:true, url:'' }
+    ] },
   deleteClient: { ok:true, clientId:'HARBOR-2608', draftFreed:'DR-260810-1612',
     removed:{ tasks:14, intake:1, plans:0 } },
   createDraft: { ok:true, draftId:'DR-260811-0930', name:'Harbor & Sons SOW', folderId:'fake-folder' },

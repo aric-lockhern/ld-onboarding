@@ -388,3 +388,44 @@ function fmtWhen_(d) {
   if (!(d instanceof Date)) return '';
   return Utilities.formatDate(d, Session.getScriptTimeZone(), 'd MMM, HH:mm');
 }
+
+/**
+ * The deal documents for a client, as links.
+ *
+ * Everything uploaded during intake is already in the draft's Drive folder —
+ * the extracted text and, for uploads, the original file. Until now only
+ * whoever ran the intake knew that. Anyone opening the client should be able
+ * to read the signed contract without asking where it went.
+ *
+ * Callable from App.html.
+ */
+function getClientDocs(clientId) {
+  const draftId = draftIdForClient_(clientId);
+  if (!draftId) {
+    return { ok: true, docs: [], folderUrl: '',
+             message: 'No draft is linked to this client, so there are no stored '
+                    + 'documents. Clients created before drafts existed, or by '
+                    + 'hand, will look like this.' };
+  }
+
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return { ok: true, docs: [], folderUrl: '', message: d && d.message };
+
+  const docs = (d.sources || []).map(s => ({
+    key: s.key,
+    label: s.label,
+    // The original upload is what someone actually wants to open; the text
+    // extraction is the fallback when the source was a link with no file.
+    name: s.originalName || (s.label + '.txt'),
+    url: s.originalId
+      ? 'https://drive.google.com/file/d/' + s.originalId + '/view'
+      : (s.fileId ? 'https://drive.google.com/file/d/' + s.fileId + '/view' : ''),
+    textUrl: s.fileId ? 'https://drive.google.com/file/d/' + s.fileId + '/view' : '',
+    origin: s.origin || '',
+    words: s.words || 0,
+    gone: !!s.gone,
+    read: s.read || ''
+  })).filter(x => x.url || x.origin);
+
+  return { ok: true, docs: docs, folderUrl: d.folderUrl || '', draftId: draftId };
+}
