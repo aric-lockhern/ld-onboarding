@@ -235,6 +235,7 @@ function setup() {
   mkTab_(ss, TABS.ACTIONS, ACTION_HEADERS);
 
   seedPlatforms_(ss);
+  repairTaskPhases_(ss);
   seedServices_(ss);
   repairServices_(ss);
   seedPhases_(ss);
@@ -292,6 +293,18 @@ function seedPlatforms_(ss) {
       'Create client space from the onboarding template', 'Same day', 1, '', 1, false, true, true],
     ['Client Slack channel', 'Internal', 'INTERNAL', 'Client Slack workspace email',
       'Slack Connect channel, invite client contacts and the pod', '1-2 days', 2, '', 1, false, true, true],
+    // Both calls are Phase 1: getting them in the diary is internal setup, and
+    // waiting until launch to book a kickoff is how a kickoff ends up three
+    // weeks after the contract started.
+    //
+    // Neither is a gate, deliberately. Phase 1 has to close for the Phase 2
+    // access email to send, so a gated call would hold every access request
+    // until the meeting happened — which is the wrong way round: the point of
+    // the kickoff is to have the accounts by then.
+    ['Kickoff call', 'Internal', 'INTERNAL', 'Attendee emails',
+      'Agenda comes from the plan open questions', '1 week', 3, '', 1, false, true, true],
+    ['Weekly onboarding call', 'Internal', 'INTERNAL', 'Attendee emails',
+      'Recurring invite for the onboarding window', 'Same day', 3, '', 1, false, true, true],
 
     // Phase 2 — everything we need from the client, in one email
     ['Google Ads', 'Paid', 'API', 'Customer ID (xxx-xxx-xxxx)',
@@ -342,12 +355,6 @@ function seedPlatforms_(ss) {
       'Access is not measurement. Fire a test conversion and confirm it lands in '
       + 'every platform before spend moves.', '2 days', 14, '', 3, true, true, true],
 
-    // Phase 4 — launch
-    ['Kickoff call', 'Internal', 'INTERNAL', 'Attendee emails',
-      'Agenda comes from the plan open questions', '1 week', 16, '', 4, true, true, true],
-    ['Weekly onboarding call', 'Internal', 'INTERNAL', 'Attendee emails',
-      'Recurring invite for the onboarding window', 'Same day', 16, '', 4, false, true, true],
-
     // Phase 5 — steady state
     ['First report delivered', 'Internal', 'INTERNAL', '—',
       'Sets the reporting rhythm. A late first report resets expectations badly.',
@@ -389,6 +396,52 @@ function seedPlatforms_(ss) {
  * deleted from the tab stays deleted only until the next setup(). If you do not
  * sell something, set Active to FALSE rather than removing the row.
  */
+/**
+ * Corrections to seeded task rows that have to reach a sheet already in use.
+ *
+ * Seeds bail once a tab has rows, so moving a task between phases in
+ * PLATFORM_SEED changes nothing for anyone who has already installed. The list
+ * below is applied on every setup() instead — by task name, so it survives
+ * rows having been reordered.
+ *
+ * Deliberately narrow: only the fields named here are written, and only for
+ * these tasks. It is a migration, not a reset — everything else on the row,
+ * including anything edited by hand, is left exactly as it is.
+ */
+const TASK_PHASE_FIXES = [
+  // Booking both calls belongs in internal setup. Waiting until launch to
+  // arrange a kickoff is how the kickoff lands three weeks after the contract
+  // started. Neither is a gate: Phase 1 must close for the Phase 2 access
+  // email to send, so a gated call would hold every access request until the
+  // meeting happened — and the point of the kickoff is to have the accounts
+  // by then.
+  { task: 'Kickoff call', phase: 1, gate: false, offset: 3 },
+  { task: 'Weekly onboarding call', phase: 1, gate: false, offset: 3 }
+];
+
+function repairTaskPhases_(ss) {
+  const sh = ss.getSheetByName(TABS.PLATFORMS);
+  if (!sh || sh.getLastRow() < 2) return 0;
+
+  const names = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  let fixed = 0;
+
+  TASK_PHASE_FIXES.forEach(fix => {
+    for (let i = 0; i < names.length; i++) {
+      if (String(names[i][0]).trim() !== fix.task) continue;
+      const row = i + 2;
+      // Raw indices, because the Platforms tab is read positionally in three
+      // places and has no column map — see rule 2 in CLAUDE.md.
+      sh.getRange(row, 7).setValue(fix.offset);   // Due Offset (days)
+      sh.getRange(row, 9).setValue(fix.phase);    // Phase
+      sh.getRange(row, 10).setValue(fix.gate);    // Gate
+      fixed++;
+      break;
+    }
+  });
+  return fixed;
+}
+
 function repairServices_(ss) {
   const sh = ss.getSheetByName(TABS.SERVICES);
   if (!sh) return;

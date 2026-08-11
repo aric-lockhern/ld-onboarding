@@ -411,6 +411,89 @@ function slackRoster() {
  * when there is nothing outstanding — a nudge that says "all clear" trains
  * people to ignore the next one.
  */
+/**
+ * Posts a named set of tasks to the client's channel, grouped by who owns them.
+ *
+ * One function for both the single-task nudge and the whole-phase one: they
+ * differ only in how many names go in, and splitting them would give two
+ * message formats that drift apart. A one-task ping is a list of one.
+ *
+ * Tasks already Complete or N/A are dropped rather than posted as done — a
+ * nudge that includes finished work reads as not having looked.
+ *
+ * @param {Array<string>} tasks task names, as they appear on the Access tab
+ */
+function slackPingTasks(token, clientId, tasks) {
+  checkToken_(token);
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+
+  const channel = String(client.slack || '').replace(/^#/, '');
+  if (!channel) {
+    return { ok: false, message: 'No Slack channel on this client. Create one '
+      + 'or link an existing one first.' };
+  }
+
+  const want = {};
+  (tasks || []).forEach(t => { want[String(t).trim()] = true; });
+
+  const open = getClientTasks_(clientId).filter(t =>
+    want[t.task] && t.status !== 'Complete' && t.status !== 'N/A');
+
+  if (!open.length) {
+    return { ok: false, nothing: true,
+             message: (tasks || []).length === 1
+               ? 'That task is already done — nothing sent.'
+               : 'Nothing outstanding there — nothing sent.' };
+  }
+
+  const r = slackCall_('chat.postMessage', {
+    channel: channel.indexOf('C') === 0 ? channel : '#' + channel,
+    text: taskLines_(client, open).join('\n')
+  });
+  if (!r.ok) return { ok: false, message: slackError_(r, 'post the message') };
+
+  return { ok: true, posted: open.length, channel: '#' + channel,
+           owners: Object.keys(byOwner_(open)).length };
+}
+
+function byOwner_(tasks) {
+  const out = {};
+  tasks.forEach(t => {
+    const who = t.owner || 'Unassigned';
+    (out[who] = out[who] || []).push(t);
+  });
+  return out;
+}
+
+/**
+ * The message body: owner, then their items.
+ *
+ * @-mentions where a Slack ID is stored and the plain name where it is not, so
+ * a directory that is only half matched still produces a readable nudge rather
+ * than a wall of raw user IDs or nothing at all.
+ */
+function taskLines_(client, tasks) {
+  const team = {};
+  getTeam().forEach(t => { if (t.slackId) team[t.name] = t.slackId; });
+
+  const groups = byOwner_(tasks);
+  const lines = ['*' + client.company + ' — outstanding onboarding items*'];
+
+  Object.keys(groups).forEach(who => {
+    const tag = team[who] ? '<@' + team[who] + '>' : who;
+    lines.push('', tag + ' — ' + groups[who].length + ':');
+    groups[who].forEach(t => {
+      lines.push('• ' + t.task + ' _(' + t.status
+        + (t.overdueBy > 0 ? ', ' + t.overdueBy + ' days overdue' : '')
+        + (t.assignedDays > 0 ? ', assigned ' + t.assignedDays + 'd ago' : '')
+        + ')_');
+    });
+  });
+  return lines;
+}
+
 function slackPingOutstanding(token, clientId, channelOverride) {
   checkToken_(token);
 

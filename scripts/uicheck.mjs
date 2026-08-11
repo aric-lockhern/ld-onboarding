@@ -194,11 +194,13 @@ const FAKE = {
       skills:['Reddit Organic','Content','Community'], role:'Social' }
   ],
   buildActionItems: { ok:true, written:6, preserved:1, unassigned:1, teamEmpty:false,
+    read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
     outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
       why:'The deck sold it; the signed SOW covers Reddit organic only.',
       needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
   updateActionItem: { ok:true },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
+  slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2 },
   getActionItems: { ok:true, statuses:['To do','In progress','Done','Not doing'],
     team:['Drake King','Alexandra McCurdy'],
     items:[
@@ -631,6 +633,42 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     els.map(e => e.textContent).filter(Boolean));
   if (!ages.includes('assigned 9d ago')) {
     throw new Error('The assignment age was not shown: ' + JSON.stringify(ages));
+  }
+
+  // The two dropdowns on a row must share a top edge. They did not: the age
+  // line under the assignee is a span, min-height does nothing to an inline
+  // span, so a row with an owner grew taller than one without and centring
+  // knocked the pair out of line.
+  const rowAlign = await page.$$eval('.task', function(rows){
+    return rows.map(function(r){
+      var a = r.querySelector('select.asg'), s = r.querySelector('select[data-task]');
+      if (!a || !s) return 0;
+      return Math.round(Math.abs(a.getBoundingClientRect().top
+                               - s.getBoundingClientRect().top));
+    });
+  });
+  const worst = Math.max.apply(null, rowAlign);
+  if (worst > 1) {
+    throw new Error('Assignee and status selects are out of line by up to '
+      + worst + 'px: ' + JSON.stringify(rowAlign));
+  }
+
+  // Ping, individually and by phase. Both need a channel on the client.
+  const pings = await page.$$eval('[data-ping]', els => els.length);
+  const phasePings = await page.$$eval('[data-pingphase]', els =>
+    els.map(e => e.textContent));
+  if (!pings) throw new Error('No per-task ping buttons rendered');
+  if (!phasePings.length || !/^Ping \d+ outstanding$/.test(phasePings[0])) {
+    throw new Error('No phase ping button: ' + JSON.stringify(phasePings));
+  }
+  // Complete and N/A rows are not naggable, so they must not offer the button.
+  const openRows = await page.$$eval('.task', rows => rows.filter(function(r){
+    var s = r.querySelector('select[data-task]');
+    return s && s.value !== 'Complete' && s.value !== 'N/A';
+  }).length);
+  if (pings !== openRows) {
+    throw new Error('Ping buttons (' + pings + ') do not match open rows ('
+      + openRows + ')');
   }
 
   // The profile is ~4,000 characters of prose across seven sections. Collapsed
