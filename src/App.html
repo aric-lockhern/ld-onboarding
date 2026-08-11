@@ -865,10 +865,15 @@ function openClient(clientId){
     // reach `d.client` and throw a TypeError that told nobody anything.
     if (!d || !d.client){
       el('hTitle').textContent = 'Client';
+      // Two different failures, and telling them apart is the whole point: a
+      // structured notFound means the row is gone, while a null means the
+      // server could not serialise its reply — usually a formula error in a
+      // cell — and no amount of looking at the Clients tab will explain it.
       el('view').innerHTML = '<button class="back" id="back">← All clients</button>'
-        + emptyState('Client not found',
-            (d && d.message) || 'The record could not be loaded. It may have been '
-            + 'deleted from the Clients tab.');
+        + emptyState(d && d.notFound ? 'Client not found' : 'Could not read this client',
+            (d && d.message) || 'The server returned nothing for ' + clientId
+            + '. That usually means a cell on its row holds a formula error '
+            + '(#REF!, #N/A, #VALUE!). Check the row in the Clients tab.');
       el('back').addEventListener('click', function(){ go('clients'); });
       return;
     }

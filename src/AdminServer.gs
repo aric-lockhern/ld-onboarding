@@ -70,32 +70,59 @@ function showAdminDashboard() {
 
 // ---------------------------------------------------------------- READ
 
+/**
+ * Every field here is coerced to a string, a number or a plain array.
+ *
+ * google.script.run returns NULL — not an error, not a rejection — when any
+ * part of the response cannot be serialised, and a single cell holding a
+ * formula error (#REF!, #N/A, #VALUE!) comes back from getValues() as an Error
+ * object that does exactly that. The whole client page then fails with nothing
+ * to go on, which is what "Client not found" on a row you can see in the list
+ * actually means. Never hand a raw cell value back to the browser.
+ */
+function safeStr_(v) {
+  if (v === null || v === undefined) return '';
+  if (v instanceof Date) return fmtDate_(v);
+  if (typeof v === 'object') return '';   // a formula error, and nothing useful
+  return String(v);
+}
+
+function safeNum_(v) {
+  const n = Number(v);
+  return isFinite(n) && v !== '' && v !== null ? n : '';
+}
+
 function getClientRecord_(clientId) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.CLIENTS);
   if (sh.getLastRow() < 2) return null;
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, C.WIDTH).getValues();
-  const r = rows.find(x => x[C.ID - 1] === clientId);
+  const r = rows.find(x => String(x[C.ID - 1]).trim() === String(clientId).trim());
   if (!r) return null;
   return {
-    clientId: r[C.ID - 1], company: r[C.COMPANY - 1], contact: r[C.CONTACT - 1],
-    email: r[C.EMAIL - 1], website: r[C.WEBSITE - 1], vertical: r[C.VERTICAL - 1],
-    status: r[C.STATUS - 1], platforms: r[C.PLATFORMS - 1],
-    contractStart: fmtDate_(r[C.START - 1]), contractStartRaw: r[C.START - 1],
-    mrr: r[C.MRR - 1], owner: r[C.OWNER - 1], scope: r[C.SCOPE - 1],
-    cadence: r[C.CADENCE - 1], slack: r[C.SLACK - 1], alias: r[C.ALIAS - 1],
-    drive: r[C.DRIVE - 1], approvals: r[C.APPROVALS - 1],
-    term: r[C.TERM - 1], call: r[C.CALL - 1],
-    bizType: r[C.BIZTYPE - 1], onboarding: r[C.ONBOARDING - 1],
-    services: r[C.SERVICES - 1],
+    clientId: safeStr_(r[C.ID - 1]), company: safeStr_(r[C.COMPANY - 1]),
+    contact: safeStr_(r[C.CONTACT - 1]), email: safeStr_(r[C.EMAIL - 1]),
+    website: safeStr_(r[C.WEBSITE - 1]), vertical: safeStr_(r[C.VERTICAL - 1]),
+    status: safeStr_(r[C.STATUS - 1]), platforms: safeStr_(r[C.PLATFORMS - 1]),
+    contractStart: fmtDate_(r[C.START - 1]),
+    // A string, not the Date. parseDate_ handles it, and a raw cell value is
+    // exactly what breaks serialisation when the cell holds a formula error.
+    contractStartRaw: safeStr_(r[C.START - 1]),
+    mrr: safeNum_(r[C.MRR - 1]), owner: safeStr_(r[C.OWNER - 1]),
+    scope: safeStr_(r[C.SCOPE - 1]), cadence: safeStr_(r[C.CADENCE - 1]),
+    slack: safeStr_(r[C.SLACK - 1]), alias: safeStr_(r[C.ALIAS - 1]),
+    drive: safeStr_(r[C.DRIVE - 1]), approvals: safeStr_(r[C.APPROVALS - 1]),
+    term: safeStr_(r[C.TERM - 1]), call: safeStr_(r[C.CALL - 1]),
+    bizType: safeStr_(r[C.BIZTYPE - 1]), onboarding: safeStr_(r[C.ONBOARDING - 1]),
+    services: safeStr_(r[C.SERVICES - 1]),
     // Raw comma strings, kept separate from the display fields because
     // platformsForClient_ parses them.
-    platformsRaw: r[C.PLATFORMS - 1], servicesRaw: r[C.SERVICES - 1],
+    platformsRaw: safeStr_(r[C.PLATFORMS - 1]), servicesRaw: safeStr_(r[C.SERVICES - 1]),
     fees: parseFees_(r[C.FEES - 1]),
     // How to work with them, as opposed to what they bought. Built at creation
     // from the deal documents; see Profile.gs.
-    profile: String(r[C.PROFILE - 1] || ''),
-    draftId: draftIdForClient_(r[C.ID - 1]),
-    planStatus: r[C.PLAN_STATUS - 1], planDoc: r[C.PLAN_DOC - 1]
+    profile: safeStr_(r[C.PROFILE - 1]),
+    draftId: draftIdForClient_(safeStr_(r[C.ID - 1])),
+    planStatus: safeStr_(r[C.PLAN_STATUS - 1]), planDoc: safeStr_(r[C.PLAN_DOC - 1])
   };
 }
 
@@ -116,17 +143,20 @@ function getClientTasks_(clientId) {
   if (sh.getLastRow() < 2) return [];
   const today = midnight_(new Date());
   return sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues()
-    .filter(r => r[A.ID - 1] === clientId)
+    .filter(r => String(r[A.ID - 1]).trim() === String(clientId).trim())
     .map(r => {
       const due = parseDate_(r[A.DUE - 1]);
       const open = r[A.STATUS - 1] !== 'Complete' && r[A.STATUS - 1] !== 'N/A';
+      // Coerced for the same reason as the client record: one formula error in
+      // any of these cells and the whole response serialises to null.
       return {
-        task: r[A.TASK - 1], category: r[A.CATEGORY - 1], method: r[A.METHOD - 1],
-        needs: r[A.NEEDS - 1], accountId: r[A.ACCOUNT - 1], status: r[A.STATUS - 1],
+        task: safeStr_(r[A.TASK - 1]), category: safeStr_(r[A.CATEGORY - 1]),
+        method: safeStr_(r[A.METHOD - 1]), needs: safeStr_(r[A.NEEDS - 1]),
+        accountId: safeStr_(r[A.ACCOUNT - 1]), status: safeStr_(r[A.STATUS - 1]),
         due: fmtDate_(r[A.DUE - 1]),
         overdueBy: (due && open) ? Math.round((today - midnight_(due)) / 86400000) : 0,
         requested: fmtDate_(r[A.REQUESTED - 1]), completed: fmtDate_(r[A.COMPLETED - 1]),
-        owner: r[A.OWNER - 1], notes: r[A.NOTES - 1],
+        owner: safeStr_(r[A.OWNER - 1]), notes: safeStr_(r[A.NOTES - 1]),
         phase: Number(r[A.PHASE - 1]) || 1, gate: r[A.GATE - 1] === true
       };
     });
