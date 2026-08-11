@@ -44,8 +44,13 @@ const SERVICES = ['Google Ads', 'Microsoft Ads', 'Meta Ads', 'Meta Organic Socia
  */
 const SERVICE_SEED = [
   // service, category, platforms needed, default fee, active
+  // The bracket means "only for this business type". Shopping and PMax need a
+  // Merchant Center; a lead-gen advertiser has no feed and no use for one, and
+  // asking for it anyway is how a Merchant Center request lands in a plumber's
+  // access email.
   ['Google Ads', 'Paid',
-    'Google Ads, Google Analytics (GA4), Google Tag Manager', 6000, true],
+    'Google Ads, Google Analytics (GA4), Google Tag Manager, '
+    + 'Google Merchant Center [eCommerce]', 6000, true],
   ['Microsoft Ads', 'Paid', 'Microsoft Ads', 1500, true],
   ['Meta Ads', 'Paid',
     'Meta Ads, Meta / Instagram Organic, Google Analytics (GA4)', 3000, true],
@@ -75,7 +80,7 @@ const C = {
   PLATFORMS: 8, START: 9, MRR: 10, OWNER: 11, SCOPE: 12, CADENCE: 13, SLACK: 14,
   ALIAS: 15, DRIVE: 16, SERVICES: 17, APPROVALS: 18, TERM: 19, CALL: 20,
   BIZTYPE: 21, FEES: 22, ONBOARDING: 23,
-  PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, WIDTH: 27
+  PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, PROFILE: 28, WIDTH: 28
 };
 
 // Access column map (1-based)
@@ -121,7 +126,7 @@ function setup() {
     'Onboarding Owner', 'Scope', 'Meeting Cadence', 'Slack Channel', 'Email Alias',
     'Drive Folder', 'Services', 'Approvals Contact', 'Contract Term',
     'Onboarding Call', 'Business Type', 'Fees', 'Onboarding',
-    'Progress', 'Plan Status', 'Plan Doc', 'Created'
+    'Progress', 'Plan Status', 'Plan Doc', 'Created', 'Profile'
   ]);
 
   mkTab_(ss, TABS.INTAKE, [
@@ -467,12 +472,18 @@ function getIntakeOptions() {
  * the tab has not been created yet.
  */
 function getServiceList() {
-  const row = r => ({
-    name: String(r[0]).trim(),
-    category: String(r[1] || '').trim(),
-    platforms: String(r[2] || '').split(',').map(x => x.trim()).filter(Boolean),
-    fee: r[3] === '' || r[3] === null ? '' : Number(r[3])
-  });
+  const row = r => {
+    const rules = parsePlatformSpec_(r[2]);
+    return {
+      name: String(r[0]).trim(),
+      category: String(r[1] || '').trim(),
+      // Plain names, for anything that just wants the list.
+      platforms: rules.map(x => x.name),
+      // The same list with its conditions, for anything that has to decide.
+      platformRules: rules,
+      fee: r[3] === '' || r[3] === null ? '' : Number(r[3])
+    };
+  };
 
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.SERVICES);
   const rows = (!sh || sh.getLastRow() < 2) ? []
@@ -606,6 +617,32 @@ function startOnboarding(token, clientId, opts) {
  * everything implied by the services sold. Union, not replacement — a service
  * mapping is a shortcut for the common case, never a cap on it.
  */
+/**
+ * "Google Merchant Center [eCommerce]" — a platform this service needs, but
+ * only for that kind of client.
+ *
+ * The qualifier lives in the cell rather than in a new column because the
+ * Platforms and Services tabs are read by raw index in three places, and adding
+ * a column means changing all of them (see CLAUDE.md rule 2). A bracket after
+ * the name costs nothing and reads plainly to whoever edits the tab.
+ */
+function parsePlatformSpec_(cell) {
+  return String(cell || '').split(',').map(part => {
+    const t = part.trim();
+    if (!t) return null;
+    const m = t.match(/^(.*?)\s*\[([^\]]+)\]$/);
+    return m
+      ? { name: m[1].trim(), onlyFor: m[2].trim() }
+      : { name: t, onlyFor: '' };
+  }).filter(Boolean);
+}
+
+/** Whether a conditional platform applies to this client. */
+function platformApplies_(rule, bizType) {
+  if (!rule.onlyFor) return true;
+  return String(rule.onlyFor).toLowerCase() === String(bizType || '').toLowerCase();
+}
+
 function platformsForClient_(client) {
   const explicit = String(client.platformsRaw || '')
     .split(',').map(s => s.trim()).filter(Boolean);
@@ -614,11 +651,13 @@ function platformsForClient_(client) {
     .split(',').map(s => s.trim()).filter(Boolean);
 
   const map = {};
-  getServiceList().forEach(s => { map[s.name] = s.platforms; });
+  getServiceList().forEach(s => { map[s.name] = s.platformRules; });
 
   const out = explicit.slice();
   sold.forEach(name => {
-    (map[name] || []).forEach(p => { if (out.indexOf(p) === -1) out.push(p); });
+    (map[name] || [])
+      .filter(rule => platformApplies_(rule, client.bizType))
+      .forEach(rule => { if (out.indexOf(rule.name) === -1) out.push(rule.name); });
   });
   return out;
 }

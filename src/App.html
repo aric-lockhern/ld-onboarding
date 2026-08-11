@@ -265,6 +265,15 @@
   .drop .clr:hover{color:var(--critical)}
   .f textarea:disabled{background:var(--paper); color:var(--faint)}
 
+  /* Client profile — prose, so it gets reading measure and spacing */
+  .prof{max-width:760px; font-size:14px; line-height:1.65; color:var(--ink)}
+  .prof p{margin:0 0 10px}
+  .prof h4{font-size:12px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.05em; color:var(--muted); margin:18px 0 7px}
+  .prof h4:first-child{margin-top:0}
+  .prof ul{margin:0 0 10px; padding-left:18px}
+  .prof li{margin-bottom:5px}
+
   /* Draft resume list */
   .drow{display:flex; gap:12px; align-items:center; padding:12px 0;
     border-top:1px solid var(--line)}
@@ -430,7 +439,8 @@ var SERVER_FNS = [
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
-  'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft'
+  'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
+  'buildClientProfile', 'getClientProfile'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -759,6 +769,85 @@ function renderClients(){
 var CLIENT_STATUSES = ['Intake','Access Pending','Auditing','Building','Live','Paused','Churned'];
 var CALL_STATES = ['Not applicable','To schedule','Scheduled','Running'];
 
+/**
+ * How to work with this client, as opposed to what they bought.
+ *
+ * Rendered from the markdown the model wrote, because the same text has to be
+ * readable in the Clients tab — half the team works in the sheet, and JSON in a
+ * cell is unreadable there.
+ */
+function profileCard(text){
+  if (!text || !String(text).trim()){
+    return '<h3>Not built yet</h3>'
+      + '<div class="hint">A profile is written from the sales and kickoff calls '
+      + 'when the client is created — how they communicate, what they care about, '
+      + 'what will annoy them. This one has none, usually because it was created '
+      + 'before the feature existed or without any documents.</div>'
+      + '<div class="startrow"><button class="btn" id="mkProfile">Build profile</button></div>';
+  }
+  return '<div class="prof">' + mdLite(text) + '</div>'
+    + '<div class="startrow"><button class="btn" id="mkProfile">Rebuild from the documents</button></div>';
+}
+
+/**
+ * Just enough markdown for what the profile actually contains: ## headings,
+ * - bullets, and paragraphs. Not a general renderer — a general renderer here
+ * would be a lot of code to display six shapes.
+ */
+function mdLite(text){
+  var out = [], list = null;
+  String(text).split(/\n/).forEach(function(line){
+    var t = line.trim();
+    if (!t){ if (list){ out.push('</ul>'); list = null; } return; }
+    if (t.indexOf('## ') === 0){
+      if (list){ out.push('</ul>'); list = null; }
+      out.push('<h4>' + esc(t.slice(3)) + '</h4>');
+    } else if (t.indexOf('- ') === 0){
+      if (!list){ out.push('<ul>'); list = true; }
+      out.push('<li>' + esc(t.slice(2)) + '</li>');
+    } else {
+      if (list){ out.push('</ul>'); list = null; }
+      out.push('<p>' + esc(t) + '</p>');
+    }
+  });
+  if (list) out.push('</ul>');
+  return out.join('');
+}
+
+/**
+ * Builds or rebuilds the profile in place.
+ *
+ * Reads the draft's documents server-side, so this costs one API call and no
+ * uploads however long ago the client was created — as long as the draft still
+ * exists, which it does unless someone deleted it.
+ */
+function makeProfile(clientId, draftId, btn){
+  if (btn){ btn.disabled = true; btn.textContent = 'Reading the documents…'; }
+  api('buildClientProfile', clientId, draftId || '').then(function(r){
+    if (!r.ok){
+      if (btn){ btn.disabled = false; btn.textContent = 'Build profile'; }
+      toast(r.message || 'Could not build the profile.', true);
+      return;
+    }
+    if (DETAIL && DETAIL.client) DETAIL.client.profile = r.profile;
+    if (el('profWrap')){
+      el('profWrap').innerHTML = profileCard(r.profile);
+      wireProfile(clientId, draftId);
+    }
+    toast('Profile built from ' + (r.sources || []).join(', ') + '.');
+  }).catch(function(e){
+    if (btn){ btn.disabled = false; btn.textContent = 'Build profile'; }
+    fail(e);
+  });
+}
+
+function wireProfile(clientId, draftId){
+  if (!el('mkProfile')) return;
+  el('mkProfile').addEventListener('click', function(){
+    makeProfile(clientId, draftId, this);
+  });
+}
+
 function openClient(clientId){
   el('hTitle').textContent = 'Client';
   el('hSub').textContent = '';
@@ -791,6 +880,9 @@ function openClient(clientId){
         + '<label class="mini"><input type="checkbox" id="optPlan"> Generate onboarding plan</label>'
         + '<button class="btn pri" id="startOnb">Start onboarding</button></div></div>';
     }
+
+    h += '<div class="grp">Client profile</div><div class="card">'
+      + '<div class="sect" id="profWrap">' + profileCard(c.profile) + '</div></div>';
 
     var ps = d.phaseState || {};
     if (ps.phases && ps.phases.length){
@@ -826,7 +918,7 @@ function openClient(clientId){
 
     // Only the fields updateClientField accepts — anything else silently
     // returns { ok:false, message:'Unknown field.' }.
-    h += '<div class="grp">Profile</div><div class="card"><div class="sect"><div class="fields">'
+    h += '<div class="grp">Details</div><div class="card"><div class="sect"><div class="fields">'
       + pField('status', 'Status', c.status, CLIENT_STATUSES)
       + pField('owner', 'Onboarding owner', c.owner)
       + pField('cadence', 'Meeting cadence', c.cadence, d.cadences || CACHE.options.cadences)
@@ -848,6 +940,21 @@ function openClient(clientId){
 
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    // The draft that produced this client is where the documents live, so the
+    // profile can be rebuilt months later without re-uploading anything.
+    var draftId = (PENDING_PROFILE && PENDING_PROFILE.clientId === clientId)
+      ? PENDING_PROFILE.draftId : (c.draftId || '');
+    wireProfile(clientId, draftId);
+
+    // Straight after Create client, build it without being asked — that is the
+    // moment the documents are certainly still there and the request was to
+    // have this happen on create.
+    if (PENDING_PROFILE && PENDING_PROFILE.clientId === clientId){
+      var pend = PENDING_PROFILE;
+      PENDING_PROFILE = null;
+      if (!c.profile) makeProfile(clientId, pend.draftId, el('mkProfile'));
+    }
 
     [].forEach.call(document.querySelectorAll('[data-field]'), function(inp){
       inp.addEventListener('change', function(){
@@ -1128,6 +1235,7 @@ var SRCVALS = {};     // what was entered on the sources step, for going back
 var DRAFT = null;     // the open draft: {draftId, name, status, folderUrl}
 var DRAFTS = [];      // the resume list
 var DRAFTFORM = null; // form values saved on the draft, applied over EXTRACT
+var PENDING_PROFILE = null;  // {clientId, draftId} — build one on first open
 
 function collectAndRead(){
   var b = el('analyse');
@@ -1845,7 +1953,7 @@ function servicesSection(options){
           + '<input type="checkbox" data-service="' + esc(sv.name) + '"'
           + ' value="' + esc(sv.name) + '"' + (on ? ' checked' : '') + '>'
           + '<span><span class="nm">' + esc(sv.name) + '</span><br>'
-          + '<span class="cat">' + esc(sv.platforms.join(', ') || 'no platform access') + '</span>'
+          + '<span class="cat">' + esc(svPlatformLabel(sv)) + '</span>'
           + '</span></label>';
       }).join('') + '</div>'
     + (noHome.length
@@ -1886,6 +1994,17 @@ function feeRow(l){
     + '<input class="fa" type="number" step="any" placeholder="0" value="'
     + (l.amount === 0 || l.amount ? esc(l.amount) : '') + '">'
     + '<button type="button" class="clr" data-delfee="1">Remove</button></div>';
+}
+
+/** Platform subtitle, marking the ones that depend on the business type. */
+function svPlatformLabel(sv){
+  var rules = sv.platformRules || (sv.platforms || []).map(function(p){
+    return { name: p, onlyFor: '' };
+  });
+  if (!rules.length) return 'no platform access';
+  return rules.map(function(r){
+    return r.onlyFor ? r.name + ' (' + r.onlyFor + ' only)' : r.name;
+  }).join(', ');
 }
 
 function readServices(){
@@ -1935,16 +2054,33 @@ function recalcFees(){
 /** Ticking a service ticks the platforms it implies. Unticking never removes
     them — the platform may have been wanted on its own, and silently dropping
     an access request is worse than an extra tick to clear. */
+/**
+ * Ticking a service ticks the platforms it needs — but some of those depend on
+ * the kind of business. Shopping and PMax need a Merchant Center, so Google Ads
+ * pulls one in for an eCommerce client and not for a lead-gen one, which has no
+ * feed and no use for it.
+ */
 function applyServicePlatforms(name){
   var sv = (CACHE.options.services || []).find(function(x){ return x.name === name; });
   if (!sv) return;
-  sv.platforms.forEach(function(p){
-    var box = document.querySelector('.checks .chk input[value="' + p.replace(/"/g, '\\"') + '"]:not([data-service])');
-    if (box && !box.checked){
-      box.checked = true;
-      box.closest('.chk').classList.add('on');
-    }
-  });
+  var biz = el('bizType') ? el('bizType').value : '';
+  (sv.platformRules || sv.platforms.map(function(p){ return {name:p, onlyFor:''}; }))
+    .filter(function(r){
+      return !r.onlyFor || r.onlyFor.toLowerCase() === String(biz).toLowerCase();
+    })
+    .forEach(function(r){
+      var box = document.querySelector('.checks .chk input[value="'
+        + r.name.replace(/"/g, '\\"') + '"]:not([data-service])');
+      if (box && !box.checked){
+        box.checked = true;
+        box.closest('.chk').classList.add('on');
+      }
+    });
+}
+
+/** Business type changes what the ticked services need, so re-apply them all. */
+function reapplyPlatformsForBizType(){
+  readServices().forEach(applyServicePlatforms);
 }
 
 function wireIntake(){
@@ -1960,6 +2096,11 @@ function wireIntake(){
     // otherwise AI Search SEO is selected with no Search Console access.
     if (i.checked) applyServicePlatforms(i.value);
   });
+  // Switching to eCommerce should pull in what an eCommerce client needs — the
+  // extraction sets both fields, but a correction here has to follow through.
+  if (el('bizType')){
+    el('bizType').addEventListener('change', reapplyPlatformsForBizType);
+  }
   if (el('addFee')){
     el('addFee').addEventListener('click', function(){
       el('feeRows').insertAdjacentHTML('beforeend', feeRow({}));
@@ -1997,6 +2138,9 @@ function wireIntake(){
     el('formMsg').textContent = '';
     api('submitIntake', payload).then(function(r){
       CACHE.overview = null; CACHE.queue = null;
+      // Picked up by openClient, which builds the profile once the page is up
+      // rather than making Create client sit on a 30-second API call.
+      PENDING_PROFILE = { clientId: r.clientId, draftId: r.draftId || '' };
       toast('Created ' + company + ' — review, then start onboarding.');
       openClient(r.clientId);
     }).catch(function(e){
