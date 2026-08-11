@@ -32,7 +32,8 @@ const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
  * Services tab so it can be changed without a deploy.
  */
 const SERVICES = ['Google Ads', 'Microsoft Ads', 'Meta Ads', 'Reddit Ads',
-  'AI Search SEO', 'Google Business Profile', 'Landing Page', 'Web Design'];
+  'Reddit Organic Social', 'AI Search SEO', 'Google Business Profile',
+  'Landing Page', 'Web Design'];
 
 const TERMS = ['Month to month', '3 months', '6 months', '12 months', 'Custom'];
 const BIZ_TYPES = ['Lead Gen', 'eCommerce'];
@@ -276,6 +277,10 @@ function seedServices_(ss) {
     ['Meta Ads', 'Paid',
       'Meta Ads, Meta / Instagram Organic, Google Analytics (GA4)', 3000, true],
     ['Reddit Ads', 'Paid', 'Reddit Ads, Reddit Organic', 2000, true],
+    // Distinct from Reddit Ads on purpose. Posting to subreddits and buying
+    // Reddit inventory are different products with different deliverables, and
+    // a scope that sells one has not bought the other.
+    ['Reddit Organic Social', 'Organic', 'Reddit Organic', 2000, true],
     ['AI Search SEO', 'Organic',
       'Google Search Console, Google Analytics (GA4), WordPress', 2000, true],
     ['Google Business Profile', 'Local', 'Google Business Profile', 750, true],

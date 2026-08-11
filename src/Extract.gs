@@ -86,10 +86,17 @@ function readSource(key, raw, draftId) {
   // stub — a cover page, an empty doc — rather than the thing itself. Worth
   // saying now, while re-linking is cheap.
   const words = text.split(/\s+/).length;
-  const warn = words < 120
-    ? 'Only ' + words + ' words. Check this is the full document and not a '
-      + 'cover page or a link to it.'
-    : '';
+  let warn = '';
+  if (words < 120) {
+    warn = 'Only ' + words + ' words. Check this is the full document and not a '
+         + 'cover page or a link to it.';
+  } else if (looksPriceless_(key, text)) {
+    warn = 'No prices in the text — the fee table is probably an image. '
+         + (raw && typeof raw === 'object' && isAttachable_(raw.mimeType)
+             ? 'The file itself will be sent to Claude so it can read the page.'
+             : 'Upload the original PDF instead of pasting the text, so Claude '
+               + 'can see the page.');
+  }
 
   let record;
   try {
@@ -111,6 +118,9 @@ function readSource(key, raw, draftId) {
   return {
     ok: true, key: key, label: label, via: via,
     fileId: record.fileId, originalName: record.originalName,
+    // Handed back so the UI can pass them to runExtraction, which re-reads the
+    // original from Drive on every analysis rather than holding bytes anywhere.
+    originalId: record.originalId, originalMime: record.originalMime,
     chars: record.chars, words: words, preview: record.preview, warn: warn
   };
 }
@@ -134,13 +144,33 @@ function runExtraction(items, draftId) {
 
   const docs = [];
   const missing = [];
+  const attached = [];
+  let attachedBytes = 0;
 
   items.forEach(it => {
     const kind = SOURCE_KINDS.filter(k => k.key === it.key)[0];
     const label = kind ? kind.label : String(it.key);
     const text = readStored_(it.fileId);
-    if (text && text.trim()) docs.push({ key: it.key, label: label, text: text });
-    else missing.push(label);
+    if (!text || !text.trim()) { missing.push(label); return; }
+
+    const doc = { key: it.key, label: label, text: text };
+
+    // A PDF goes to the model as a PDF, not only as the text scraped out of it.
+    // A fee table exported as an image has no text layer, so extraction returns
+    // the sentence introducing it and then stops — and nothing about the result
+    // looks wrong, because the other nine pages came through fine. Attaching the
+    // file lets the model read the page.
+    if (it.originalId && isAttachable_(it.originalMime)
+        && attachedBytes < MAX_ATTACH_BYTES) {
+      const b64 = readStoredBytes_(it.originalId);
+      // base64 inflates by 4/3; this is the wire size, which is what counts.
+      if (b64 && (attachedBytes + b64.length) <= MAX_ATTACH_BYTES) {
+        doc.attach = { mimeType: it.originalMime, data: b64, label: label };
+        attachedBytes += b64.length;
+        attached.push(label);
+      }
+    }
+    docs.push(doc);
   });
 
   if (!docs.length) {
@@ -176,7 +206,12 @@ function runExtraction(items, draftId) {
     fees: out.fees || null,
     conflicts: out.conflicts || [],
     openQuestions: out.openQuestions || [],
+    // Anything sold that has no matching service. Without this the model
+    // silently drops it, because the prompt requires an exact match — which is
+    // how a whole Reddit workstream can vanish from a scope it is named in.
+    unmatchedServices: out.unmatchedServices || [],
     sourcesUsed: docs.map(d => d.label),
+    attached: attached,
     trimmed: trimmed,
     missing: missing
   };
@@ -594,6 +629,15 @@ function buildExtractPrompt_(docs) {
     '  documents do not answer. Be specific and few. Not "what is the budget"',
     '  when the budget is stated.',
     '- Keep quotes short — one sentence. They are shown under a form field.',
+    '- Some documents are attached as PDFs as well as being transcribed. Fee',
+    '  tables and pricing slides are routinely images with no text layer, so',
+    '  READ THE ATTACHED PAGES for money, not just the transcription. If a',
+    '  transcription trails off at "client shall pay:" the figures are in the',
+    '  attachment.',
+    '- If the documents sell something with no matching service name, put it in',
+    '  unmatchedServices rather than dropping it or forcing it into the nearest',
+    '  name. Organic social management is not the same product as paid ads on',
+    '  the same platform, and guessing either way is worse than reporting it.',
     '',
     'Return ONLY a JSON object, no prose and no code fence.'
   ].join('\n');
@@ -608,6 +652,7 @@ function buildExtractPrompt_(docs) {
             quote: 'string', source: 'string' },
     conflicts: [{ field: 'string', note: 'string', a: { source: 'string', quote: 'string' },
                   b: { source: 'string', quote: 'string' } }],
+    unmatchedServices: [{ name: 'string', quote: 'string', source: 'string' }],
     openQuestions: ['string']
   };
 
@@ -630,6 +675,9 @@ function buildExtractPrompt_(docs) {
     SERVICES.join(' | '),
     'These are what the client BOUGHT. Do not confuse them with platforms,',
     'which are what we need access to.',
+    'Anything sold that is not on that list goes in unmatchedServices with the',
+    'quote that names it. Do not force it onto the closest name and do not drop',
+    'it — a service the agency has no name for yet is exactly what we need told.',
     '',
     'fees: the fee table, usually a "Fees & Payment" or pricing slide, as',
     'lines: [{ label, amount }]. Use the service name as the label where it',
@@ -649,10 +697,17 @@ function buildExtractPrompt_(docs) {
     JSON.stringify(shape, null, 2),
     '',
     '--- DOCUMENTS ---',
-    docs.map(d => '### ' + d.label + '\n' + d.text).join('\n\n')
+    docs.map(d => '### ' + d.label
+      + (d.attach ? '\n(also attached above as a file — read it for anything the '
+                  + 'transcription below is missing, especially money)' : '')
+      + '\n' + d.text).join('\n\n')
   ].join('\n');
 
-  return { system: system, user: user };
+  return {
+    system: system,
+    user: user,
+    documents: docs.filter(d => d.attach).map(d => d.attach)
+  };
 }
 
 /**
@@ -667,6 +722,36 @@ const PROMPT_CHAR_BUDGET = 600000;
 
 /** Room for the JSON, whose size scales with the quote per field. */
 const EXTRACT_MAX_TOKENS = 16000;
+
+/**
+ * Total base64 across all attached originals, per analysis.
+ *
+ * A PDF page costs the model far more than the same page as text — it is
+ * rendered as an image as well as read — so this is a cost ceiling, not a
+ * protocol one. Roughly 8MB of base64 is ~6MB of PDF, which is a long signed
+ * contract or three short ones. Past it, the remaining sources go as text only
+ * and runExtraction reports which ones were attached.
+ */
+const MAX_ATTACH_BYTES = 8 * 1024 * 1024;
+
+/** What is worth sending as a file rather than as scraped text. */
+function isAttachable_(mime) {
+  if (!mime) return false;
+  return mime === 'application/pdf' || mime.indexOf('image/') === 0;
+}
+
+/**
+ * Whether a document that ought to price something actually contains a price.
+ *
+ * A scope of work whose text layer holds no currency at all is the signature of
+ * a fee table exported as an image: extraction succeeds, the character count
+ * looks healthy, and the one number that matters is missing. The row says so
+ * rather than showing a green tick over a silent hole.
+ */
+function looksPriceless_(key, text) {
+  if (key !== 'sow' && key !== 'deck') return false;
+  return !/[$£€]\s?\d|\d[\d,]*\s?(?:USD|GBP|EUR)\b|\b\d{1,3},\d{3}\b/.test(text);
+}
 
 /**
  * Fair-share allocation: a short document takes only what it needs and hands

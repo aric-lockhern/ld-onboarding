@@ -1075,6 +1075,7 @@ function resumeDraft(draftId){
           ? { error: 'The stored copy is gone from Drive.',
               hint: 'Read it again, or paste the text in.', via: s.via }
           : { ok:true, key:s.key, label:s.label, via:s.via, fileId:s.fileId,
+              originalId:s.originalId || '', originalMime:s.originalMime || '',
               chars:s.chars, words:s.words, preview:s.preview, warn:'' }
       };
     });
@@ -1420,7 +1421,11 @@ function doAnalyse(){
   var items = [], words = 0;
   READ.forEach(function(r){
     if (r.state !== 'ok' || !r.res || !r.res.fileId) return;
-    items.push({ key: r.key, fileId: r.res.fileId });
+    // originalId rides along so the server can attach the PDF itself, not just
+    // the text scraped out of it — a fee table exported as an image has no text.
+    items.push({ key: r.key, fileId: r.res.fileId,
+                 originalId: r.res.originalId || '',
+                 originalMime: r.res.originalMime || '' });
     words += r.res.words || 0;
   });
   if (!items.length){ updateFoot(); return; }
@@ -1607,7 +1612,25 @@ function intakeHtml(platforms, options){
     var n = Object.keys(EXTRACT.fields || {}).length;
     h += '<div class="okbox"><b>' + n + ' field' + (n === 1 ? '' : 's') + ' pre-filled</b> from '
       + esc((EXTRACT.sourcesUsed || []).join(', '))
+      + ((EXTRACT.attached || []).length
+          ? '. ' + esc(EXTRACT.attached.join(' and ')) + ' also went across as the '
+            + 'original file, so pricing laid out as an image could be read'
+          : '')
       + '. Every value shows the sentence it came from — check the money and the dates.</div>';
+
+    // Something was sold that has no service to put it in. Silence here is how
+    // a whole workstream disappears from a scope that names it on page two.
+    if ((EXTRACT.unmatchedServices || []).length){
+      h += '<div class="warnbox"><b>Sold, but not on the services list</b>'
+        + '<div>Nothing was ticked for these. Add them to the Services tab in '
+        + 'the sheet if you sell them, or note them in the scope.</div>'
+        + EXTRACT.unmatchedServices.map(function(u){
+            return '<div class="q">' + esc(u.name || '')
+              + (u.quote ? ' — “' + esc(String(u.quote).slice(0, 180)) + '”' : '')
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
 
     (EXTRACT.conflicts || []).forEach(function(c){
       h += '<div class="warnbox"><b>Sources disagree on ' + esc(c.field || 'something') + '</b>'

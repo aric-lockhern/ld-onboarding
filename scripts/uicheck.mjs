@@ -104,6 +104,7 @@ const FAKE = {
         fileId:'file_stub_sales', chars:48210, words:8609, read:'10 Aug, 16:04',
         preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out of Leeds' },
       { key:'sow', label:'Scope of work', via:'Upload · harbor-sow.pdf', originalName:'harbor-sow.pdf',
+        originalId:'orig_stub_sow', originalMime:'application/pdf',
         fileId:'file_stub_sow', chars:9140, words:1602, read:'10 Aug, 16:06',
         preview:'SCOPE OF WORK — Harbor & Sons Ltd and Lockhern Digital. Term commences 1 September 2026' },
       { key:'deck', label:'Pitch deck', via:'Google Slides', fileId:'file_stub_deck',
@@ -136,6 +137,9 @@ const FAKE = {
     platforms:{value:['Google Ads','Meta Ads','Google Merchant Center','Google Analytics (GA4)','Google Tag Manager'],confidence:'high',quote:'Services: management of Google Ads, Meta Ads and Google Merchant Center.',source:'Scope of work'},
     services:{value:['Google Ads','Reddit Ads','AI Search SEO'],confidence:'high',quote:'SERVICE / MONTHLY INVESTMENT — Google Ads, Reddit, AI Search SEO',source:'Pitch deck'},
     fees:{value:[{label:'Google Ads',amount:6000},{label:'Reddit Ads',amount:2000},{label:'AI Search SEO',amount:2000},{label:'Bundle discount',amount:-4000}],confidence:'high',quote:'TOTAL $10,000.00 · BUNDLE DISCOUNT -$4,000.00 · TOTAL AFTER BUNDLE DISCOUNT $6,000.00',source:'Pitch deck'},
+    attached:['Scope of work'],
+    unmatchedServices:[{name:'Podcast sponsorship placement',source:'Scope of work',
+      quote:'Agency will negotiate and place two podcast sponsorship reads per month.'}],
     conflicts:[{field:'mrr',note:'The sales call promised a lower rate than the signed scope of work.',
       a:{source:'Sales call transcript',quote:'we can do it for about six and a half'},
       b:{source:'Scope of work',quote:'Management fee of £8,000 per calendar month.'}}],
@@ -150,6 +154,7 @@ const FAKE = {
       {name:'Microsoft Ads',category:'Paid',platforms:['Microsoft Ads'],fee:1500},
       {name:'Meta Ads',category:'Paid',platforms:['Meta Ads','Meta / Instagram Organic'],fee:3000},
       {name:'Reddit Ads',category:'Paid',platforms:['Reddit Ads','Reddit Organic'],fee:2000},
+      {name:'Reddit Organic Social',category:'Organic',platforms:['Reddit Organic'],fee:2000},
       {name:'AI Search SEO',category:'Organic',platforms:['Google Search Console','WordPress'],fee:2000},
       {name:'Google Business Profile',category:'Local',platforms:['Google Business Profile'],fee:750},
       {name:'Landing Page',category:'Build',platforms:['WordPress','Google Tag Manager'],fee:1500},
@@ -208,6 +213,8 @@ const stub = `<script>
     }
     var chars = isLink ? 48210 : String(raw && raw.data ? 'x' : raw || '').length * 40 + 9100;
     return { ok:true, key:key, label:label, fileId:'file_stub_' + key,
+      originalId: raw && raw.data ? 'orig_stub_' + key : '',
+      originalMime: raw && raw.data ? (raw.mimeType || 'application/pdf') : '',
       via: raw && raw.data ? 'Upload · ' + raw.name : (isLink ? 'ClickUp doc' : 'Pasted text'),
       chars:chars, words:Math.round(chars / 5.6), warn:'',
       preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out '

@@ -152,7 +152,13 @@ function buildPrompt_(meta, intake) {
 /**
  * One request to the Messages API, returning parsed JSON.
  *
- * @param {Object} prompt  { system, user }
+ * @param {Object} prompt  { system, user, documents }
+ *   documents is an optional array of { mimeType, data (base64), label }.
+ *   Attaching a PDF rather than only the text pulled out of it is the
+ *   difference between reading a contract and reading the parts of a contract
+ *   that happen to be selectable — a fee table exported as an image has no
+ *   text layer at all, and text extraction returns the sentence before it and
+ *   then nothing. The model sees the page.
  * @param {Object} [opts]  { maxTokens } — extraction needs more room than plan
  *                         generation, since every field it returns drags a
  *                         quote along with it.
@@ -161,6 +167,28 @@ function callAnthropic_(prompt, opts) {
   opts = opts || {};
   const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
   if (!key) throw new Error('No API key set. Onboarding menu → Set Anthropic API key.');
+
+  // Documents lead, instructions follow: the model reads the attachments as
+  // context for the question rather than the question as an aside.
+  let content = prompt.user;
+  const docs = prompt.documents || [];
+  if (docs.length) {
+    content = [];
+    docs.forEach(d => {
+      if (d.mimeType === 'application/pdf') {
+        content.push({
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: d.data }
+        });
+      } else if (d.mimeType && d.mimeType.indexOf('image/') === 0) {
+        content.push({
+          type: 'image',
+          source: { type: 'base64', media_type: d.mimeType, data: d.data }
+        });
+      }
+    });
+    content.push({ type: 'text', text: prompt.user });
+  }
 
   const res = UrlFetchApp.fetch(ANTHROPIC_URL, {
     method: 'post',
@@ -171,7 +199,7 @@ function callAnthropic_(prompt, opts) {
       model: cfg('Model') || 'claude-opus-5',
       max_tokens: opts.maxTokens || 8000,
       system: prompt.system,
-      messages: [{ role: 'user', content: prompt.user }]
+      messages: [{ role: 'user', content: content }]
     })
   });
 
