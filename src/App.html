@@ -1100,6 +1100,12 @@ function removeDraft(draftId, btn){
   }
   api('deleteDraft', draftId).then(function(){
     DRAFTS = DRAFTS.filter(function(d){ return d.draftId !== draftId; });
+    // Deleting the draft you are currently inside has to clear the handle too.
+    // Leaving it set means the next upload reuses a draft that no longer
+    // exists, and every source fails on save after being fetched in full.
+    if (DRAFT && DRAFT.draftId === draftId){
+      DRAFT = null; READ = []; EXTRACT = null; DRAFTFORM = null;
+    }
     drawSources();
     toast('Draft deleted. Its Drive folder is in the trash.');
   }).catch(fail);
@@ -1195,9 +1201,9 @@ function drawReading(){
     + '<div class="hint">Each one is fetched separately, so a document that fails '
     + 'does not cost you the others. Nothing is sent to Claude until you press '
     + 'Analyse.</div>'
-    + (DRAFT ? '<div class="dbar">Saved as <b>' + esc(DRAFT.name) + '</b>'
+    + (DRAFT ? '<div class="dbar">Saved as <b id="draftName">' + esc(DRAFT.name) + '</b>'
         + '<button type="button" class="lnk" id="renameDraft">Rename</button>'
-        + (DRAFT.folderUrl ? '<a class="lnk" href="' + esc(DRAFT.folderUrl)
+        + (DRAFT.folderUrl ? '<a class="lnk" id="draftFolder" href="' + esc(DRAFT.folderUrl)
             + '" target="_blank" rel="noopener">Drive folder</a>' : '')
         + '<span class="sp"></span>Documents are stored — you can come back to '
         + 'this without uploading again.</div>' : '')
@@ -1317,6 +1323,14 @@ function wireRows(){
   });
 }
 
+/** The "Saved as …" line, repainted in place when the draft is replaced. */
+function refreshDraftBanner(){
+  var n = el('draftName');
+  if (n && DRAFT) n.textContent = DRAFT.name;
+  var f = el('draftFolder');
+  if (f && DRAFT && DRAFT.folderUrl) f.href = DRAFT.folderUrl;
+}
+
 function rowIdx(key){
   for (var i = 0; i < READ.length; i++) if (READ[i].key === key) return i;
   return -1;
@@ -1365,6 +1379,20 @@ function readOne(i){
   paintRow(i); updateFoot();
 
   return api('readSource', r.key, r.raw, DRAFT && DRAFT.draftId).then(function(res){
+    // The draft went away underneath us — deleted here, deleted from the sheet,
+    // or a second tab got there first. Start a new one and read again rather
+    // than handing back a failure the user can only fix by reloading.
+    if (res && res.draftGone){
+      return api('createDraft', draftName()).then(function(d){
+        DRAFT = { draftId: d.draftId, name: d.name, status: 'Draft',
+                  folderUrl: d.folderId
+                    ? 'https://drive.google.com/drive/folders/' + d.folderId : '' };
+        refreshDraftBanner();
+        return api('readSource', r.key, r.raw, DRAFT.draftId);
+      });
+    }
+    return res;
+  }).then(function(res){
     r.res = res;
     r.state = res && res.ok ? 'ok' : 'fail';
   }).catch(function(e){

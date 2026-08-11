@@ -196,9 +196,27 @@ const stub = `<script>
   var FAKE = ${JSON.stringify(FAKE)};
   var DELAY = { runExtraction: 900 };
 
+  // The server refuses to save against a draft that no longer exists, and the
+  // client is supposed to start a fresh one and read again. Modelling the draft
+  // lifecycle here is what makes that recovery testable — deleting the draft you
+  // are inside used to leave every subsequent source failing on save.
+  var LIVE = null, SEQ = 0;
+  var STATIC_OPEN = FAKE.openDraft;
+  FAKE.createDraft = function(name){
+    LIVE = 'DR-stub-' + (++SEQ);
+    return { ok:true, draftId:LIVE, name:name || 'Untitled draft', folderId:'fake-folder' };
+  };
+  FAKE.deleteDraft = function(id){ if (id === LIVE) LIVE = null; return { ok:true }; };
+  FAKE.openDraft = function(id){ LIVE = id; return STATIC_OPEN; };
+
   // A ClickUp link fails the way the real one does; pasted text succeeds. That
   // is the actual recovery path, so the harness walks it.
-  FAKE.readSource = function(key, raw){
+  FAKE.readSource = function(key, raw, draftId){
+    if (!draftId || draftId !== LIVE){
+      return { ok:false, draftGone:true, key:key, via:'',
+               error:'The draft this was being saved to no longer exists.',
+               hint:'Retry — a new draft will be started automatically.' };
+    }
     var isLink = typeof raw === 'string' && /^https?:/.test(raw);
     var label = { sales:'Sales call transcript', kickoff:'Onboarding / kickoff call transcript',
                   sow:'Scope of work', form:'ClickUp onboarding form', deck:'Pitch deck' }[key] || key;
@@ -319,6 +337,23 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       const fResume = `${OUT}/${name}-new-resumed.png`;
       await page.screenshot({ path: fResume, fullPage: name === 'desktop' });
       shots.push(fResume);
+
+      // Regression: delete the draft you are currently inside, then start over.
+      // The open handle used to survive the delete, so every source afterwards
+      // was fetched in full and then failed on save with "That draft no longer
+      // exists". A fresh draft must be started instead.
+      await page.click('#backSrc');
+      await page.waitForSelector('[data-del="DR-260810-1612"]', { timeout: 5000 });
+      await page.click('[data-del="DR-260810-1612"]');   // arms
+      await page.click('[data-del="DR-260810-1612"]');   // confirms
+      await page.waitForTimeout(300);
+      await page.fill('#src_sales', 'Aric: right, let us get started. '.repeat(40));
+      await page.click('#analyse');
+      await page.waitForSelector('#rrow_sales.ok', { timeout: 6000 });
+      await page.waitForTimeout(200);
+      const fAfterDel = `${OUT}/${name}-new-after-delete.png`;
+      await page.screenshot({ path: fAfterDel, fullPage: name === 'desktop' });
+      shots.push(fAfterDel);
     }
   }
 
