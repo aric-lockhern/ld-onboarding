@@ -65,6 +65,17 @@ function readSource(key, raw, draftId) {
              error: 'Nothing supplied for this source.' };
   }
 
+  // Before fetching, not after. A ClickUp doc or a 60,000-character transcript
+  // costs real time to pull, and discovering the draft is gone only once there
+  // is something to save throws that work away — which is what a deleted draft
+  // used to look like: five rows, each reporting how much it had read and then
+  // lost. The client starts a fresh draft on this flag and reads again.
+  if (!draftId || !draftRow_(draftId)) {
+    return { ok: false, draftGone: true, key: key, label: label, via: via,
+             error: 'The draft this was being saved to no longer exists.',
+             hint: 'Retry — a new draft will be started automatically.' };
+  }
+
   let text;
   try {
     text = resolveSource_(raw);

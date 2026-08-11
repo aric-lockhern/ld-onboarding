@@ -114,8 +114,29 @@ jobs:
       # --force skips the interactive manifest-change prompt, which would
       # otherwise hang a non-interactive runner. It also means this push
       # overwrites the remote unconditionally — see docs/OPERATIONS.md.
+      # Google expires this credential on a schedule for sensitive scopes — the
+      # Workspace "reauth" policy — and clasp reports it as a raw OAuth blob:
+      #   {"error":"invalid_grant","error_subtype":"invalid_rapt"}
+      # which reads like a broken secret rather than an expired one. It will
+      # happen again, so name it.
       - name: clasp push
-        run: clasp push --force
+        run: |
+          set -o pipefail
+          if ! clasp push --force 2>&1 | tee /tmp/push.log; then
+            if grep -q 'invalid_rapt\|invalid_grant\|reauth' /tmp/push.log; then
+              echo "::error::Google has expired the stored clasp credential. This is a"
+              echo "::error::re-authentication policy, not a problem with the code — the"
+              echo "::error::static checks above passed and nothing in this commit is wrong."
+              echo "::error::"
+              echo "::error::Fix, on your own machine:"
+              echo "::error::  1. clasp login"
+              echo "::error::  2. cat ~/.clasprc.json   (copy ALL of it)"
+              echo "::error::  3. Paste into Settings -> Secrets and variables -> Actions"
+              echo "::error::     -> CLASPRC_JSON -> Update secret"
+              echo "::error::  4. Re-run this job. No need to re-merge anything."
+            fi
+            exit 1
+          fi
 
       # A push updates the code the SHEET MENU runs. It does not move the web
       # app URL — that serves whatever version was last deployed, so without
