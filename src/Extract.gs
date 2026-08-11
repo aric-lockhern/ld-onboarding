@@ -13,12 +13,20 @@
  * point — a value you can check against its own source in one glance is worth
  * more than a value you have to go hunting for, and this thing will sometimes
  * be wrong about money.
+ *
+ * READING IS SEPARATE FROM ANALYSING. `readSource` fetches exactly one document
+ * and reports what it got; `runExtraction` sends the ones that worked to the
+ * model. They are split because fetching is the step that fails — a ClickUp
+ * permission, a scanned PDF, a deck that was never shared — and a single
+ * combined call can only report "it didn't work" for the whole set. Split, a
+ * failure is attributable to one document, and that document alone can be
+ * retried, replaced or skipped while the others keep their result.
  */
 
 const CLICKUP_API = 'https://api.clickup.com/api/v3';
 const CLICKUP_API_V2 = 'https://api.clickup.com/api/v2';
 
-/** Labels for the three sources, in the order they get sent to the model. */
+/** Labels for the sources, in the order they get sent to the model. */
 const SOURCE_KINDS = [
   { key: 'sales', label: 'Sales call transcript' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript' },
@@ -27,52 +35,140 @@ const SOURCE_KINDS = [
   { key: 'deck', label: 'Pitch deck' }
 ];
 
-// ---------------------------------------------------------------- PUBLIC
+// ---------------------------------------------------------------- READ ONE
 
 /**
- * Reads whatever sources were supplied and returns a pre-filled intake.
- * Callable from App.html. Every source is optional; with none supplied this
- * returns empty rather than inventing a client out of nothing.
+ * Fetches a single source, stores it on the draft, and reports what came back.
+ * Callable from App.html.
  *
- * @param {Object} sources  { sales, kickoff, sow }
- *   Each value is pasted text, a URL (ClickUp doc or Google Doc), or an
- *   uploaded file as { name, mimeType, data } where data is base64.
+ * Never throws: a failure is a returned object with `ok:false`, because the UI
+ * needs the reason next to that document's row, not a rejected promise for the
+ * whole batch.
+ *
+ * The text lands in the draft's Drive folder rather than in a cache, so it is
+ * still there tomorrow. Re-analysing after changing one source, or correcting a
+ * fee weeks after the client was created, never costs another upload.
+ *
+ * @param {string} key  one of SOURCE_KINDS
+ * @param {string|Object} raw  pasted text, a URL, or { name, mimeType, data }
+ * @param {string} draftId  the draft to store it against
+ * @return {Object} { ok, key, label, via, chars, words, preview, fileId, warn }
+ *                  or { ok:false, error, hint }
  */
-function extractIntake(sources) {
-  sources = sources || {};
+function readSource(key, raw, draftId) {
+  const kind = SOURCE_KINDS.filter(k => k.key === key)[0];
+  const label = kind ? kind.label : String(key);
+  const via = sourceKindLabel_(raw);
 
-  const docs = [];
-  const problems = [];
-
-  SOURCE_KINDS.forEach(kind => {
-    const raw = sources[kind.key];
-    if (!raw) return;
-    if (typeof raw === 'string' && !raw.trim()) return;
-    try {
-      const text = resolveSource_(raw);
-      if (text && text.trim()) docs.push({ label: kind.label, text: text.trim() });
-      else problems.push(kind.label + ': resolved to empty content.');
-    } catch (e) {
-      problems.push(kind.label + ': ' + e.message);
-    }
-  });
-
-  if (!docs.length) {
-    return {
-      ok: false,
-      message: problems.length ? problems.join('\n') : 'Add at least one source first.',
-      problems: problems
-    };
+  if (!raw || (typeof raw === 'string' && !raw.trim())) {
+    return { ok: false, key: key, label: label, via: via, empty: true,
+             error: 'Nothing supplied for this source.' };
   }
 
-  let out;
+  let text;
   try {
-    out = callAnthropic_(buildExtractPrompt_(docs));
+    text = resolveSource_(raw);
   } catch (e) {
-    return { ok: false, message: 'Extraction failed: ' + e.message, problems: problems };
+    const msg = (e && e.message) || String(e);
+    return { ok: false, key: key, label: label, via: via,
+             error: msg, hint: hintFor_(msg) };
+  }
+
+  text = String(text || '').trim();
+  if (!text) {
+    return { ok: false, key: key, label: label, via: via,
+             error: 'Read successfully but the document was empty.',
+             hint: 'If the content sits on a page the link does not point at, '
+                 + 'open the document, select all, and paste the text in.' };
+  }
+
+  // A transcript that reads as three sentences usually means the fetch found a
+  // stub — a cover page, an empty doc — rather than the thing itself. Worth
+  // saying now, while re-linking is cheap.
+  const words = text.split(/\s+/).length;
+  const warn = words < 120
+    ? 'Only ' + words + ' words. Check this is the full document and not a '
+      + 'cover page or a link to it.'
+    : '';
+
+  let record;
+  try {
+    record = storeSource_(draftId, key, label, text, {
+      via: via,
+      origin: (typeof raw === 'string') ? raw : '',
+      original: (raw && typeof raw === 'object' && raw.data) ? raw : null,
+      words: words,
+      preview: text.slice(0, 240).replace(/\s+/g, ' ').trim()
+    });
+  } catch (e) {
+    return { ok: false, key: key, label: label, via: via,
+             error: 'Read ' + text.length + ' characters but could not save them '
+                  + 'to the draft: ' + ((e && e.message) || String(e)),
+             hint: 'Retry. If it keeps failing, check the Drive Root Folder ID '
+                 + 'on the Config tab.' };
   }
 
   return {
+    ok: true, key: key, label: label, via: via,
+    fileId: record.fileId, originalName: record.originalName,
+    chars: record.chars, words: words, preview: record.preview, warn: warn
+  };
+}
+
+// ---------------------------------------------------------------- ANALYSE
+
+/**
+ * Sends the stored sources to the model and saves the result on the draft.
+ *
+ * Reads straight from Drive rather than from anything the browser is holding,
+ * which is what makes "re-analyse" work on a draft opened a week later without
+ * a single file being uploaded again.
+ *
+ * @param {Array} items  [{ key, fileId }] — from readSource or a reopened draft
+ * @param {string} draftId  where to save the extraction
+ * @return {Object} the extraction, or { ok:false, message }
+ */
+function runExtraction(items, draftId) {
+  items = items || [];
+  if (!items.length) return { ok: false, message: 'No sources to analyse.' };
+
+  const docs = [];
+  const missing = [];
+
+  items.forEach(it => {
+    const kind = SOURCE_KINDS.filter(k => k.key === it.key)[0];
+    const label = kind ? kind.label : String(it.key);
+    const text = readStored_(it.fileId);
+    if (text && text.trim()) docs.push({ key: it.key, label: label, text: text });
+    else missing.push(label);
+  });
+
+  if (!docs.length) {
+    return { ok: false, missingAll: true, missing: missing,
+             message: 'None of the stored documents could be read back from '
+                    + 'Drive. They may have been deleted — read the sources again.' };
+  }
+
+  // Character budget, then trim, so the model never silently loses the middle of
+  // a transcript without the UI being able to say so.
+  const budget = allocateBudget_(docs, PROMPT_CHAR_BUDGET);
+  const trimmed = [];
+  docs.forEach((d, i) => {
+    if (d.text.length > budget[i]) {
+      trimmed.push({ label: d.label, from: d.text.length, to: budget[i] });
+      d.text = trimForPrompt_(d.text, budget[i]);
+    }
+  });
+
+  let out;
+  try {
+    out = callAnthropic_(buildExtractPrompt_(docs), { maxTokens: EXTRACT_MAX_TOKENS });
+  } catch (e) {
+    return { ok: false, message: (e && e.message) || String(e),
+             trimmed: trimmed, missing: missing };
+  }
+
+  const result = {
     ok: true,
     fields: out.fields || {},
     platforms: out.platforms || null,
@@ -81,8 +177,17 @@ function extractIntake(sources) {
     conflicts: out.conflicts || [],
     openQuestions: out.openQuestions || [],
     sourcesUsed: docs.map(d => d.label),
-    problems: problems
+    trimmed: trimmed,
+    missing: missing
   };
+
+  // Saved so reopening the draft shows what the model said last time without
+  // paying for the call again. A failed save is not a failed extraction.
+  if (draftId) {
+    try { saveDraft(draftId, { extraction: result, status: 'Analysed' }); }
+    catch (e) { result.saveWarning = (e && e.message) || String(e); }
+  }
+  return result;
 }
 
 /** Whether a ClickUp token is configured, so the UI can say so up front. */
@@ -113,32 +218,64 @@ function resolveSource_(raw) {
   const url = raw.trim();
   // Two different ClickUp objects behind two different APIs. A form submission
   // is a task (app.clickup.com/t/…) whose answers live in custom fields; a doc
-  // is doc.clickup.com/… and has pages. Guessing wrong returns a 404 that reads
-  // like a permissions problem, so the shape of the URL decides.
+  // is /docs/… and has pages. Guessing wrong returns a 404 that reads like a
+  // permissions problem, so the shape of the URL decides.
   if (/clickup\.com\/t\//i.test(url)) return fetchClickUpTask_(url);
   if (url.indexOf('clickup.com') !== -1) return fetchClickUpDoc_(url);
 
   const gdoc = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
-  if (gdoc) return DocumentApp.openById(gdoc[1]).getBody().getText();
+  if (gdoc) {
+    try {
+      return DocumentApp.openById(gdoc[1]).getBody().getText();
+    } catch (e) {
+      throw new Error('Could not open that Google Doc. Check it is shared with '
+        + this_() + ', or paste the text in instead.');
+    }
+  }
 
   const slides = url.match(/docs\.google\.com\/presentation\/d\/([a-zA-Z0-9_-]+)/);
   if (slides) return slidesToText_(slides[1]);
+
+  if (/docs\.google\.com\/spreadsheets/.test(url)) {
+    throw new Error('That is a Google Sheet. Export the relevant tab as text, '
+      + 'or paste the content in.');
+  }
 
   throw new Error('Supported links: ClickUp docs and tasks, Google Docs, '
     + 'Google Slides. Otherwise upload the file or paste the text.');
 }
 
+/** Whoever the script runs as — the identity a document must be shared with. */
+function this_() {
+  try { return Session.getEffectiveUser().getEmail() || 'this account'; }
+  catch (e) { return 'this account'; }
+}
+
 /**
- * ClickUp doc URLs look like:
- *   https://doc.clickup.com/{workspaceId}/d/h/{docId}/{pageId}
- * The pageId is a deep link to one page; we pull every page in the doc, since
- * a transcript is routinely split across several and grabbing only the linked
- * one silently truncates the input.
+ * ClickUp puts the same doc behind three URL shapes:
+ *
+ *   https://app.clickup.com/{workspaceId}/docs/{docId}/{pageId}     ← copy-link
+ *   https://app.clickup.com/{workspaceId}/v/dc/{docId}/{pageId}     ← older
+ *   https://doc.clickup.com/{workspaceId}/d/h/{docId}/{shareHash}   ← share link
+ *
+ * All three carry the real doc ID, so all three are accepted. The share link is
+ * worth calling out though: it opens in a browser for anyone holding it, which
+ * makes it look like access, while the API still applies ordinary workspace
+ * permissions. A doc published to the web and never shared with you reads fine
+ * in Chrome and 403s here.
+ *
+ * The pageId is a deep link to one page; we pull every page in the doc, since a
+ * transcript is routinely split across several and grabbing only the linked one
+ * silently truncates the input.
  */
 function parseClickUpUrl_(url) {
-  const m = url.match(/clickup\.com\/(\d+)\/d\/[a-z]+\/([a-zA-Z0-9_-]+)/i);
-  if (!m) throw new Error('Could not read the workspace and doc ID from that ClickUp link.');
-  return { workspaceId: m[1], docId: m[2] };
+  const m = url.match(/clickup\.com\/(\d+)\/(?:docs|v\/dc|d\/[a-z]+)\/([a-zA-Z0-9_-]+)/i);
+  if (!m) {
+    throw new Error('Could not read a workspace and doc ID from that ClickUp link. '
+      + 'Expected app.clickup.com/{workspace}/docs/{docId}/{pageId} — use '
+      + 'Share → Copy link from inside the doc.');
+  }
+  return { workspaceId: m[1], docId: m[2], shared: /\/d\/h\//i.test(url) };
 }
 
 function fetchClickUpDoc_(url) {
@@ -155,9 +292,7 @@ function fetchClickUpDoc_(url) {
 
   const code = res.getResponseCode();
   const body = res.getContentText();
-  if (code === 401) throw new Error('ClickUp rejected the token (401).');
-  if (code === 404) throw new Error('ClickUp could not find that doc (404) — check the link.');
-  if (code !== 200) throw new Error('ClickUp API ' + code + ': ' + body.slice(0, 200));
+  if (code !== 200) throw new Error(clickUpAccessError_(code, body, ids, 'doc'));
 
   const pages = JSON.parse(body);
   const list = Array.isArray(pages) ? pages : (pages.pages || []);
@@ -167,6 +302,53 @@ function fetchClickUpDoc_(url) {
     const title = p.name ? '## ' + p.name + '\n' : '';
     return title + String(p.content || '');
   }).join('\n\n').trim();
+}
+
+/**
+ * ClickUp returns 403 with ECODE EXTRA_AUTHZ_002 for an object the caller is
+ * not authorised for AND for one that does not exist — it declines to confirm
+ * which, so the message has to cover both without guessing.
+ *
+ * The canonical URL is included because opening it while signed in settles the
+ * question in one click: if the browser cannot open it either, the token is
+ * fine and the doc genuinely sits somewhere this account is not a member of.
+ */
+function clickUpAccessError_(code, body, ids, what) {
+  if (code === 401) {
+    return 'ClickUp rejected the API token (401). It may have been revoked — '
+      + 'reset it from the sheet: Onboarding → Set ClickUp API token.';
+  }
+  if (code === 429) {
+    return 'ClickUp rate-limited the request (429). Wait a minute and retry.';
+  }
+  if (code !== 403 && code !== 404) {
+    return 'ClickUp API ' + code + ': ' + String(body).slice(0, 200);
+  }
+
+  const id = ids.docId || ids.taskId;
+  const parts = [];
+  parts.push('ClickUp will not open ' + what + ' ' + id + ' for the account that '
+    + 'owns the API token (' + code + ').');
+
+  if (ids.shared) {
+    parts.push('The link you used is a share link (doc.clickup.com/…/d/h/…). '
+      + 'Those open in a browser for anyone holding them, but publishing a doc '
+      + 'does not grant API access to it — the API still applies normal '
+      + 'workspace permissions.');
+  }
+
+  if (what === 'doc' && ids.workspaceId) {
+    parts.push('Check by opening https://app.clickup.com/' + ids.workspaceId
+      + '/docs/' + ids.docId + ' while signed in. If that will not open either, '
+      + 'the doc lives in a private Space or someone else\'s personal folder — '
+      + 'ask its owner to share it, or paste the text in instead.');
+  } else {
+    parts.push('Open it in ClickUp while signed in to confirm the account can '
+      + 'reach it. If it cannot, ask the owner to share it, or paste the '
+      + 'content in instead.');
+  }
+
+  return parts.join(' ');
 }
 
 /**
@@ -199,9 +381,7 @@ function fetchClickUpTask_(url) {
 
   const code = res.getResponseCode();
   const body = res.getContentText();
-  if (code === 401) throw new Error('ClickUp rejected the token (401).');
-  if (code === 404) throw new Error('ClickUp could not find that task (404) — check the link.');
-  if (code !== 200) throw new Error('ClickUp API ' + code + ': ' + body.slice(0, 200));
+  if (code !== 200) throw new Error(clickUpAccessError_(code, body, ids, 'task'));
 
   const task = JSON.parse(body);
   const out = [];
@@ -282,11 +462,55 @@ function slidesToText_(id) {
     { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
       muteHttpExceptions: true });
 
-  if (res.getResponseCode() !== 200) {
-    throw new Error('Could not export that Slides deck ('
-      + res.getResponseCode() + '). Check it is shared with you, or upload the PDF.');
+  const code = res.getResponseCode();
+  if (code === 403 || code === 404) {
+    throw new Error('That Slides deck is not readable by ' + this_() + ' (' + code
+      + '). Share it with that account, or export the deck to PDF and upload it.');
+  }
+  if (code !== 200) {
+    throw new Error('Could not export that Slides deck (' + code
+      + '). Export it to PDF and upload it instead.');
   }
   return res.getContentText();
+}
+
+/** A short human label for where a source came from, for the reading checklist. */
+function sourceKindLabel_(raw) {
+  if (raw && typeof raw === 'object' && raw.data) {
+    return 'Upload · ' + (raw.name || 'file');
+  }
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s) || /\s/.test(s)) return 'Pasted text';
+  if (/clickup\.com\/t\//i.test(s)) return 'ClickUp task';
+  if (s.indexOf('clickup.com') !== -1) return 'ClickUp doc';
+  if (/docs\.google\.com\/document/.test(s)) return 'Google Doc';
+  if (/docs\.google\.com\/presentation/.test(s)) return 'Google Slides';
+  return 'Link';
+}
+
+/**
+ * The one-line "so do this instead" under a failure. The UI shows it beside a
+ * Retry button, so it has to name an action rather than restate the problem.
+ */
+function hintFor_(msg) {
+  msg = String(msg || '');
+  if (/scanned|almost no text/i.test(msg)) {
+    return 'Open the PDF, select all, copy, and paste it into the box.';
+  }
+  if (/ClickUp/i.test(msg) && /token/i.test(msg)) {
+    return 'Set the token in the sheet, then retry — or paste the text in.';
+  }
+  if (/ClickUp/i.test(msg)) {
+    return 'Open the doc in ClickUp, select all, and paste it in — that always works.';
+  }
+  if (/limit is 12 MB|MB\./i.test(msg)) {
+    return 'Split the file, or paste the text.';
+  }
+  if (/Slides|shared with/i.test(msg)) {
+    return 'Share it with this account, or upload a PDF export.';
+  }
+  return 'Paste the text in instead, or skip this source.';
 }
 
 // ---------------------------------------------------------------- FILES
@@ -369,6 +593,7 @@ function buildExtractPrompt_(docs) {
     '- openQuestions: things the agency must resolve before launch that these',
     '  documents do not answer. Be specific and few. Not "what is the budget"',
     '  when the budget is stated.',
+    '- Keep quotes short — one sentence. They are shown under a form field.',
     '',
     'Return ONLY a JSON object, no prose and no code fence.'
   ].join('\n');
@@ -424,19 +649,59 @@ function buildExtractPrompt_(docs) {
     JSON.stringify(shape, null, 2),
     '',
     '--- DOCUMENTS ---',
-    docs.map(d => '### ' + d.label + '\n' + trimForPrompt_(d.text)).join('\n\n')
+    docs.map(d => '### ' + d.label + '\n' + d.text).join('\n\n')
   ].join('\n');
 
   return { system: system, user: user };
 }
 
 /**
- * Transcripts run long and the model has a context limit. Keep the head and
- * the tail: openings carry the company and the ask, closings carry the
- * commitments and next steps. The middle is usually rapport.
+ * How much of each document reaches the prompt.
+ *
+ * The models hold a million tokens, so this is not close to a context limit —
+ * it is a cost and latency ceiling. 600K characters is roughly 150K tokens,
+ * which comfortably fits five long transcripts and still leaves the request
+ * fast enough to sit behind a spinner.
+ */
+const PROMPT_CHAR_BUDGET = 600000;
+
+/** Room for the JSON, whose size scales with the quote per field. */
+const EXTRACT_MAX_TOKENS = 16000;
+
+/**
+ * Fair-share allocation: a short document takes only what it needs and hands
+ * the rest back, so one 400K transcript does not squeeze a 6K scope of work
+ * down to its own proportional slice.
+ */
+function allocateBudget_(docs, budget) {
+  const order = docs
+    .map((d, i) => ({ i: i, len: d.text.length }))
+    .sort((a, b) => a.len - b.len);
+
+  const alloc = [];
+  let remaining = budget;
+  let left = order.length;
+
+  order.forEach(o => {
+    const share = Math.floor(remaining / left);
+    const give = Math.min(o.len, share);
+    alloc[o.i] = give;
+    remaining -= give;
+    left--;
+  });
+  return alloc;
+}
+
+/**
+ * Keep the head and the tail: openings carry the company and the ask, closings
+ * carry the commitments and next steps. The middle is usually rapport.
+ *
+ * Whenever this fires, runExtraction reports it, because a monthly fee agreed
+ * forty minutes into a call is exactly the sort of thing that lives in a middle
+ * this would drop.
  */
 function trimForPrompt_(text, limit) {
-  limit = limit || 60000;
+  limit = limit || PROMPT_CHAR_BUDGET;
   if (text.length <= limit) return text;
   const head = Math.floor(limit * 0.65);
   const tail = limit - head;

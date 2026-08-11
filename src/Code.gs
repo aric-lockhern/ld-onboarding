@@ -13,8 +13,15 @@ const TABS = {
   PLATFORMS: 'Platforms',
   TEMPLATES: 'Templates',
   PHASES: 'Phases',
+  DRAFTS: 'Drafts',
   CONFIG: 'Config'
 };
+
+/** Shared so Drafts.gs can repair the tab on a sheet that predates drafts. */
+const DRAFT_HEADERS = [
+  'Draft ID', 'Name', 'Created', 'Updated', 'Status', 'Client ID',
+  'Folder ID', 'Sources', 'Extraction', 'Form'
+];
 
 const STATUSES = ['Not started', 'Info needed', 'Requested', 'Complete', 'Blocked', 'N/A'];
 const CADENCES = ['Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Ad hoc'];
@@ -115,6 +122,8 @@ function setup() {
   mkTab_(ss, TABS.PHASES, ['Phase', 'Name', 'Client Email', 'What it means']);
 
   mkTab_(ss, TABS.TEMPLATES, ['Task', 'Subject', 'Body']);
+
+  mkTab_(ss, TABS.DRAFTS, DRAFT_HEADERS);
 
   seedPlatforms_(ss);
   seedServices_(ss);
@@ -318,7 +327,7 @@ function seedConfig_(ss) {
     ['Email Signature', '', 'Appended to every instruction email'],
     ['Drive Root Folder ID', '', 'Parent folder for client folders. Blank = My Drive root.'],
     ['Digest Recipients', '', 'Comma-separated. Daily overdue digest goes here.'],
-    ['Model', 'claude-sonnet-5', 'Anthropic model string'],
+    ['Model', 'claude-opus-5', 'Anthropic model string'],
     ['Google Ads MCC ID', '', 'Merged into the Google Ads instructions'],
     ['Meta Business Manager ID', '', 'Merged into the Meta instructions'],
     ['Merchant Center MCA ID', '', 'Merged into the Merchant Center instructions'],
@@ -472,10 +481,26 @@ function submitIntake(payload) {
     payload.notes || '', [transcript.docUrl, contract.docUrl].filter(Boolean).join('\n'), now
   ]);
 
+  // The draft is kept, not consumed. Its Drive folder holds the deal documents,
+  // and pointing the client at it is what lets someone re-read the scope of work
+  // in November — or re-analyse it after a correction — without hunting for the
+  // files again.
+  let draftFolderUrl = '';
+  if (payload.draftId) {
+    try {
+      saveDraft(payload.draftId, {
+        status: 'Submitted', clientId: clientId, form: payload
+      });
+      const d = openDraft(payload.draftId);
+      if (d && d.ok) draftFolderUrl = d.folderUrl || '';
+    } catch (e) { /* a client record is worth more than a tidy draft row */ }
+  }
+
   // Creating the client and starting the onboarding are deliberately separate.
   // The record can be corrected freely; the moment tasks exist there are due
   // dates, owners and a queue entry, and undoing that means deleting rows.
-  return { clientId: clientId, row: row, alias: alias };
+  return { clientId: clientId, row: row, alias: alias,
+           draftId: payload.draftId || '', draftFolder: draftFolderUrl };
 }
 
 /**

@@ -139,6 +139,23 @@ for (const [mapName, tabConst] of [['C', 'CLIENTS'], ['A', 'ACCESS']]) {
     : fail(`${mapName}.WIDTH is ${w} but ${tabConst} has ${headers} headers`);
 }
 
+// Drafts passes its headers as a named constant rather than a literal, because
+// Drafts.gs recreates the tab on a sheet installed before drafts existed. Same
+// drift risk as above: D.WIDTH and the array have to agree.
+{
+  const declared = serverSrc.match(/const D = \{[\s\S]*?WIDTH:\s*(\d+)/);
+  const arr = serverSrc.match(/const DRAFT_HEADERS = \[([\s\S]*?)\]/);
+  if (!declared || !arr) {
+    fail('could not read D / DRAFT_HEADERS');
+  } else {
+    const w = Number(declared[1]);
+    const headers = (arr[1].match(/'/g) || []).length / 2;
+    w === headers
+      ? pass(`D.WIDTH ${w} matches ${headers} DRAFT_HEADERS entries`)
+      : fail(`D.WIDTH is ${w} but DRAFT_HEADERS has ${headers} entries`);
+  }
+}
+
 // ---- 6. no two src files share a basename
 // Apps Script drops the extension: Admin.gs and Admin.html both want to be
 // "Admin", and names are unique across types. clasp fails the push with

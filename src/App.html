@@ -182,6 +182,14 @@
   .bar{display:flex; gap:12px; align-items:center; padding:18px 24px;
     border-top:1px solid var(--line); background:var(--paper); border-radius:0 0 12px 12px}
   .bar .sp{flex:1}
+  /* The reading bar runs to four controls plus a status line; without this the
+     status text steals width and clips the label off the primary button. */
+  .bar .btn{flex:none; white-space:nowrap}
+  .bar .note{min-width:0}
+  /* The reading bar can reach five controls once a draft offers its previous
+     analysis. Status gets its own line rather than competing for width. */
+  .bar.rbar{flex-wrap:wrap; row-gap:10px}
+  .bar.rbar .note{flex:1 0 100%; order:-1}
 
   /* -------------------------------------------------------------- detail */
   .back{background:none; border:0; color:var(--muted); cursor:pointer; padding:0;
@@ -257,6 +265,72 @@
   .drop .clr:hover{color:var(--critical)}
   .f textarea:disabled{background:var(--paper); color:var(--faint)}
 
+  /* Draft resume list */
+  .drow{display:flex; gap:12px; align-items:center; padding:12px 0;
+    border-top:1px solid var(--line)}
+  .drow:first-child{border-top:0}
+  .drow .bd{flex:1; min-width:0}
+  .drow .nm{font-size:14px; font-weight:500; color:var(--ink);
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .drow .tag{font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.03em; padding:2px 7px; border-radius:5px;
+    background:var(--blue-wash); color:var(--blue-ink)}
+  .drow .tag.done{background:#E6F4EA; color:var(--good)}
+  .drow .mt{font-size:12.5px; color:var(--faint); margin-top:2px}
+  .dbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    font-size:12.5px; color:var(--muted); background:var(--blue-wash);
+    border:1px solid var(--blue-line); border-radius:8px;
+    padding:9px 12px; margin-bottom:16px}
+  .dbar b{color:var(--blue-ink); font-weight:600}
+  .dbar .sp{flex:1}
+  .lnk{background:none; border:0; padding:0; cursor:pointer; color:var(--blue);
+    font:500 12.5px/1 "Inter",sans-serif; text-decoration:underline}
+  .lnk:hover{color:var(--blue-dk)}
+
+  /* Reading checklist — one row per source, updated as each one resolves. */
+  .rrow{display:flex; gap:12px; padding:14px 0; border-top:1px solid var(--line)}
+  .rrow:first-child{border-top:0}
+  .rrow .ic{flex:none; width:20px; height:20px; margin-top:1px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font:600 11px/1 "Inter",sans-serif; color:#fff}
+  .rrow .ic.wait{background:var(--tick-off)}
+  .rrow .ic.read{background:var(--blue-wash); border:2px solid var(--blue);
+    border-right-color:transparent; box-sizing:border-box; animation:spin .7s linear infinite}
+  .rrow .ic.ok{background:var(--good)}
+  .rrow .ic.fail{background:var(--critical)}
+  .rrow .ic.skip{background:var(--mid)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .rrow .bd{flex:1; min-width:0}
+  .rrow .nm{font-size:14px; font-weight:500; color:var(--ink);
+    display:flex; gap:8px; align-items:baseline; flex-wrap:wrap}
+  .rrow .via{font-size:12px; font-weight:400; color:var(--faint)}
+  .rrow .st{font-size:13px; color:var(--muted); margin-top:3px}
+  .rrow.fail .st{color:var(--critical)}
+  .rrow .pv{font-size:12.5px; color:var(--faint); font-style:italic; margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rrow .hnt{font-size:12.5px; color:var(--muted); margin-top:4px}
+  .rrow .acts{display:flex; gap:8px; margin-top:9px; flex-wrap:wrap}
+  .rrow .fix{margin-top:10px; display:none}
+  .rrow .fix.on{display:block}
+  .rrow .fix textarea{width:100%; min-height:90px; padding:10px 12px;
+    border:1px solid var(--line); border-radius:8px; background:var(--surface);
+    font:13.5px/1.5 "Inter",sans-serif; color:var(--ink); resize:vertical}
+  .rrow .fix textarea:focus{outline:none; border-color:var(--blue);
+    box-shadow:0 0 0 3px var(--blue-wash)}
+  /* Higher specificity than .sect:first-child, which would otherwise strip the
+     divider — the analysing panel is the only child of its wrapper. */
+  #thinkWrap .sect{border-top:1px solid var(--line); padding:16px 24px}
+  .thinking{display:flex; gap:12px; align-items:flex-start; padding:2px 0}
+  .thinking .dots{flex:none; display:flex; gap:5px; margin-top:7px}
+  .thinking .dots i{width:7px; height:7px; border-radius:50%; background:var(--blue);
+    animation:pulse 1.2s ease-in-out infinite}
+  .thinking .dots i:nth-child(2){animation-delay:.18s}
+  .thinking .dots i:nth-child(3){animation-delay:.36s}
+  @keyframes pulse{0%,100%{opacity:.25; transform:scale(.8)}50%{opacity:1; transform:scale(1)}}
+  .thinking .tx{font-size:14px; color:var(--ink)}
+  .thinking .el{font-size:12.5px; color:var(--faint); margin-top:2px;
+    font-variant-numeric:tabular-nums}
+
   .feerow{display:flex; gap:9px; align-items:center; margin-bottom:8px}
   .feerow .fl{flex:1; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
     font:14px/1.4 "Inter",sans-serif; background:var(--surface); color:var(--ink)}
@@ -294,6 +368,12 @@
     .wrap{padding:18px 16px 36px}
     header{padding:16px}
     .task select{width:132px}
+    /* The reading step's bar carries four items; on one row the status text
+       wraps to three lines and shoves the primary button off the card. */
+    .bar{flex-wrap:wrap}
+    .bar .sp{flex:1 0 100%; height:0}
+    .bar .note{flex:1 0 100%; order:-1}
+    #goAnalyse{flex:1}
   }
 </style>
 </head>
@@ -349,7 +429,8 @@ var SERVER_FNS = [
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
-  'extractIntake', 'hasClickUpToken', 'startOnboarding'
+  'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
+  'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft'
 ];
 
 /** google.script.run as a promise, so views can chain instead of nest. */
@@ -835,13 +916,18 @@ var CLICKUP = null;            // whether a ClickUp token is configured
 function renderIntake(){
   INTAKE_STEP = 'sources';
   EXTRACT = null;
+  READ = [];
+  SRCVALS = {};
+  DRAFT = null;
   el('view').innerHTML = loading();
   Promise.all([
     CACHE.platforms ? Promise.resolve(CACHE.platforms) : api('getPlatformList'),
     CACHE.options ? Promise.resolve(CACHE.options) : api('getIntakeOptions'),
-    CLICKUP === null ? api('hasClickUpToken') : Promise.resolve(CLICKUP)
+    CLICKUP === null ? api('hasClickUpToken') : Promise.resolve(CLICKUP),
+    api('listDrafts')
   ]).then(function(r){
     CACHE.platforms = r[0]; CACHE.options = r[1]; CLICKUP = r[2];
+    DRAFTS = (r[3] && r[3].drafts) || [];
     drawSources();
   }).catch(function(e){
     el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
@@ -866,6 +952,32 @@ function drawSources(){
     + '<span class="stp on">1 · Sources</span>'
     + '<span class="stp">2 · Review &amp; create</span></div>';
 
+  // Everything read is kept, so the common case after the first week is picking
+  // up something already half-done rather than starting from an empty form.
+  if (DRAFTS.length){
+    h += '<div class="card form"><div class="sect">'
+      + '<h3>Pick up where you left off</h3>'
+      + '<div class="hint">Documents already read are stored in Drive. Reopening '
+      + 'one costs no re-upload — you can swap a source and re-analyse.</div>'
+      + '<div id="dlist">'
+      + DRAFTS.map(function(d){
+          return '<div class="drow">'
+            + '<div class="bd"><div class="nm">' + esc(d.name)
+            + '<span class="tag ' + (d.status === 'Submitted' ? 'done' : '') + '">'
+            + esc(d.status) + '</span></div>'
+            + '<div class="mt">' + d.sourceCount + ' document'
+            + (d.sourceCount === 1 ? '' : 's')
+            + (d.analysed ? ' · analysed' : ' · not analysed yet')
+            + ' · updated ' + esc(d.updated) + '</div></div>'
+            + '<button type="button" class="btn sm" data-open="' + esc(d.draftId)
+            + '">Open</button>'
+            + '<button type="button" class="clr" data-del="' + esc(d.draftId)
+            + '">Delete</button>'
+            + '</div>';
+        }).join('')
+      + '</div></div></div>';
+  }
+
   h += '<div class="card form"><div class="sect">'
     + '<h3>Drop in what you already have</h3>'
     + '<div class="hint">All optional, but the more you add the less you type. '
@@ -879,16 +991,24 @@ function drawSources(){
   }
 
   h += SOURCES.map(function(s){
+    // Carried back from the reading step, so returning here to add a source you
+    // forgot does not cost you the four you already pasted.
+    var prev = SRCVALS[s.key];
+    var ptext = (typeof prev === 'string') ? prev : '';
+    var pfile = (prev && typeof prev === 'object') ? (prev.name || 'file') : '';
     return '<div class="f wide" style="margin-bottom:16px">'
       + '<label for="src_' + s.key + '">' + esc(s.label) + '</label>'
       + '<div class="note" style="margin:-2px 0 4px">' + esc(s.hint) + '</div>'
-      + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…"></textarea>'
+      + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…">'
+      + esc(ptext) + '</textarea>'
       + '<div class="drop" id="drop_' + s.key + '">'
       + '<input type="file" id="file_' + s.key + '" hidden '
       + 'accept=".pdf,.docx,.doc,.txt,.md,.rtf,application/pdf,text/plain">'
       + '<button type="button" class="btn sm" data-pick="' + s.key + '">Upload a file</button>'
-      + '<span class="fn" id="fn_' + s.key + '">PDF, Word, or plain text</span>'
-      + '<button type="button" class="clr" data-clear="' + s.key + '" hidden>Remove</button>'
+      + '<span class="fn' + (pfile ? ' has' : '') + '" id="fn_' + s.key + '">'
+      + (pfile ? esc(pfile) + ' · attached' : 'PDF, Word, or plain text') + '</span>'
+      + '<button type="button" class="clr" data-clear="' + s.key + '"'
+      + (pfile ? '' : ' hidden') + '>Remove</button>'
       + '</div></div>';
   }).join('');
 
@@ -907,46 +1027,458 @@ function drawSources(){
   });
   [].forEach.call(document.querySelectorAll('[data-clear]'), function(b){
     var k = b.getAttribute('data-clear');
-    b.addEventListener('click', function(){ el('file_' + k).value = ''; showFile(k); });
+    b.addEventListener('click', function(){
+      el('file_' + k).value = ''; delete SRCVALS[k]; showFile(k);
+    });
   });
 
   el('skip').addEventListener('click', function(){ EXTRACT = null; drawForm(); });
-  el('analyse').addEventListener('click', function(){
-    var b = el('analyse');
-    b.disabled = true; b.textContent = 'Reading…';
-    el('exMsg').textContent = 'Reading sources…';
+  el('analyse').addEventListener('click', collectAndRead);
 
-    // A file wins over the textarea for the same source: picking one is the
-    // more deliberate act, and sending both would double the prompt.
-    Promise.all(SOURCES.map(function(s){
-      var f = el('file_' + s.key).files[0];
-      if (f) return readFile(f);
-      var v = el('src_' + s.key).value.trim();
-      return Promise.resolve(v || null);
-    })).then(function(vals){
-      var payload = {};
-      var any = false;
-      SOURCES.forEach(function(s, i){
-        if (vals[i]){ payload[s.key] = vals[i]; any = true; }
-      });
-      if (!any){
-        b.disabled = false; b.textContent = 'Analyse and continue';
-        el('exMsg').textContent = 'Add at least one source, or skip.';
-        return;
-      }
-      el('exMsg').textContent = 'Analysing. This takes 20–40 seconds.';
-      return api('extractIntake', payload).then(function(r){
-        b.disabled = false; b.textContent = 'Analyse and continue';
-        if (!r.ok){ el('exMsg').textContent = ''; toast(r.message || 'Extraction failed.', true); return; }
-        EXTRACT = r;
-        if (r.problems && r.problems.length) toast(r.problems.join(' · '), true);
-        drawForm();
-      });
-    }).catch(function(e){
-      b.disabled = false; b.textContent = 'Analyse and continue';
-      el('exMsg').textContent = ''; fail(e);
+  if (el('dlist')){
+    el('dlist').addEventListener('click', function(ev){
+      var k;
+      if ((k = ev.target.getAttribute('data-open'))) return resumeDraft(k);
+      if ((k = ev.target.getAttribute('data-del'))) return removeDraft(k, ev.target);
     });
+  }
+}
+
+/**
+ * Reopens a draft. The stored sources come back as already-read rows, so the
+ * reading step shows the same checklist it would after a fresh read — with the
+ * same Retry / Replace buttons, and Analyse ready to run again.
+ */
+function resumeDraft(draftId){
+  el('view').innerHTML = loading();
+  api('openDraft', draftId).then(function(d){
+    if (!d.ok){ toast(d.message || 'Could not open that draft.', true); renderIntake(); return; }
+
+    DRAFT = { draftId: d.draftId, name: d.name, status: d.status,
+              folderUrl: d.folderUrl, clientId: d.clientId };
+    EXTRACT = d.extraction || null;
+    DRAFTFORM = d.form || null;
+    SRCVALS = {};
+
+    READ = (d.sources || []).map(function(s){
+      return {
+        key: s.key, label: s.label, raw: s.origin || '',
+        // A source whose Drive file has been deleted is shown as failed rather
+        // than quietly dropped — otherwise Analyse would run on less than the
+        // checklist claims.
+        state: s.gone ? 'fail' : 'ok',
+        res: s.gone
+          ? { error: 'The stored copy is gone from Drive.',
+              hint: 'Read it again, or paste the text in.', via: s.via }
+          : { ok:true, key:s.key, label:s.label, via:s.via, fileId:s.fileId,
+              chars:s.chars, words:s.words, preview:s.preview, warn:'' }
+      };
+    });
+
+    // Missing documents are not toasted: each one already says so on its own
+    // row, with the buttons to fix it, and a toast here lands on top of the
+    // action bar at exactly the moment it is needed.
+    if (!READ.length){ drawSources(); return; }
+    drawReading();
+  }).catch(function(e){ fail(e); renderIntake(); });
+}
+
+function removeDraft(draftId, btn){
+  if (btn.getAttribute('data-armed') !== '1'){
+    btn.setAttribute('data-armed', '1');
+    btn.textContent = 'Really delete?';
+    setTimeout(function(){
+      if (!btn.parentNode) return;
+      btn.removeAttribute('data-armed'); btn.textContent = 'Delete';
+    }, 4000);
+    return;
+  }
+  api('deleteDraft', draftId).then(function(){
+    DRAFTS = DRAFTS.filter(function(d){ return d.draftId !== draftId; });
+    drawSources();
+    toast('Draft deleted. Its Drive folder is in the trash.');
+  }).catch(fail);
+}
+
+// ------------------------------------------------------- reading the sources
+
+/**
+ * Fetching is the step that fails. A ClickUp doc in a Space you are not in, a
+ * scanned PDF with no text layer, a deck nobody shared — each of those used to
+ * surface as one line of raw API error for the whole batch, with no way to fix
+ * the one broken document without redoing the rest.
+ *
+ * So each source is read on its own and reports its own outcome, and a failed
+ * one can be retried, replaced with pasted text, or skipped while the others
+ * keep their result. Nothing goes to Claude until you say so.
+ */
+var READ = [];        // [{key,label,raw,state,res}] — wait|read|ok|fail|skip
+var SRCVALS = {};     // what was entered on the sources step, for going back
+var DRAFT = null;     // the open draft: {draftId, name, status, folderUrl}
+var DRAFTS = [];      // the resume list
+var DRAFTFORM = null; // form values saved on the draft, applied over EXTRACT
+
+function collectAndRead(){
+  var b = el('analyse');
+  b.disabled = true; b.textContent = 'Reading…';
+
+  // A file wins over the textarea for the same source: picking one is the more
+  // deliberate act, and sending both would double the prompt.
+  Promise.all(SOURCES.map(function(s){
+    var f = el('file_' + s.key).files[0];
+    if (f) return readFile(f);
+    var typed = el('src_' + s.key).value.trim();
+    if (typed) return Promise.resolve(typed);
+    var carried = SRCVALS[s.key];
+    return Promise.resolve(carried && typeof carried === 'object' ? carried : null);
+  })).then(function(vals){
+    SRCVALS = {};
+    var items = [];
+    SOURCES.forEach(function(s, i){
+      if (!vals[i]) return;
+      SRCVALS[s.key] = vals[i];
+      items.push({ key: s.key, label: s.label, raw: vals[i], state: 'wait', res: null });
+    });
+    if (!items.length){
+      b.disabled = false; b.textContent = 'Analyse and continue';
+      el('exMsg').textContent = 'Add at least one source, or skip.';
+      return;
+    }
+    READ = items;
+    // The draft has to exist before the first read, because that read writes
+    // its text into the draft's Drive folder.
+    if (DRAFT) { drawReading(); readNext(0); return; }
+    return api('createDraft', draftName()).then(function(d){
+      DRAFT = { draftId: d.draftId, name: d.name, status: 'Draft',
+                folderUrl: d.folderId
+                  ? 'https://drive.google.com/drive/folders/' + d.folderId : '' };
+      if (d.folderMissing){
+        toast('No Drive folder could be created for this draft, so documents '
+          + 'will not be stored. Check the Drive Root Folder ID on the Config tab.', true);
+      }
+      drawReading();
+      readNext(0);
+    });
+  }).catch(function(e){
+    b.disabled = false; b.textContent = 'Analyse and continue';
+    fail(e);
   });
+}
+
+/** A draft is named before anything has been read, so guess from the sources. */
+function draftName(){
+  var link = '';
+  for (var i = 0; i < SOURCES.length; i++){
+    var v = SRCVALS[SOURCES[i].key];
+    if (v && typeof v === 'object' && v.name){
+      return String(v.name).replace(/\.[^.]+$/, '').slice(0, 60);
+    }
+    if (!link && typeof v === 'string' && v) link = v;
+  }
+  var d = new Date();
+  return 'New client · ' + d.toLocaleDateString();
+}
+
+function drawReading(){
+  var h = '<div class="steps">'
+    + '<span class="stp done" id="backStep">1 · Sources</span>'
+    + '<span class="stp on">Reading</span>'
+    + '<span class="stp">2 · Review &amp; create</span></div>';
+
+  h += '<div class="card form"><div class="sect">'
+    + '<h3>Reading your sources</h3>'
+    + '<div class="hint">Each one is fetched separately, so a document that fails '
+    + 'does not cost you the others. Nothing is sent to Claude until you press '
+    + 'Analyse.</div>'
+    + (DRAFT ? '<div class="dbar">Saved as <b>' + esc(DRAFT.name) + '</b>'
+        + '<button type="button" class="lnk" id="renameDraft">Rename</button>'
+        + (DRAFT.folderUrl ? '<a class="lnk" href="' + esc(DRAFT.folderUrl)
+            + '" target="_blank" rel="noopener">Drive folder</a>' : '')
+        + '<span class="sp"></span>Documents are stored — you can come back to '
+        + 'this without uploading again.</div>' : '')
+    + '<div id="rlist">'
+    + READ.map(function(r, i){
+        return '<div class="rrow ' + r.state + '" id="rrow_' + r.key + '">'
+          + rowInner(i) + '</div>';
+      }).join('')
+    + '</div></div>'
+    + '<div id="thinkWrap"></div>'
+    + '<div class="bar rbar">'
+    + '<button class="btn" id="backSrc">Back to sources</button>'
+    + '<button class="btn" id="skip2">Skip, fill in manually</button>'
+    + '<span class="sp"></span><span class="note" id="rdMsg"></span>'
+    + '<button class="btn pri" id="goAnalyse" disabled>Analyse</button>'
+    + '</div></div>';
+
+  el('view').innerHTML = h;
+  el('backSrc').addEventListener('click', drawSources);
+  el('backStep').addEventListener('click', drawSources);
+  el('skip2').addEventListener('click', function(){ drawForm(); });
+  el('goAnalyse').addEventListener('click', doAnalyse);
+  if (el('renameDraft')) el('renameDraft').addEventListener('click', promptRename);
+  wireRows();
+  updateFoot();
+
+  // Reopening an already-analysed draft should not force another API call to
+  // see what it said last time.
+  if (EXTRACT && el('goAnalyse')){
+    el('goAnalyse').insertAdjacentHTML('beforebegin',
+      '<button class="btn" id="useLast">Use the last analysis</button>');
+    el('useLast').addEventListener('click', function(){ drawForm(); });
+    el('goAnalyse').textContent = 'Re-analyse';
+  }
+}
+
+function promptRename(){
+  var next = window.prompt('Name this draft', DRAFT ? DRAFT.name : '');
+  if (next === null) return;
+  api('renameDraft', DRAFT.draftId, next).then(function(r){
+    if (!r.ok){ toast(r.message || 'Could not rename.', true); return; }
+    DRAFT.name = String(next).trim() || 'Untitled draft';
+    drawReading();
+  }).catch(fail);
+}
+
+function rowInner(i){
+  var r = READ[i], res = r.res || {};
+  var icon = { wait: '', read: '', ok: '✓', fail: '!', skip: '–' }[r.state] || '';
+  var h = '<div class="ic ' + r.state + '">' + icon + '</div><div class="bd">';
+
+  h += '<div class="nm">' + esc(r.label)
+     + (res.via ? '<span class="via">' + esc(res.via) + '</span>' : '')
+     + '</div>';
+
+  if (r.state === 'wait'){
+    h += '<div class="st">Waiting.</div>';
+  } else if (r.state === 'read'){
+    h += '<div class="st">Fetching…</div>';
+  } else if (r.state === 'skip'){
+    h += '<div class="st">Skipped — this one will not be sent to Claude.</div>';
+  } else if (r.state === 'ok'){
+    h += '<div class="st">Read ' + fmtNum(res.words) + ' words, '
+       + fmtNum(res.chars) + ' characters.'
+       + (res.warn ? ' ' + esc(res.warn) : '') + '</div>';
+    if (res.preview){
+      h += '<div class="pv">“' + esc(res.preview) + '…”</div>';
+    }
+  } else if (r.state === 'fail'){
+    h += '<div class="st">' + esc(res.error || 'Could not read it.') + '</div>';
+    if (res.hint) h += '<div class="hnt">' + esc(res.hint) + '</div>';
+  }
+
+  if (r.state === 'fail' || r.state === 'skip' || r.state === 'ok'){
+    h += '<div class="acts">'
+      + '<button type="button" class="btn sm" data-retry="' + r.key + '">'
+      + (r.state === 'ok' ? 'Read again' : 'Retry') + '</button>'
+      + '<button type="button" class="btn sm" data-fix="' + r.key + '">'
+      + (r.state === 'ok' ? 'Replace' : 'Paste it in instead') + '</button>'
+      + (r.state === 'fail'
+          ? '<button type="button" class="btn sm" data-skip="' + r.key
+            + '">Skip this one</button>' : '')
+      + '</div>'
+      + '<div class="fix" id="fix_' + r.key + '">'
+      + '<textarea id="fixtx_' + r.key + '" placeholder="Paste the document text here…">'
+      + '</textarea>'
+      + '<div class="drop">'
+      + '<input type="file" id="fixf_' + r.key + '" hidden '
+      + 'accept=".pdf,.docx,.doc,.txt,.md,.rtf,application/pdf,text/plain">'
+      + '<button type="button" class="btn sm" data-fixpick="' + r.key + '">Upload a file</button>'
+      + '<span class="fn" id="fixfn_' + r.key + '">PDF, Word, or plain text</span>'
+      + '<span style="flex:1"></span>'
+      + '<button type="button" class="btn sm pri" data-fixgo="' + r.key + '">Use this</button>'
+      + '</div></div>';
+  }
+  return h + '</div>';
+}
+
+/** Delegated, because rows are repainted in place as each read finishes. */
+function wireRows(){
+  var list = el('rlist');
+  list.addEventListener('click', function(ev){
+    var t = ev.target, k;
+    if ((k = t.getAttribute('data-retry'))){ readOne(rowIdx(k)); return; }
+    if ((k = t.getAttribute('data-skip'))){ setState(k, 'skip'); return; }
+    if ((k = t.getAttribute('data-fix'))){ el('fix_' + k).classList.toggle('on'); return; }
+    if ((k = t.getAttribute('data-fixpick'))){ el('fixf_' + k).click(); return; }
+    if ((k = t.getAttribute('data-fixgo'))){ applyFix(k); return; }
+  });
+  list.addEventListener('change', function(ev){
+    var id = ev.target.id || '';
+    if (id.indexOf('fixf_') !== 0) return;
+    var k = id.slice(5);
+    var f = el('fixf_' + k).files[0];
+    var nm = el('fixfn_' + k);
+    nm.textContent = f ? f.name : 'PDF, Word, or plain text';
+    nm.className = f ? 'fn has' : 'fn';
+  });
+}
+
+function rowIdx(key){
+  for (var i = 0; i < READ.length; i++) if (READ[i].key === key) return i;
+  return -1;
+}
+
+function paintRow(i){
+  var node = el('rrow_' + READ[i].key);
+  if (!node) return;
+  node.className = 'rrow ' + READ[i].state;
+  node.innerHTML = rowInner(i);
+}
+
+function setState(key, state){
+  var i = rowIdx(key);
+  if (i < 0) return;
+  READ[i].state = state;
+  paintRow(i);
+  updateFoot();
+}
+
+/** Swap in pasted text or a fresh file for one source, then read it again. */
+function applyFix(key){
+  var i = rowIdx(key);
+  if (i < 0) return;
+  var f = el('fixf_' + key).files[0];
+  var typed = el('fixtx_' + key).value.trim();
+
+  if (f){
+    readFile(f).then(function(obj){
+      READ[i].raw = obj; SRCVALS[key] = obj; readOne(i);
+    }).catch(fail);
+    return;
+  }
+  if (!typed){
+    toast('Paste the text or pick a file first.', true);
+    return;
+  }
+  READ[i].raw = typed; SRCVALS[key] = typed;
+  readOne(i);
+}
+
+function readOne(i){
+  if (i < 0) return Promise.resolve();
+  var r = READ[i];
+  r.state = 'read'; r.res = null;
+  paintRow(i); updateFoot();
+
+  return api('readSource', r.key, r.raw, DRAFT && DRAFT.draftId).then(function(res){
+    r.res = res;
+    r.state = res && res.ok ? 'ok' : 'fail';
+  }).catch(function(e){
+    // A thrown server error rather than a returned one — usually a timeout on a
+    // very large file. Same row, same buttons.
+    r.res = { error: (e && e.message) || String(e),
+              hint: 'Retry, or paste the text in instead.' };
+    r.state = 'fail';
+  }).then(function(){
+    paintRow(i); updateFoot();
+  });
+}
+
+/** One at a time, so the checklist reads as progress rather than a flicker. */
+function readNext(i){
+  while (i < READ.length && (READ[i].state === 'ok' || READ[i].state === 'skip')) i++;
+  if (i >= READ.length){ updateFoot(); return; }
+  readOne(i).then(function(){ readNext(i + 1); });
+}
+
+function updateFoot(){
+  var b = el('goAnalyse');
+  if (!b) return;
+
+  var busy = 0, ok = 0, bad = 0, sk = 0;
+  READ.forEach(function(r){
+    if (r.state === 'wait' || r.state === 'read') busy++;
+    else if (r.state === 'ok') ok++;
+    else if (r.state === 'fail') bad++;
+    else if (r.state === 'skip') sk++;
+  });
+
+  // Reworded rather than set once, because every row change repaints this.
+  var verb = EXTRACT ? 'Re-analyse' : 'Analyse';
+  b.disabled = !!busy || !ok;
+  b.textContent = ok ? verb + ' ' + ok + ' document' + (ok === 1 ? '' : 's') : verb;
+
+  var m = [];
+  if (busy){
+    m.push('Reading ' + busy + ' more…');
+  } else {
+    if (ok) m.push(ok + ' read');
+    if (bad) m.push(bad + ' failed');
+    if (sk) m.push(sk + ' skipped');
+    if (bad) m.push('retry, replace, or skip to continue');
+    else if (!ok) m.push('nothing left to analyse — skip to the form');
+  }
+  el('rdMsg').textContent = m.join(' · ');
+}
+
+// ------------------------------------------------------------- the analysis
+
+function doAnalyse(){
+  var items = [], words = 0;
+  READ.forEach(function(r){
+    if (r.state !== 'ok' || !r.res || !r.res.fileId) return;
+    items.push({ key: r.key, fileId: r.res.fileId });
+    words += r.res.words || 0;
+  });
+  if (!items.length){ updateFoot(); return; }
+
+  el('goAnalyse').disabled = true;
+  el('backSrc').disabled = true;
+
+  var t0 = Date.now();
+  el('thinkWrap').innerHTML = '<div class="sect">'
+    + '<div class="thinking"><div class="dots"><i></i><i></i><i></i></div>'
+    + '<div><div class="tx">Claude is reading ' + items.length + ' document'
+    + (items.length === 1 ? '' : 's') + ' — ' + fmtNum(words) + ' words — for the '
+    + 'company, the contract, the fees and who does what.</div>'
+    + '<div class="el" id="elap">0s · usually 20–40 seconds</div></div></div></div>';
+
+  // A real elapsed counter rather than a fake progress bar: it is one request,
+  // and pretending otherwise would only mislead about where the time goes.
+  var timer = setInterval(function(){
+    var e = el('elap');
+    if (!e){ clearInterval(timer); return; }
+    var s = Math.round((Date.now() - t0) / 1000);
+    e.textContent = s + 's · ' + (s < 45
+      ? 'usually 20–40 seconds'
+      : 'longer than usual — long transcripts take more');
+  }, 1000);
+
+  var stop = function(){
+    clearInterval(timer);
+    el('thinkWrap').innerHTML = '';
+    if (el('goAnalyse')) el('goAnalyse').disabled = false;
+    if (el('backSrc')) el('backSrc').disabled = false;
+    updateFoot();
+  };
+
+  api('runExtraction', items, DRAFT && DRAFT.draftId).then(function(r){
+    if (!r || !r.ok){
+      stop();
+      toast((r && r.message) || 'Analysis failed.', true);
+      return;
+    }
+    clearInterval(timer);
+    EXTRACT = r;
+    // A fresh reading supersedes what was typed against the previous one.
+    DRAFTFORM = null;
+    // Trimming is the one thing that can quietly cost accuracy, so it is said
+    // out loud rather than left in the server response.
+    if (r.trimmed && r.trimmed.length){
+      toast(r.trimmed.map(function(t){
+        return t.label + ' was too long and was trimmed to fit ('
+          + fmtNum(t.from) + ' → ' + fmtNum(t.to) + ' characters). '
+          + 'Check anything it got from that one.';
+      }).join(' '), true);
+    }
+    drawForm();
+  }).catch(function(e){
+    stop(); fail(e);
+  });
+}
+
+function fmtNum(n){
+  return String(n == null ? 0 : n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 /** Client-side cap, so an oversized file fails instantly instead of after a
@@ -1010,6 +1542,12 @@ function readFile(f){
 
 /** A field's extracted value, or '' when nothing was extracted. */
 function exVal(name){
+  // A saved draft's typed value wins over the extraction: it is the later, more
+  // deliberate act. Re-analysing clears the saved form so the fresh reading
+  // shows through rather than being masked by what was typed before it.
+  if (DRAFTFORM && DRAFTFORM[name] != null && DRAFTFORM[name] !== ''){
+    return String(DRAFTFORM[name]);
+  }
   var f = EXTRACT && EXTRACT.fields && EXTRACT.fields[name];
   return f && f.value != null ? String(f.value) : '';
 }
@@ -1056,7 +1594,8 @@ function drawForm(){
 }
 
 function intakeHtml(platforms, options){
-  var picked = (EXTRACT && EXTRACT.platforms && EXTRACT.platforms.value) || [];
+  var picked = (DRAFTFORM && DRAFTFORM.platforms)
+    || (EXTRACT && EXTRACT.platforms && EXTRACT.platforms.value) || [];
   var h = '<div class="steps">'
     + '<span class="stp done" id="backStep">1 · Sources</span>'
     + '<span class="stp on">2 · Review &amp; create</span></div>';
@@ -1141,10 +1680,56 @@ function intakeHtml(platforms, options){
     + 'onboarding from the client page once the details are right.</div></div>'
 
     + '<div class="bar"><button class="btn" id="backSrc">Back</button>'
+    + (DRAFT ? '<button class="btn" id="saveDraft">Save draft</button>' : '')
     + '<span class="sp"></span>'
     + '<span class="note" id="formMsg"></span>'
     + '<button class="btn pri" id="submit">Create client</button></div></div>';
   return h;
+}
+
+/** Everything typed into the form, for both saving a draft and submitting. */
+function formPayload(){
+  return {
+    company: el('company').value.trim(),
+    contact: el('contact').value.trim(),
+    email: el('email').value.trim(),
+    website: el('website').value.trim(),
+    vertical: el('vertical').value.trim(),
+    bizType: el('bizType').value,
+    contractStart: el('contractStart').value,
+    term: el('term').value,
+    cadence: el('cadence').value,
+    owner: el('owner').value.trim(),
+    services: readServices(),
+    fees: readFees(),
+    mrr: readFees().reduce(function(a, l){ return a + (l.amount || 0); }, 0),
+    approvals: el('approvals').value.trim(),
+    slack: el('slack').value.trim(),
+    scope: el('scope').value.trim(),
+    platforms: readPlatforms(),
+    transcript: el('transcript').value,
+    contract: el('contract').value,
+    notes: el('notes').value
+  };
+}
+
+/**
+ * Saves the typed form onto the draft without creating anything. This is the
+ * "come back to it" button — the record is still not a client, and the
+ * documents behind it stay exactly where they are.
+ */
+function saveDraftNow(btn){
+  if (!DRAFT) return;
+  btn.disabled = true;
+  var was = btn.textContent;
+  btn.textContent = 'Saving…';
+  api('saveDraft', DRAFT.draftId, { form: formPayload() }).then(function(r){
+    btn.disabled = false; btn.textContent = was;
+    if (!r.ok){ toast(r.message || 'Could not save the draft.', true); return; }
+    el('formMsg').textContent = 'Draft saved ' + (r.saved || '');
+  }).catch(function(e){
+    btn.disabled = false; btn.textContent = was; fail(e);
+  });
 }
 
 /**
@@ -1157,8 +1742,10 @@ function intakeHtml(platforms, options){
  * nobody can explain later.
  */
 function servicesSection(options){
-  var sold = (EXTRACT && EXTRACT.services && EXTRACT.services.value) || [];
-  var lines = (EXTRACT && EXTRACT.fees && EXTRACT.fees.value) || [];
+  var sold = (DRAFTFORM && DRAFTFORM.services)
+    || (EXTRACT && EXTRACT.services && EXTRACT.services.value) || [];
+  var lines = (DRAFTFORM && DRAFTFORM.fees)
+    || (EXTRACT && EXTRACT.fees && EXTRACT.fees.value) || [];
   var list = options.services || [];
 
   var h = '<div class="sect"><h3>Services sold</h3>'
@@ -1204,6 +1791,17 @@ function feeRow(l){
     + '<input class="fa" type="number" step="any" placeholder="0" value="'
     + (l.amount === 0 || l.amount ? esc(l.amount) : '') + '">'
     + '<button type="button" class="clr" data-delfee="1">Remove</button></div>';
+}
+
+function readServices(){
+  return [].filter.call(document.querySelectorAll('[data-service]'),
+    function(i){ return i.checked; }).map(function(i){ return i.value; });
+}
+
+function readPlatforms(){
+  return [].filter.call(
+    document.querySelectorAll('.checks .chk input[type=checkbox][value]'),
+    function(i){ return i.checked; }).map(function(i){ return i.value; });
 }
 
 function readFees(){
@@ -1254,9 +1852,15 @@ function wireIntake(){
     wireFees();
   }
 
-  var back = function(){ drawSources(); };
+  // Back returns to the reading checklist when there is one, so the sources
+  // stay visible and swappable; only a form reached with no sources at all
+  // falls through to the empty sources screen.
+  var back = function(){ READ.length ? drawReading() : drawSources(); };
   if (el('backSrc')) el('backSrc').addEventListener('click', back);
   if (el('backStep')) el('backStep').addEventListener('click', back);
+  if (el('saveDraft')){
+    el('saveDraft').addEventListener('click', function(){ saveDraftNow(this); });
+  }
 
   el('submit').addEventListener('click', function(){
     var b = el('submit');
@@ -1266,34 +1870,12 @@ function wireIntake(){
       el('company').focus();
       return;
     }
-    var platforms = [].filter.call(
-      document.querySelectorAll('.checks .chk input[type=checkbox][value]'),
-      function(i){ return i.checked; }).map(function(i){ return i.value; });
+    var payload = formPayload();
+    payload.makeDrive = false;
+    // The draft is kept and marked submitted, not consumed — its Drive folder
+    // becomes the deal's document record.
+    if (DRAFT) payload.draftId = DRAFT.draftId;
 
-    var payload = {
-      company: company,
-      contact: el('contact').value.trim(),
-      email: el('email').value.trim(),
-      website: el('website').value.trim(),
-      vertical: el('vertical').value.trim(),
-      contractStart: el('contractStart').value,
-      owner: el('owner').value.trim(),
-      cadence: el('cadence').value,
-      term: el('term').value,
-      bizType: el('bizType').value,
-      services: [].filter.call(document.querySelectorAll('[data-service]'),
-        function(i){ return i.checked; }).map(function(i){ return i.value; }),
-      fees: readFees(),
-      mrr: readFees().reduce(function(a, l){ return a + (l.amount || 0); }, 0),
-      approvals: el('approvals').value.trim(),
-      slack: el('slack').value.trim(),
-      scope: el('scope').value.trim(),
-      platforms: platforms,
-      transcript: el('transcript').value,
-      contract: el('contract').value,
-      notes: el('notes').value,
-      makeDrive: false
-    };
     b.disabled = true;
     b.textContent = 'Creating…';
     el('formMsg').textContent = '';

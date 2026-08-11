@@ -91,7 +91,31 @@ const FAKE = {
     ]
   },
   hasClickUpToken: true,
-  extractIntake: {
+  createDraft: { ok:true, draftId:'DR-260811-0930', name:'Harbor & Sons SOW', folderId:'fake-folder' },
+  saveDraft: { ok:true, saved:'11 Aug, 09:41' },
+  deleteDraft: { ok:true },
+  renameDraft: { ok:true },
+  openDraft: { ok:true, draftId:'DR-260810-1612', name:'Harbor & Sons',
+    status:'Analysed', clientId:'', folderId:'fake-folder',
+    folderUrl:'https://drive.google.com/drive/folders/fake', updated:'10 Aug, 16:12',
+    missing:['Pitch deck'],
+    sources:[
+      { key:'sales', label:'Sales call transcript', via:'ClickUp doc', origin:'https://doc.clickup.com/x',
+        fileId:'file_stub_sales', chars:48210, words:8609, read:'10 Aug, 16:04',
+        preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out of Leeds' },
+      { key:'sow', label:'Scope of work', via:'Upload · harbor-sow.pdf', originalName:'harbor-sow.pdf',
+        fileId:'file_stub_sow', chars:9140, words:1602, read:'10 Aug, 16:06',
+        preview:'SCOPE OF WORK — Harbor & Sons Ltd and Lockhern Digital. Term commences 1 September 2026' },
+      { key:'deck', label:'Pitch deck', via:'Google Slides', fileId:'file_stub_deck',
+        chars:3100, words:520, gone:true, preview:'' }
+    ] },
+  listDrafts: { ok:true, drafts:[
+    { draftId:'DR-260810-1612', name:'Harbor & Sons', updated:'10 Aug, 16:12',
+      updatedAt:2, status:'Analysed', clientId:'', sourceCount:3, analysed:true },
+    { draftId:'DR-260807-0904', name:'Verity Outdoors', updated:'7 Aug, 09:04',
+      updatedAt:1, status:'Submitted', clientId:'VERITY-2607', sourceCount:2, analysed:true }
+  ] },
+  runExtraction: {
     ok:true,
     sourcesUsed:['Sales call transcript','Scope of work','ClickUp onboarding form'],
     problems:[],
@@ -150,12 +174,46 @@ const FAKE = {
     body:'Hi Dana,\n\nTo get started we need access to a few platforms. Please grant access to harborandsons@lockherndigital.com — an alias, not a person, so this survives staffing changes.\n\nGOOGLE ADS\nAdd harborandsons@lockherndigital.com...' }
 };
 
+// A reopened draft carries the last extraction, which is what puts "Use the
+// last analysis" beside "Re-analyse" instead of a bare Analyse button.
+FAKE.openDraft.extraction = FAKE.runExtraction;
+
 // Each withXHandler must return an INDEPENDENT runner, the way Apps Script
 // does — a single shared handler slot breaks any two concurrent calls, which
 // is exactly what Promise.all does.
+//
+// Some responses depend on their arguments, and functions do not survive
+// JSON.stringify, so they are injected as source afterwards. readSource is the
+// one that matters: it has to be able to fail, or the failure row — the whole
+// reason the reading step exists — never gets rendered.
 const stub = `<script>
 (function(){
   var FAKE = ${JSON.stringify(FAKE)};
+  var DELAY = { runExtraction: 900 };
+
+  // A ClickUp link fails the way the real one does; pasted text succeeds. That
+  // is the actual recovery path, so the harness walks it.
+  FAKE.readSource = function(key, raw){
+    var isLink = typeof raw === 'string' && /^https?:/.test(raw);
+    var label = { sales:'Sales call transcript', kickoff:'Onboarding / kickoff call transcript',
+                  sow:'Scope of work', form:'ClickUp onboarding form', deck:'Pitch deck' }[key] || key;
+    if (isLink && key === 'kickoff'){
+      return { ok:false, key:key, label:label, via:'ClickUp doc',
+        error:'ClickUp will not open doc h6apc-44034 for the account that owns the API '
+            + 'token (403). The link you used is a share link (doc.clickup.com/…/d/h/…). '
+            + 'Those open in a browser for anyone holding them, but publishing a doc does '
+            + 'not grant API access to it. Check by opening '
+            + 'https://app.clickup.com/18033356/docs/h6apc-44034 while signed in.',
+        hint:'Open the doc in ClickUp, select all, and paste it in — that always works.' };
+    }
+    var chars = isLink ? 48210 : String(raw && raw.data ? 'x' : raw || '').length * 40 + 9100;
+    return { ok:true, key:key, label:label, fileId:'file_stub_' + key,
+      via: raw && raw.data ? 'Upload · ' + raw.name : (isLink ? 'ClickUp doc' : 'Pasted text'),
+      chars:chars, words:Math.round(chars / 5.6), warn:'',
+      preview:'Aric: Great, so Harbor and Sons — you are the family furniture business out '
+            + 'of Leeds, and you want to be running by the start of September' };
+  };
+
   function runner(ok, no){
     return new Proxy({}, {
       get: function(_, prop){
@@ -163,7 +221,9 @@ const stub = `<script>
         if (prop === 'withFailureHandler') return function(f){ return runner(ok, f); };
         return function(){
           var data = FAKE[prop];
-          setTimeout(function(){ ok && ok(data === undefined ? {ok:true} : data); }, 30);
+          if (typeof data === 'function') data = data.apply(null, arguments);
+          setTimeout(function(){ ok && ok(data === undefined ? {ok:true} : data); },
+                     DELAY[prop] || 30);
         };
       }
     });
@@ -201,13 +261,57 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
     if (view === 'new') {
+      // Two ClickUp links: one resolves, one 403s. The failure row is the point.
       await page.fill('#src_sales', 'https://doc.clickup.com/18033356/d/h/h6apc-42354/f4aa');
+      await page.fill('#src_kickoff', 'https://doc.clickup.com/18033356/d/h/h6apc-44034/b21c');
       await page.click('#analyse');
-      await page.waitForSelector('#submit', { timeout: 5000 });
+      await page.waitForSelector('#rrow_kickoff.fail', { timeout: 5000 });
+      await page.waitForTimeout(200);
+      const fRead = `${OUT}/${name}-new-reading.png`;
+      await page.screenshot({ path: fRead, fullPage: name === 'desktop' });
+      shots.push(fRead);
+
+      // Recover the failed one by pasting the transcript in, as the hint says.
+      await page.click('[data-fix="kickoff"]');
+      await page.fill('#fixtx_kickoff', 'Dana: right, so weekly on Tuesdays works for us. '.repeat(60));
+      await page.click('[data-fixgo="kickoff"]');
+      await page.waitForSelector('#rrow_kickoff.ok', { timeout: 5000 });
+      await page.waitForTimeout(200);
+      const fFixed = `${OUT}/${name}-new-recovered.png`;
+      await page.screenshot({ path: fFixed, fullPage: name === 'desktop' });
+      shots.push(fFixed);
+
+      // The analysing state, caught mid-flight via the stub's deliberate delay.
+      await page.click('#goAnalyse');
+      await page.waitForSelector('.thinking', { timeout: 3000 });
+      await page.waitForTimeout(150);
+      const fThink = `${OUT}/${name}-new-analysing.png`;
+      await page.screenshot({ path: fThink, fullPage: name === 'desktop' });
+      shots.push(fThink);
+
+      await page.waitForSelector('#submit', { timeout: 8000 });
       await page.waitForTimeout(250);
       const f2 = `${OUT}/${name}-new-review.png`;
       await page.screenshot({ path: f2, fullPage: name === 'desktop' });
       shots.push(f2);
+
+      // Reopening a stored draft: sources come back already read, one of them
+      // with its Drive copy deleted, so the failure row renders from storage.
+      // The header CTA is hidden while the intake view is open, so leave first.
+      await page.click('nav button[data-v="clients"]');
+      await page.waitForTimeout(200);
+      await page.click('#newBtn');
+      await page.waitForSelector('[data-open]', { timeout: 5000 });
+      const fDrafts = `${OUT}/${name}-new-drafts.png`;
+      await page.screenshot({ path: fDrafts, fullPage: name === 'desktop' });
+      shots.push(fDrafts);
+
+      await page.click('[data-open="DR-260810-1612"]');
+      await page.waitForSelector('#rrow_sales.ok', { timeout: 5000 });
+      await page.waitForTimeout(250);
+      const fResume = `${OUT}/${name}-new-resumed.png`;
+      await page.screenshot({ path: fResume, fullPage: name === 'desktop' });
+      shots.push(fResume);
     }
   }
 
