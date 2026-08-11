@@ -225,20 +225,24 @@ function storeSource_(draftId, key, label, text, meta) {
   const textFile = folder.createFile(key + '.txt', text, MimeType.PLAIN_TEXT);
 
   let originalId = '';
+  let originalMime = '';
   if (meta.original && meta.original.data) {
     try {
+      originalMime = meta.original.mimeType || 'application/octet-stream';
       const blob = Utilities.newBlob(
-        Utilities.base64Decode(meta.original.data),
-        meta.original.mimeType || 'application/octet-stream',
+        Utilities.base64Decode(meta.original.data), originalMime,
         meta.original.name || key);
       originalId = folder.createFile(blob).getId();
-    } catch (e) { originalId = ''; }
+    } catch (e) { originalId = ''; originalMime = ''; }
   }
 
   const record = {
     key: key, label: label, via: meta.via || '', origin: meta.origin || '',
     fileId: textFile.getId(), originalId: originalId,
     originalName: (meta.original && meta.original.name) || '',
+    // Kept because a PDF is re-attached to the model on every analysis, not
+    // just converted once — see runExtraction.
+    originalMime: originalMime,
     chars: text.length, words: meta.words || 0,
     preview: meta.preview || '', read: fmtWhen_(new Date())
   };
@@ -254,6 +258,21 @@ function readStored_(fileId) {
   if (!fileId) return '';
   try {
     return DriveApp.getFileById(fileId).getBlob().getDataAsString();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * The original upload as base64, for attaching to the model.
+ *
+ * Returns '' rather than throwing when the file is gone: losing the visual
+ * layer should degrade the analysis to text-only, not fail it.
+ */
+function readStoredBytes_(fileId) {
+  if (!fileId) return '';
+  try {
+    return Utilities.base64Encode(DriveApp.getFileById(fileId).getBlob().getBytes());
   } catch (e) {
     return '';
   }
