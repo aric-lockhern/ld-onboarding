@@ -486,9 +486,46 @@ function applyValidation_(ss) {
   }
 }
 
+/**
+ * Clears the progress formula off rows that hold no client.
+ *
+ * This used to pre-fill it down 499 rows so a new client got a working cell
+ * for free. A formula is content: getLastRow() on an empty Clients tab
+ * therefore reported 501, and every read and write built off it was wrong in
+ * a different way — the Team page announced "500 clients with no owner", and
+ * submitIntake wrote each new client to getLastRow() + 1, which is row 502,
+ * five hundred blank rows below anything anyone would scroll to.
+ *
+ * submitIntake sets the formula on the row it writes, so nothing is lost.
+ * This runs on setup() to repair a sheet that already has the 499.
+ */
 function addProgressFormula_(ss) {
   const sh = ss.getSheetByName(TABS.CLIENTS);
-  sh.getRange(2, C.PROGRESS, 499).setFormula(progressFormula_(2));
+  const last = sh.getLastRow();
+  if (last < 2) return;
+
+  const ids = sh.getRange(2, C.ID, last - 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (!String(ids[i][0]).trim()) sh.getRange(i + 2, C.PROGRESS).clearContent();
+  }
+}
+
+/**
+ * The first row on the Clients tab with no client on it.
+ *
+ * Never getLastRow() + 1: that counts formulas and formatting, so on a tab
+ * carrying pre-filled cells it points hundreds of rows past the data. Scanning
+ * the ID column is the only measure of where the records actually end.
+ */
+function firstFreeClientRow_(sh) {
+  const last = sh.getLastRow();
+  if (last < 2) return 2;
+
+  const ids = sh.getRange(2, C.ID, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) {
+    if (!String(ids[i][0]).trim()) return i + 2;
+  }
+  return last + 1;
 }
 
 function progressFormula_(row) {
@@ -617,7 +654,7 @@ function submitIntake(payload) {
   const alias = payload.alias ||
     (slugAlias_(payload.company) + '@' + (cfg('Alias Domain') || 'example.com'));
 
-  const row = clients.getLastRow() + 1;
+  const row = firstFreeClientRow_(clients);
   const vals = new Array(C.WIDTH).fill('');
   vals[C.ID - 1] = clientId;
   vals[C.COMPANY - 1] = payload.company;
