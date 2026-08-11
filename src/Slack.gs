@@ -70,8 +70,8 @@ function slackTest() {
   const granted = String(headers['x-oauth-scopes'] || headers['X-OAuth-Scopes'] || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
-  const wanted = ['channels:manage', 'groups:write', 'users:read',
-                  'users:read.email', 'chat:write'];
+  const wanted = ['channels:manage', 'groups:write', 'channels:read',
+                  'groups:read', 'users:read', 'users:read.email', 'chat:write'];
   const missing = granted.length ? wanted.filter(s => granted.indexOf(s) === -1) : [];
 
   return {
@@ -153,6 +153,98 @@ function slackCreateChannel(token, clientId, opts) {
 
   return { ok: true, name: '#' + name, channelId: channelId, url: url,
            invited: invited.length, failed: failed };
+}
+
+/**
+ * The channels already in the workspace, so an existing one can be picked
+ * rather than a second one created next to it.
+ *
+ * Most accounts that have been running a while already have a channel — it was
+ * made the day the deal closed, months before anyone opened this tool. Creating
+ * "#harbor-and-sons" alongside "#harbor-sons" splits the history in two and
+ * nobody notices until someone asks where a thread went.
+ *
+ * A bot can only see private channels it has been invited to. That is Slack's
+ * rule, not a scope that can fix it, so the count of what is hidden is returned
+ * and the UI says so — "my private channel is not in the list" is exactly the
+ * confusion this would otherwise cause.
+ */
+function slackChannels() {
+  if (!slackToken_()) {
+    return { ok: false, noToken: true, message: 'No Slack token set. In the '
+      + 'sheet: Onboarding → Set Slack bot token.' };
+  }
+
+  const out = [];
+  let cursor = '';
+  for (let page = 0; page < 20; page++) {
+    const r = slackCall_('conversations.list', Object.assign({
+      types: 'public_channel,private_channel',
+      exclude_archived: true,
+      limit: 200
+    }, cursor ? { cursor: cursor } : {}));
+    if (!r.ok) return { ok: false, message: slackError_(r, 'list the channels') };
+
+    (r.channels || []).forEach(c => out.push({
+      id: c.id,
+      name: c.name,
+      isPrivate: !!c.is_private,
+      // Whether the bot is in it decides whether posting will work at all, so
+      // it travels with the row rather than being discovered on first ping.
+      isMember: !!c.is_member,
+      members: c.num_members || 0,
+      purpose: String((c.purpose && c.purpose.value) || '')
+    }));
+
+    cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    if (!cursor) break;
+  }
+
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return { ok: true, channels: out };
+}
+
+/**
+ * Points a client at a channel that already exists.
+ *
+ * Joins it when it is public, because a bot that is not a member cannot post
+ * and the ping would fail later with not_in_channel — long after the moment
+ * anyone would connect the two. A private channel cannot be self-joined, so
+ * that case is reported as something to do rather than silently linked and
+ * left broken.
+ */
+function slackLinkChannel(token, clientId, channelId) {
+  checkToken_(token);
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+  if (!channelId) return { ok: false, message: 'No channel picked.' };
+
+  const info = slackCall_('conversations.info', { channel: channelId });
+  if (!info.ok || !info.channel) {
+    return { ok: false, message: slackError_(info, 'read that channel') };
+  }
+
+  const ch = info.channel;
+  let joined = false;
+  let warn = '';
+
+  if (!ch.is_member) {
+    if (ch.is_private) {
+      warn = 'The bot is not in #' + ch.name + ' and cannot add itself to a '
+        + 'private channel. Invite it there — /invite @your-bot — or pings will '
+        + 'fail.';
+    } else {
+      const j = slackCall_('conversations.join', { channel: channelId });
+      if (j.ok) joined = true;
+      else warn = slackError_(j, 'join #' + ch.name);
+    }
+  }
+
+  setClientField_(clientId, C.SLACK, '#' + ch.name);
+  return { ok: true, name: '#' + ch.name, channelId: ch.id,
+           url: 'https://slack.com/app_redirect?channel=' + ch.id,
+           joined: joined, warn: warn };
 }
 
 /**
