@@ -156,6 +156,37 @@ for (const [mapName, tabConst] of [['C', 'CLIENTS'], ['A', 'ACCESS']]) {
   }
 }
 
+// Two lists of the same thing, in two places. SERVICES drives validation and
+// the intake prompt; SERVICE_SEED writes the tab the UI renders checkboxes
+// from. A name in one and not the other means the model can return a service
+// with no box to tick, and the answer disappears without a word.
+console.log('\nChecking the service lists agree');
+{
+  const names = src => {
+    const m = serverSrc.match(src);
+    return m ? [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]) : null;
+  };
+  const flat = names(/const SERVICES = \[([\s\S]*?)\];/);
+  const seed = (() => {
+    const m = serverSrc.match(/const SERVICE_SEED = \[([\s\S]*?)\n\];/);
+    if (!m) return null;
+    // First string on each row is the service name.
+    return [...m[1].matchAll(/^\s*\['([^']+)'/gm)].map(x => x[1]);
+  })();
+
+  if (!flat || !seed) {
+    fail('could not read SERVICES / SERVICE_SEED');
+  } else {
+    const onlyFlat = flat.filter(n => !seed.includes(n));
+    const onlySeed = seed.filter(n => !flat.includes(n));
+    if (onlyFlat.length) fail(`in SERVICES but not SERVICE_SEED: ${onlyFlat.join(', ')}`);
+    if (onlySeed.length) fail(`in SERVICE_SEED but not SERVICES: ${onlySeed.join(', ')}`);
+    if (!onlyFlat.length && !onlySeed.length) {
+      pass(`${flat.length} services match across both lists`);
+    }
+  }
+}
+
 // ---- 6. no two src files share a basename
 // Apps Script drops the extension: Admin.gs and Admin.html both want to be
 // "Admin", and names are unique across types. clasp fails the push with

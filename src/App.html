@@ -1828,6 +1828,14 @@ function servicesSection(options){
     || (EXTRACT && EXTRACT.fees && EXTRACT.fees.value) || [];
   var list = options.services || [];
 
+  // Belt and braces on top of the prompt now reading the Services tab: if the
+  // model still returns a name with no checkbox — the tab changed since the
+  // analysis, someone deleted a row — say so rather than dropping it. A ticked
+  // box the user can see is the only place a service actually lands.
+  var noHome = sold.filter(function(n){
+    return !list.some(function(sv){ return sv.name === n; });
+  });
+
   var h = '<div class="sect"><h3>Services sold</h3>'
     + '<div class="hint">What we are being paid to do. Each one pulls in the '
     + 'platform access it needs.</div>'
@@ -1840,6 +1848,13 @@ function servicesSection(options){
           + '<span class="cat">' + esc(sv.platforms.join(', ') || 'no platform access') + '</span>'
           + '</span></label>';
       }).join('') + '</div>'
+    + (noHome.length
+        ? '<div class="warnbox" style="margin-top:12px"><b>No checkbox for '
+          + esc(noHome.join(', ')) + '</b><div>The documents sold '
+          + (noHome.length === 1 ? 'this' : 'these') + ', but the Services tab '
+          + 'has no row for it, so nothing was ticked and no platform access '
+          + 'was pulled in. Add the row in the sheet, then re-analyse.</div></div>'
+        : '')
     + (EXTRACT && EXTRACT.services && EXTRACT.services.quote
         ? '<div class="src"><span class="cf">' + esc(EXTRACT.services.confidence || 'medium')
           + '</span><span class="qt">“' + esc(String(EXTRACT.services.quote).slice(0,220))

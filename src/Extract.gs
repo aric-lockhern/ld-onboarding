@@ -659,6 +659,12 @@ function fileToText_(file) {
 
 function buildExtractPrompt_(docs) {
   const platformNames = getPlatformList().map(p => p.name);
+  // The Services TAB, not the SERVICES constant. The tab is what the review
+  // screen renders checkboxes from, so offering the model anything else means
+  // it can return a service with nowhere to go — which is exactly how "Reddit
+  // Organic Social" came back off a signed scope, priced on the fee table, and
+  // appeared nowhere on the form.
+  const serviceNames = getServiceList().map(s => s.name);
 
   const system = [
     'You extract structured onboarding data for a paid-search agency from deal documents.',
@@ -723,9 +729,16 @@ function buildExtractPrompt_(docs) {
       + '. eCommerce sells products online; Lead Gen collects enquiries.',
     '',
     'services.value must be a subset of exactly these names:',
-    SERVICES.join(' | '),
+    serviceNames.join(' | '),
     'These are what the client BOUGHT. Do not confuse them with platforms,',
     'which are what we need access to.',
+    '',
+    'A service is something sold in its own right — named in the overview or',
+    'carrying its own line on the fee table. Something described as a',
+    'deliverable INSIDE another service\'s section is not separately sold: a',
+    'contract that bundles "one custom landing page at a time" into Google Ads',
+    'management has bought Google Ads, not a Landing Page. When the fee table',
+    'lists three lines, expect about three services.',
     'Anything sold that is not on that list goes in unmatchedServices with the',
     'quote that names it. Do not force it onto the closest name and do not drop',
     'it — a service the agency has no name for yet is exactly what we need told.',
@@ -809,7 +822,7 @@ function buildFeePrompt_(docs) {
     }, null, 2),
     '',
     'One line per channel or item, using the service name where it matches:',
-    SERVICES.join(' | '),
+    getServiceList().map(s => s.name).join(' | '),
     'Discounts are their own line with a NEGATIVE amount. Do NOT include the',
     'total as a line — mrr is the total the client pays each month, after any',
     'discount. Amounts are plain numbers: no currency symbols, no commas.',
