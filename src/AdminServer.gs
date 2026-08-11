@@ -207,7 +207,14 @@ function getDashboardOverview(token) {
 function getClientDetail(token, clientId) {
   checkToken_(token);
   const client = getClientRecord_(clientId);
-  if (!client) throw new Error('Client not found.');
+  // Structured, not thrown. A missing row is an ordinary outcome — the record
+  // was deleted from the sheet, or two tabs are open on the same client — and
+  // the page should say so rather than surfacing a stack trace.
+  if (!client) {
+    return { ok: false, notFound: true, clientId: clientId,
+             message: 'No row for ' + clientId + ' on the Clients tab. It may '
+                    + 'have been deleted from the sheet.' };
+  }
   const tasks = getClientTasks_(clientId);
 
   const counted = tasks.filter(t => t.status !== 'N/A');

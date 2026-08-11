@@ -573,8 +573,15 @@ function submitIntake(payload) {
   clients.getRange(row, 1, 1, C.WIDTH).setValues([vals]);
   clients.getRange(row, C.PROGRESS).setFormula(progressFormula_(row));
 
-  const transcript = resolveText_(payload.transcript, clientId, 'transcript');
-  const contract = resolveText_(payload.contract, clientId, 'contract');
+  // The Intake tab is what generatePlan_ reads. When the documents came from a
+  // draft, nobody types anything into the Context boxes — so the plan used to
+  // be generated with "(none provided)" for both the transcript and the
+  // contract, silently, off a deal whose every document was sitting in Drive.
+  const carried = draftContext_(payload.draftId);
+  const transcript = resolveText_(
+    payload.transcript || carried.transcript, clientId, 'transcript');
+  const contract = resolveText_(
+    payload.contract || carried.contract, clientId, 'contract');
 
   ss.getSheetByName(TABS.INTAKE).appendRow([
     clientId, payload.company, transcript.stored, contract.stored,

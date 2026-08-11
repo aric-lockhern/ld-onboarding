@@ -860,6 +860,19 @@ function openClient(clientId){
   ]).then(function(res){
     var d = res[0];
     CACHE.options = res[1];
+
+    // A deleted row, or a response the server could not serialise, used to
+    // reach `d.client` and throw a TypeError that told nobody anything.
+    if (!d || !d.client){
+      el('hTitle').textContent = 'Client';
+      el('view').innerHTML = '<button class="back" id="back">← All clients</button>'
+        + emptyState('Client not found',
+            (d && d.message) || 'The record could not be loaded. It may have been '
+            + 'deleted from the Clients tab.');
+      el('back').addEventListener('click', function(){ go('clients'); });
+      return;
+    }
+
     DETAIL = d;
     var c = d.client || {};
     el('hTitle').textContent = c.company || 'Client';
@@ -1851,13 +1864,27 @@ function intakeHtml(platforms, options){
           + '”</span></div>' : '')
     + '</div>'
 
+    // These two feed the Intake tab, which is what the onboarding plan is
+    // written from. When a draft supplied the documents they are filled from it
+    // on submit, so asking anyone to paste a transcript they already uploaded
+    // is just a large empty box that looks broken.
     + '<div class="sect"><h3>Context</h3>'
-    + '<div class="hint">Stored on the Intake tab and fed to the onboarding plan. '
-    + 'Long text is moved to a Doc automatically.</div>'
-    + '<div class="fields">'
-    + field('transcript', 'Sales transcript', {type:'textarea', wide:true})
-    + field('contract', 'Contract text', {type:'textarea', wide:true})
+    + (READ.length
+        ? '<div class="hint">The transcript and contract come from the documents '
+          + 'you uploaded, and are written to the Intake tab when the client is '
+          + 'created — that is what the onboarding plan is generated from.</div>'
+          + '<div class="okbox">' + esc(READ.filter(function(r){ return r.state === 'ok'; })
+              .map(function(r){ return r.label; }).join(' · ')) + '</div>'
+          + '<div class="fields">'
+          + '<textarea id="transcript" hidden></textarea>'
+          + '<textarea id="contract" hidden></textarea>'
+        : '<div class="hint">Stored on the Intake tab and fed to the onboarding plan. '
+          + 'Long text is moved to a Doc automatically.</div>'
+          + '<div class="fields">'
+          + field('transcript', 'Sales transcript', {type:'textarea', wide:true})
+          + field('contract', 'Contract text', {type:'textarea', wide:true}))
     + field('notes', 'Context notes', {type:'textarea', wide:true,
+        note: 'Anything the documents do not say. Goes to the onboarding plan.',
         value: EXTRACT && (EXTRACT.openQuestions || []).length
           ? 'Open questions from intake analysis:\n- ' + EXTRACT.openQuestions.join('\n- ') : ''})
     + '</div></div>'
