@@ -1630,7 +1630,7 @@ function drawForm(){
 }
 
 function intakeHtml(platforms, options){
-  var picked = (DRAFTFORM && DRAFTFORM.platforms)
+  var picked = savedList(DRAFTFORM && DRAFTFORM.platforms)
     || (EXTRACT && EXTRACT.platforms && EXTRACT.platforms.value) || [];
   var h = '<div class="steps">'
     + '<span class="stp done" id="backStep">1 · Sources</span>'
@@ -1645,6 +1645,32 @@ function intakeHtml(platforms, options){
             + 'original file, so pricing laid out as an image could be read'
           : '')
       + '. Every value shows the sentence it came from — check the money and the dates.</div>';
+
+    // Fees are the field most often missing and the most expensive to be wrong
+    // about, so when they come back empty the reason is stated rather than left
+    // as a blank row the user has to interpret.
+    var feeLines = (EXTRACT.fees && EXTRACT.fees.value) || [];
+    if (!feeLines.length){
+      var why = [];
+      (EXTRACT.notAttached || []).forEach(function(n){
+        why.push(n.label + ' — ' + n.reason);
+      });
+      h += '<div class="warnbox"><b>No fees found</b>'
+        + '<div>' + (EXTRACT.feePass === 'second-empty'
+            ? 'Claude read the attached pages specifically looking for a fee '
+              + 'table and did not find one.'
+            : EXTRACT.feePass === 'second-failed'
+            ? 'The follow-up read of the attached pages failed. Re-analyse to '
+              + 'try again.'
+            : (EXTRACT.attached || []).length
+            ? 'Nothing priced was found in the documents.'
+            : 'No document was sent as a page, so a fee table laid out as an '
+              + 'image could not be read.') + '</div>'
+        + why.map(function(w){ return '<div class="note">' + esc(w) + '</div>'; }).join('')
+        + '<div class="note">Upload the contract or deck as a PDF — pasted text '
+        + 'loses any pricing that is a picture. Otherwise type the lines below.</div>'
+        + '</div>';
+    }
 
     // Something was sold that has no service to put it in. Silence here is how
     // a whole workstream disappears from a scope that names it on page two.
@@ -1796,9 +1822,9 @@ function saveDraftNow(btn){
  * nobody can explain later.
  */
 function servicesSection(options){
-  var sold = (DRAFTFORM && DRAFTFORM.services)
+  var sold = savedList(DRAFTFORM && DRAFTFORM.services)
     || (EXTRACT && EXTRACT.services && EXTRACT.services.value) || [];
-  var lines = (DRAFTFORM && DRAFTFORM.fees)
+  var lines = savedList(DRAFTFORM && DRAFTFORM.fees)
     || (EXTRACT && EXTRACT.fees && EXTRACT.fees.value) || [];
   var list = options.services || [];
 
@@ -1856,6 +1882,27 @@ function readPlatforms(){
   return [].filter.call(
     document.querySelectorAll('.checks .chk input[type=checkbox][value]'),
     function(i){ return i.checked; }).map(function(i){ return i.value; });
+}
+
+/**
+ * A saved draft value only wins over the extraction if it actually holds
+ * something.
+ *
+ * [] is truthy in JavaScript, and readFees() on an untouched form returns
+ * [{label:'', amount:0}] — so once a draft was saved with no fees, the saved
+ * blank masked every later extraction of them, permanently. Re-reading the
+ * documents, re-analysing, attaching the PDF: none of it could get past a
+ * truthy empty array. Typing over a value is a deliberate act; leaving a row
+ * untouched is not.
+ */
+function savedList(v){
+  if (!Array.isArray(v) || !v.length) return null;
+  var real = v.filter(function(x){
+    if (x == null) return false;
+    if (typeof x === 'string') return !!x.trim();
+    return !!String(x.label || '').trim() || !!Number(x.amount);
+  });
+  return real.length ? v : null;
 }
 
 function readFees(){

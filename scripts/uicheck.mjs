@@ -99,6 +99,10 @@ const FAKE = {
     status:'Analysed', clientId:'', folderId:'fake-folder',
     folderUrl:'https://drive.google.com/drive/folders/fake', updated:'10 Aug, 16:12',
     missing:['Pitch deck'],
+    // A form saved before the fee table could be read. This blank row must NOT
+    // mask the extraction's fees — both [] and [{label:'',amount:0}] are truthy,
+    // which is how a saved blank used to hide every later reading permanently.
+    form:{ company:'Harbor & Sons', fees:[{label:'',amount:0}], services:[], platforms:[] },
     sources:[
       { key:'sales', label:'Sales call transcript', via:'ClickUp doc', origin:'https://doc.clickup.com/x',
         fileId:'file_stub_sales', chars:48210, words:8609, read:'10 Aug, 16:04',
@@ -337,6 +341,24 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       const fResume = `${OUT}/${name}-new-resumed.png`;
       await page.screenshot({ path: fResume, fullPage: name === 'desktop' });
       shots.push(fResume);
+
+      // Regression: the resumed draft carries a saved form whose fees are one
+      // blank row. Taking the stored analysis must still show the extraction's
+      // four fee lines — a truthy empty array used to hide them for good.
+      await page.click('#useLast');
+      await page.waitForSelector('#feeRows', { timeout: 5000 });
+      const feeLabels = await page.$$eval('#feeRows .fl', function(els){
+        return els.map(function(e){ return e.value; }).filter(Boolean);
+      });
+      if (feeLabels.length < 4) {
+        throw new Error('Saved blank fees masked the extraction: got '
+          + JSON.stringify(feeLabels));
+      }
+      const fUnmasked = `${OUT}/${name}-new-fees-unmasked.png`;
+      await page.screenshot({ path: fUnmasked, fullPage: name === 'desktop' });
+      shots.push(fUnmasked);
+      await page.click('#backSrc');
+      await page.waitForSelector('#rlist', { timeout: 5000 });
 
       // Regression: delete the draft you are currently inside, then start over.
       // The open handle used to survive the delete, so every source afterwards
