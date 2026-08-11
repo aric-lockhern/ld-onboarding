@@ -1002,8 +1002,12 @@ function drawSources(){
       + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…">'
       + esc(ptext) + '</textarea>'
       + '<div class="drop" id="drop_' + s.key + '">'
-      + '<input type="file" id="file_' + s.key + '" hidden '
-      + 'accept=".pdf,.docx,.doc,.txt,.md,.rtf,application/pdf,text/plain">'
+      // No accept filter: it makes the OS picker open on "Custom Files" with
+      // everything else greyed out, and the list was never right anyway — an
+      // .eml, a .pages, a .csv all convert fine through Drive. An unsupported
+      // file now fails on its own row with a reason, which is a better answer
+      // than being unable to select it.
+      + '<input type="file" id="file_' + s.key + '" hidden>'
       + '<button type="button" class="btn sm" data-pick="' + s.key + '">Upload a file</button>'
       + '<span class="fn' + (pfile ? ' has' : '') + '" id="fn_' + s.key + '">'
       + (pfile ? esc(pfile) + ' · attached' : 'PDF, Word, or plain text') + '</span>'
@@ -1280,8 +1284,7 @@ function rowInner(i){
       + '<textarea id="fixtx_' + r.key + '" placeholder="Paste the document text here…">'
       + '</textarea>'
       + '<div class="drop">'
-      + '<input type="file" id="fixf_' + r.key + '" hidden '
-      + 'accept=".pdf,.docx,.doc,.txt,.md,.rtf,application/pdf,text/plain">'
+      + '<input type="file" id="fixf_' + r.key + '" hidden>'
       + '<button type="button" class="btn sm" data-fixpick="' + r.key + '">Upload a file</button>'
       + '<span class="fn" id="fixfn_' + r.key + '">PDF, Word, or plain text</span>'
       + '<span style="flex:1"></span>'
