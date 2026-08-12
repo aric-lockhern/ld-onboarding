@@ -262,6 +262,20 @@ const FAKE = {
         text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
     ] },
   addRecentNote: { ok:true, notes:[] },
+  draftScopeEmail: { ok:true,
+    read:['Scope of work','Pitch deck'],
+    subject:'Scope confirmation — Harbor & Sons',
+    body:'Hi Dana,\n\nPutting what we agreed in writing so we are both working '
+      + 'from the same understanding.\n\nWhat we are doing\n· Google Ads '
+      + 'management\n· AI Search SEO, up to 2 blogs a month\n\nWhat this does '
+      + 'not include\n· Paid social of any kind\n· Website development beyond '
+      + 'landing pages\n\nFees\n· Google Ads management — £6,000/month\n\n'
+      + 'Drake',
+    // Named gaps rather than invented answers: the whole point is that a
+    // plausible guess in a contract restatement never gets caught.
+    gaps:['The contract does not state a notice period',
+          'No payment terms are given — net 30 was assumed on the call but is '
+          + 'not written down'] },
   deleteRecentNote: { ok:true, notes:[] },
   slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2, joined:false },
   clickupFindCalls: { ok:true, scanned:38, workspaceId:'18033356',
@@ -927,6 +941,30 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   shots.push(fProfOpen);
   await page.click('#proAll');
   await page.waitForTimeout(150);
+
+  // The scope confirmation is drafted from the contract, not from a template,
+  // and it must come back for review rather than sending. Gaps are the part
+  // that matters: a plausible guess in a restatement of a contract is never
+  // caught, so anything the contract does not say has to be shown, not filled.
+  const scopeShut = await page.$eval('#scopeCard', e => e.style.display);
+  if (scopeShut !== 'none') throw new Error('The scope card did not start folded');
+  await page.click('#scopeTog');
+  await page.waitForTimeout(120);
+  await page.click('#mkScope');
+  await page.waitForSelector('#scBody', { timeout: 5000 });
+  const scope = await page.evaluate(function(){
+    return { subject: document.getElementById('scSubject').value,
+             body: document.getElementById('scBody').value.length,
+             gaps: document.querySelectorAll('#scopeWrap .okbox').length };
+  });
+  if (!/Harbor & Sons/.test(scope.subject) || scope.body < 100 || !scope.gaps) {
+    throw new Error('The scope draft did not render for review: '
+      + JSON.stringify(scope));
+  }
+  await page.waitForTimeout(150);
+  const fScope = `${OUT}/${name}-detail-scope.png`;
+  await page.screenshot({ path: fScope, fullPage: name === 'desktop' });
+  shots.push(fScope);
 
   // Slack folds away now — it is a people picker, a channel picker and five
   // buttons, and on a client whose channel is set nobody needs any of it. Open
