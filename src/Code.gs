@@ -160,6 +160,39 @@ const A = {
   PHASE: 14, GATE: 15, ASSIGNED: 16, WIDTH: 16
 };
 
+/**
+ * The task library — one row per thing that can end up on a checklist.
+ *
+ * This used to be read by raw index in three places, on the grounds that it is
+ * config rather than records. That was defensible while nothing wrote to it.
+ * There is now a settings screen that edits every column, so it gets a map like
+ * the other tabs: a thirteenth column added by hand is exactly the change that
+ * silently shifts r[8] and moves every task to the wrong phase.
+ */
+const PLATFORM_HEADERS = [
+  'Task', 'Category', 'Method', 'Client Info Needed', 'How Access Is Granted',
+  'Typical Lead Time', 'Due Offset (days)', 'Default Owner', 'Phase', 'Gate',
+  'Always Include', 'Active', 'Business Type'
+];
+
+const P = {
+  TASK: 1, CATEGORY: 2, METHOD: 3, NEEDS: 4, HOW: 5, LEAD: 6, OFFSET: 7,
+  OWNER: 8, PHASE: 9, GATE: 10, ALWAYS: 11, ACTIVE: 12, BIZTYPE: 13, WIDTH: 13
+};
+
+/**
+ * Whether a task template applies to this kind of business.
+ *
+ * Blank means every client, which is what every existing row will be — a new
+ * column on a populated tab reads as empty, and empty has to mean "as before"
+ * or re-running setup() would quietly drop tasks off every checklist.
+ */
+function templateApplies_(rowBizType, clientBizType) {
+  const want = String(rowBizType || '').trim().toLowerCase();
+  if (!want || want === 'any') return true;
+  return want === String(clientBizType || '').trim().toLowerCase();
+}
+
 // ---------------------------------------------------------------- MENU
 
 function onOpen() {
@@ -217,11 +250,7 @@ function setup() {
     'Client ID', 'Company', 'Generated', 'Model', 'Plan Doc', 'Plan JSON'
   ]);
 
-  mkTab_(ss, TABS.PLATFORMS, [
-    'Task', 'Category', 'Method', 'Client Info Needed', 'How Access Is Granted',
-    'Typical Lead Time', 'Due Offset (days)', 'Default Owner', 'Phase', 'Gate',
-    'Always Include', 'Active'
-  ]);
+  mkTab_(ss, TABS.PLATFORMS, PLATFORM_HEADERS);
 
   mkTab_(ss, TABS.SERVICES, [
     'Service', 'Category', 'Platforms Needed', 'Default Monthly Fee', 'Active'
@@ -433,11 +462,9 @@ function repairTaskPhases_(ss) {
     for (let i = 0; i < names.length; i++) {
       if (String(names[i][0]).trim() !== fix.task) continue;
       const row = i + 2;
-      // Raw indices, because the Platforms tab is read positionally in three
-      // places and has no column map — see rule 2 in CLAUDE.md.
-      sh.getRange(row, 7).setValue(fix.offset);   // Due Offset (days)
-      sh.getRange(row, 9).setValue(fix.phase);    // Phase
-      sh.getRange(row, 10).setValue(fix.gate);    // Gate
+      sh.getRange(row, P.OFFSET).setValue(fix.offset);
+      sh.getRange(row, P.PHASE).setValue(fix.phase);
+      sh.getRange(row, P.GATE).setValue(fix.gate);
       fixed++;
       break;
     }
@@ -684,9 +711,11 @@ function showIntakeSidebar() {
 
 function getPlatformList() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.PLATFORMS);
-  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getValues();
-  return rows.filter(r => r[0] && r[11] !== false && r[10] !== true)
-    .map(r => ({ name: r[0], category: r[1], method: r[2] }));
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, P.WIDTH).getValues();
+  return rows
+    .filter(r => r[P.TASK - 1] && r[P.ACTIVE - 1] !== false && r[P.ALWAYS - 1] !== true)
+    .map(r => ({ name: r[P.TASK - 1], category: r[P.CATEGORY - 1],
+                 method: r[P.METHOD - 1] }));
 }
 
 function getIntakeOptions() {
@@ -1065,7 +1094,7 @@ function buildAccessRows_(clientId, company, platforms, skipWeeklyCall) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const access = ss.getSheetByName(TABS.ACCESS);
   const pSh = ss.getSheetByName(TABS.PLATFORMS);
-  const ref = pSh.getRange(2, 1, pSh.getLastRow() - 1, 12).getValues();
+  const ref = pSh.getRange(2, 1, pSh.getLastRow() - 1, P.WIDTH).getValues();
 
   const existing = access.getLastRow() > 1
     ? access.getRange(2, 1, access.getLastRow() - 1, 3).getValues()
@@ -1078,31 +1107,34 @@ function buildAccessRows_(clientId, company, platforms, skipWeeklyCall) {
   const rows = [];
 
   ref.forEach(r => {
-    const name = r[0];
-    if (!name || r[11] === false) return;
-    if (r[10] !== true && platforms.indexOf(name) === -1) return;
+    const name = r[P.TASK - 1];
+    if (!name || r[P.ACTIVE - 1] === false) return;
+    if (r[P.ALWAYS - 1] !== true && platforms.indexOf(name) === -1) return;
     if (existing.indexOf(name) !== -1) return;
+    // A template can be scoped to one kind of business — a Merchant Center
+    // task on a lead-gen account is a request nobody can action.
+    if (!templateApplies_(r[P.BIZTYPE - 1], client && client.bizType)) return;
 
     const status = (skipWeeklyCall && name === 'Weekly onboarding call') ? 'N/A' : 'Not started';
-    const offset = Number(r[6]);
+    const offset = Number(r[P.OFFSET - 1]);
     const due = isNaN(offset) ? '' : addDays_(anchor, offset);
 
     const row = new Array(A.WIDTH).fill('');
     row[A.ID - 1] = clientId;
     row[A.COMPANY - 1] = company;
     row[A.TASK - 1] = name;
-    row[A.CATEGORY - 1] = r[1];
-    row[A.METHOD - 1] = r[2];
-    row[A.NEEDS - 1] = r[3];
+    row[A.CATEGORY - 1] = r[P.CATEGORY - 1];
+    row[A.METHOD - 1] = r[P.METHOD - 1];
+    row[A.NEEDS - 1] = r[P.NEEDS - 1];
     row[A.STATUS - 1] = status;
     row[A.DUE - 1] = due;
-    row[A.OWNER - 1] = String(r[7] || '').trim() || defaultOwner;
+    row[A.OWNER - 1] = String(r[P.OWNER - 1] || '').trim() || defaultOwner;
     // Stamped at build time when the template names an owner, so "assigned N
     // days ago" is measured from the moment the work landed on someone rather
     // than from the first time anyone touched the dropdown.
     if (row[A.OWNER - 1]) row[A.ASSIGNED - 1] = new Date();
-    row[A.PHASE - 1] = Number(r[8]) || 1;
-    row[A.GATE - 1] = r[9] === true;
+    row[A.PHASE - 1] = Number(r[P.PHASE - 1]) || 1;
+    row[A.GATE - 1] = r[P.GATE - 1] === true;
     rows.push(row);
   });
 
