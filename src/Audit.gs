@@ -91,11 +91,11 @@ function buildActionItems(clientId, keys) {
         + 'against this client any more.' };
     }
   } else {
-    // Imported ClickUp calls carry a cu_ key rather than one of the fixed
+    // Imported calls carry a cu_ or call_ key rather than one of the fixed
     // names, and a promise made on last week's call counts exactly as much as
     // one made on the kickoff.
     docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1
-      || String(d.key || '').indexOf('cu_') === 0);
+      || isImportedCallKey_(d.key));
   }
 
   if (!docs.length) {
@@ -231,7 +231,7 @@ function actionSources_(clientId) {
       key: s.key,
       label: s.label,
       chars: s.chars || 0,
-      isCall: String(s.key).indexOf('cu_') === 0
+      isCall: isImportedCallKey_(s.key)
         || s.key === 'sales' || s.key === 'kickoff',
       suggested: !!preferred[s.key]
     }));

@@ -624,6 +624,7 @@ var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
+  'addManualCall', 'deleteRecentCall',
   'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
@@ -2421,10 +2422,17 @@ function recentCard(r){
     h += '<div class="pri-h">Last ' + calls.length + ' call'
       + (calls.length === 1 ? '' : 's') + '</div>'
       + calls.map(function(c){
+          var id = c.key || c.docId;
           return '<div class="crow"><div class="bd">'
             + '<div class="nm"><a href="' + esc(c.url) + '" target="_blank">'
-            + esc(c.name) + '</a></div>'
-            + '<div class="meta">' + esc(c.at) + '</div></div></div>';
+            + esc(c.name) + '</a>'
+            + (c.source === 'manual' ? ' <span class="pill">added by hand</span>' : '')
+            + '</div>'
+            + '<div class="meta">' + esc(c.at)
+            + (c.chars ? ' · ' + Math.round(c.chars / 1000) + 'k chars' : '')
+            + '</div></div>'
+            + '<button class="btn sm" data-delcall="' + esc(id) + '">Remove</button>'
+            + '</div>';
         }).join('');
   } else {
     h += '<div class="hint">' + (r.scanInstalled
@@ -2434,6 +2442,25 @@ function recentCard(r){
         + 'Enable daily call scan. Until then, use Find recent calls below.')
       + '</div>';
   }
+
+  // Not every call goes through the notetaker. A Google Doc someone typed up,
+  // a transcript the client mailed over, notes from a call nothing recorded —
+  // this is the way in for those, and it files them as documents so the
+  // profile and the action items read them like any other call.
+  h += '<div class="pri-h">Add a call</div>'
+    + '<div class="hint">A Google Doc or ClickUp link, or paste the transcript. '
+    + 'It is stored with the deal documents and read by the profile and the '
+    + 'action items. Calls added here are kept when the daily scan runs.</div>'
+    + '<div class="fields">'
+    + '<div class="f"><label>What it was</label>'
+      + '<input id="mcName" placeholder="Q3 planning call"></div>'
+    + '<div class="f"><label>Date</label>'
+      + '<input id="mcDate" placeholder="' + esc(r.today || '') + '"></div>'
+    + '<div class="f wide"><label>Link, or paste the transcript</label>'
+      + '<textarea id="mcText" style="min-height:90px" placeholder="'
+      + 'https://docs.google.com/document/d/… — or the whole transcript"></textarea>'
+      + '</div></div>'
+    + '<div class="startrow"><button class="btn" id="addCall">Add call</button></div>';
 
   var notes = r.notes || [];
   h += '<div class="pri-h">Notes' + (r.scanned
@@ -2457,6 +2484,23 @@ function recentCard(r){
     + '<div class="startrow"><button class="btn" id="addNote">Add note</button></div>';
 
   return h;
+}
+
+/**
+ * The stored documents.
+ *
+ * Its own function because adding a call adds a document — leaving the list
+ * showing what was there a minute ago is how somebody files a transcript and
+ * concludes nothing happened.
+ */
+function loadDocs(clientId){
+  api('getClientDocs', clientId).then(function(r){
+    if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(r);
+    wireDocs();
+  }).catch(function(){
+    if (el('docsWrap')) el('docsWrap').innerHTML =
+      '<h3>Documents</h3><div class="hint">Could not read them.</div>';
+  });
 }
 
 function loadRecent(clientId){
@@ -2486,6 +2530,39 @@ function wireRecent(clientId){
       });
     });
   }
+  if (el('addCall')){
+    el('addCall').addEventListener('click', function(){
+      var b = this, v = el('mcText').value.trim();
+      if (!v){ toast('Paste the transcript or give a link to it.', true); return; }
+      // A long transcript is a real fetch or a real write, so the button says
+      // so — a silent 20 seconds reads as nothing having happened, and the
+      // second click files it twice under a second key.
+      b.disabled = true; b.textContent = 'Reading…';
+      api('addManualCall', TOKEN, clientId, el('mcName').value.trim(), v,
+          el('mcDate').value.trim())
+        .then(function(r){
+          b.disabled = false; b.textContent = 'Add call';
+          if (!r.ok){ toast(r.message, true); return; }
+          toast('Filed ' + Math.round(r.chars / 1000) + 'k characters as '
+            + r.label + '.');
+          loadRecent(clientId);
+          // The document list and the action-item picker both change.
+          loadDocs(clientId);
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Add call'; fail(e);
+        });
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-delcall]'), function(b){
+    b.addEventListener('click', function(){
+      api('deleteRecentCall', TOKEN, clientId, b.getAttribute('data-delcall'))
+        .then(function(r){
+          if (!r.ok){ toast(r.message, true); return; }
+          toast('Removed from the list. The transcript is still on file.');
+          loadRecent(clientId);
+        }).catch(fail);
+    });
+  });
   [].forEach.call(document.querySelectorAll('[data-delnote]'), function(b){
     b.addEventListener('click', function(){
       api('deleteRecentNote', TOKEN, clientId, Number(b.getAttribute('data-delnote')))
@@ -3070,13 +3147,7 @@ function openClient(clientId){
     loadRecent(clientId);
     loadActions(clientId);
 
-    api('getClientDocs', clientId).then(function(r){
-      if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(r);
-      wireDocs();
-    }).catch(function(){
-      if (el('docsWrap')) el('docsWrap').innerHTML =
-        '<h3>Documents</h3><div class="hint">Could not read them.</div>';
-    });
+    loadDocs(clientId);
 
     el('delClient').addEventListener('click', function(){
       var b = this;

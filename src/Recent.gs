@@ -31,6 +31,9 @@ function getRecentContext(clientId) {
     calls: box.calls || [],
     notes: box.notes || [],
     scanned: box.scanned || '',
+    // For the date field on the add-a-call form: a blank box invites a format
+    // guess, and every call filed under a different one makes the list unsortable.
+    today: fmtDate_(new Date()),
     // Whether the daily scan is actually running, because "no calls" and "the
     // scan has never run" look identical and have different fixes.
     scanInstalled: hasCallScanTrigger_()
@@ -96,6 +99,156 @@ function deleteRecentNote(token, clientId, index) {
   return { ok: true, notes: box.notes };
 }
 
+// ---------------------------------------------------------------- CALLS
+
+/**
+ * A call that did not come from ClickUp.
+ *
+ * The notetaker covers most of them and the daily scan files those. The rest
+ * are real and regular: a call someone recorded to a Google Doc, a transcript
+ * mailed over by the client, a summary typed up from notes because nothing
+ * recorded it at all. Before this they had nowhere to go — the scan only ever
+ * writes what ClickUp knows about, so the only route in was to paste the whole
+ * thing into a note, where the profile and the action items never read it.
+ *
+ * It is stored on the draft as a document like any other, for the reason in
+ * ClickUpSync.gs: the draft is the deal's document record, and a call filed
+ * anywhere else is a call nobody finds.
+ *
+ * `raw` takes whatever the intake form takes — pasted text, a Google Doc link,
+ * a ClickUp link, an uploaded file — because resolveSource_ already knows how
+ * to read all of them and a second, worse reader is not worth having.
+ */
+function addManualCall(token, clientId, label, raw, when) {
+  checkToken_(token);
+
+  const name = String(label || '').trim() || 'Call';
+  if (!raw || (typeof raw === 'string' && !raw.trim())) {
+    return { ok: false, message: 'Nothing supplied — paste the transcript or '
+      + 'give a link to it.' };
+  }
+
+  const draftId = draftIdForClient_(clientId);
+  if (!draftId) {
+    return { ok: false, message: 'This client has no draft, so there is nowhere '
+      + 'to file the transcript. The draft it was created from may have been '
+      + 'deleted.' };
+  }
+
+  let text;
+  try {
+    text = resolveSource_(raw);
+  } catch (e) {
+    return { ok: false, message: (e && e.message) || String(e) };
+  }
+
+  text = String(text || '').trim();
+  if (!text) {
+    return { ok: false, message: 'That read as empty. If the content sits on a '
+      + 'page the link does not point at, open it, select all, and paste the '
+      + 'text in instead.' };
+  }
+
+  const at = String(when || '').trim() || fmtDate_(new Date());
+  const key = manualCallKey_(name, at);
+
+  let record;
+  try {
+    record = storeSource_(draftId, key, name, text, {
+      via: sourceKindLabel_(raw),
+      origin: (typeof raw === 'string') ? raw : '',
+      words: text.split(/\s+/).length,
+      preview: text.slice(0, 240).replace(/\s+/g, ' ').trim()
+    });
+  } catch (e) {
+    return { ok: false, message: 'Read ' + text.length + ' characters but could '
+      + 'not save them: ' + ((e && e.message) || String(e)) };
+  }
+
+  const box = readRecent_(clientId);
+  box.calls = (box.calls || []).filter(c => c.key !== key);
+  box.calls.unshift({
+    key: key,
+    name: name,
+    at: at,
+    // A link when there was one to keep; otherwise the Drive copy, which is
+    // the only place the pasted version exists.
+    url: (typeof raw === 'string' && /^https?:\/\//i.test(raw.trim()))
+      ? raw.trim()
+      : 'https://drive.google.com/file/d/' + record.fileId + '/view',
+    chars: text.length,
+    // What stops the daily scan from wiping it — see mergeCalls_.
+    source: 'manual'
+  });
+  box.calls = mergeCalls_(box.calls, []);
+  writeRecent_(clientId, box);
+
+  return { ok: true, key: key, label: name, chars: text.length,
+           words: text.split(/\s+/).length, calls: box.calls };
+}
+
+/**
+ * Takes a call off the list.
+ *
+ * The stored document is left in the draft's Drive folder on purpose. Removing
+ * a wrong entry from a list of four is a tidy-up; deleting the transcript
+ * somebody pasted in is a different act, and the two should not share a button.
+ */
+function deleteRecentCall(token, clientId, key) {
+  checkToken_(token);
+
+  const box = readRecent_(clientId);
+  const before = (box.calls || []).length;
+  box.calls = (box.calls || []).filter(c => String(c.key || c.docId) !== String(key));
+  if (box.calls.length === before) {
+    return { ok: false, message: 'That call is already off the list.' };
+  }
+
+  writeRecent_(clientId, box);
+  return { ok: true, calls: box.calls };
+}
+
+/**
+ * A key that is stable for the same call and distinct from another one.
+ *
+ * Re-pasting a transcript after fixing it should update the stored copy rather
+ * than file a second one beside it, so the key comes from what the person
+ * typed. Two calls genuinely called "Check-in" a fortnight apart are two calls,
+ * which is why the date is in it.
+ */
+function manualCallKey_(label, at) {
+  const slug = (label + '-' + at).toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+  return 'call_' + (slug || 'call');
+}
+
+/** Imported calls, whatever filed them. Audit.gs reads both prefixes. */
+function isImportedCallKey_(key) {
+  const k = String(key || '');
+  return k.indexOf('cu_') === 0 || k.indexOf('call_') === 0;
+}
+
+/**
+ * The call list after a scan.
+ *
+ * Manually added calls are kept whatever the scan finds. The scan writes what
+ * ClickUp happens to know about, and letting it overwrite the list would mean a
+ * transcript somebody pasted in on Monday quietly disappearing on Tuesday
+ * morning — with the document still on the draft and nothing on screen saying
+ * where it went.
+ */
+function mergeCalls_(existing, scanned) {
+  const manual = (existing || []).filter(c => c && c.source === 'manual');
+  const seen = {};
+  manual.forEach(c => { seen[c.key] = true; });
+
+  const room = Math.max(RECENT_CALL_LIMIT - manual.length, 0);
+  const fresh = (scanned || []).filter(c => !seen[c.docId] && !seen[c.key])
+                               .slice(0, room);
+
+  return manual.concat(fresh);
+}
+
 // ---------------------------------------------------------------- SCAN
 
 /**
@@ -145,12 +298,14 @@ function scanRecentCalls() {
         docId: d.id,
         name: d.name || 'Untitled',
         at: d.updated ? fmtDate_(new Date(Number(d.updated))) : '',
-        url: 'https://app.clickup.com/' + ws.id + '/docs/' + d.id
+        url: 'https://app.clickup.com/' + ws.id + '/docs/' + d.id,
+        source: 'clickup'
       }));
 
     const box = readRecent_(c.clientId);
     box.scanned = stamp;
-    box.calls = hits;
+    // Not `= hits`. Anything filed by hand stays — see mergeCalls_.
+    box.calls = mergeCalls_(box.calls, hits);
     writeRecent_(c.clientId, box);
     touched++;
   });

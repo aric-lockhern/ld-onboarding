@@ -266,10 +266,18 @@ const FAKE = {
   resetEmailTemplate: { ok:true },
   deleteTask: { ok:true },
   getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
+    today:'12 Aug 2026',
     calls:[
+      // One filed by hand, one found by the scan. They render differently and
+      // the daily scan must not evict the first.
+      { key:'call_q3-planning-call-8-aug-2026', name:'Q3 planning call',
+        at:'8 Aug 2026', chars:41200, source:'manual',
+        url:'https://docs.google.com/document/d/1AbCdEf/view' },
       { docId:'h6apc-44014', name:'Meeting - 08/06/2026', at:'6 Aug 2026',
+        source:'clickup',
         url:'https://app.clickup.com/18033356/docs/h6apc-44014' },
       { docId:'h6apc-41002', name:'Meeting - 07/16/2026', at:'16 Jul 2026',
+        source:'clickup',
         url:'https://app.clickup.com/18033356/docs/h6apc-41002' }
     ],
     notes:[
@@ -277,6 +285,9 @@ const FAKE = {
         text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
     ] },
   addRecentNote: { ok:true, notes:[] },
+  addManualCall: { ok:true, key:'call_q3-planning-call-8-aug-2026',
+                   label:'Q3 planning call', chars:41200, words:7300, calls:[] },
+  deleteRecentCall: { ok:true, calls:[] },
   draftScopeEmail: { ok:true,
     read:['Scope of work','Pitch deck'],
     subject:'Scope confirmation — Harbor & Sons',
@@ -875,10 +886,33 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // Recent context: the calls are links, not imports.
   const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
     els.map(e => e.getAttribute('href')));
-  if (recentLinks.length !== 2) {
+  if (recentLinks.length !== 3) {
     throw new Error('Recent calls did not render as links: '
       + JSON.stringify(recentLinks));
   }
+
+  // Not every call comes from the notetaker. The way in for a Google Doc or a
+  // pasted transcript has to be on this card, next to the calls it joins —
+  // filing one through the intake form means creating a second draft.
+  const addCall = await page.evaluate(() => ({
+    box: !!document.getElementById('mcText'),
+    button: !!document.getElementById('addCall'),
+    // A call added by hand is the one the daily scan could silently replace,
+    // so the list has to say which is which.
+    handMarked: /added by hand/.test(document.getElementById('recentWrap').innerHTML),
+    removable: document.querySelectorAll('[data-delcall]').length
+  }));
+  if (!addCall.box || !addCall.button) {
+    throw new Error('No way to add a non-ClickUp call: ' + JSON.stringify(addCall));
+  }
+  if (!addCall.handMarked || addCall.removable !== 3) {
+    throw new Error('Manual calls are not distinguishable or removable: '
+      + JSON.stringify(addCall));
+  }
+  await page.fill('#mcText', 'https://docs.google.com/document/d/1AbCdEf/edit');
+  await page.fill('#mcName', 'Q3 planning call');
+  await page.click('#addCall');
+  await page.waitForTimeout(250);
 
   // Deal documents fold away — a long list nobody opened the page to find.
   const docsShut = await page.$eval('#docsBody', e => e.style.display);
