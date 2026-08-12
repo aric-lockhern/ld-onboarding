@@ -267,6 +267,7 @@ function setup() {
   mkTab_(ss, TABS.ACTIONS, ACTION_HEADERS);
 
   seedPlatforms_(ss);
+  repairConfig_(ss);
   repairTaskPhases_(ss);
   seedServices_(ss);
   repairServices_(ss);
@@ -472,6 +473,42 @@ function repairTaskPhases_(ss) {
   return fixed;
 }
 
+/**
+ * Fills in Config values that are known and still blank.
+ *
+ * seedConfig_ bails once the tab has rows, so a default added in code after
+ * installation can never reach a sheet in use — the same trap as the services
+ * and the phases. This writes only where the cell is EMPTY, so anything
+ * anybody has typed is left exactly as it is.
+ *
+ * Deliberately narrow. These two are merged into copy that goes to clients,
+ * and both read as broken when unset: "[access email]" and "[Business Manager
+ * ID]" have both been sent to a client at least once.
+ */
+const CONFIG_DEFAULTS = [
+  ['Agency Access Email', 'marketing@lockherndigital.com'],
+  ['Meta Business Manager ID', '1255155904831766']
+];
+
+function repairConfig_(ss) {
+  const sh = ss.getSheetByName(TABS.CONFIG);
+  if (!sh || sh.getLastRow() < 2) return 0;
+
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+  let filled = 0;
+
+  CONFIG_DEFAULTS.forEach(d => {
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() !== d[0]) continue;
+      if (String(rows[i][1]).trim()) return;      // somebody set it — leave it
+      sh.getRange(i + 2, 2).setValue(d[1]);
+      filled++;
+      return;
+    }
+  });
+  return filled;
+}
+
 function repairServices_(ss) {
   const sh = ss.getSheetByName(TABS.SERVICES);
   if (!sh) return;
@@ -532,7 +569,8 @@ function seedConfig_(ss) {
   const rows = [
     ['Setting', 'Value', 'Notes'],
     ['Agency Name', 'Lockhern Digital', ''],
-    ['Agency Access Email', '', 'Fallback if a client has no alias'],
+    ['Agency Access Email', 'marketing@lockherndigital.com',
+      'What clients grant access to. Blank uses the per-client alias instead'],
     ['Alias Domain', 'lockherndigital.com', 'Aliases render as client@thisdomain'],
     ['Reply To', '', 'Where client replies land'],
     ['Email Signature', '', 'Appended to every instruction email'],
@@ -540,7 +578,8 @@ function seedConfig_(ss) {
     ['Digest Recipients', '', 'Comma-separated. Daily overdue digest goes here.'],
     ['Model', 'claude-opus-5', 'Anthropic model string'],
     ['Google Ads MCC ID', '', 'Merged into the Google Ads instructions'],
-    ['Meta Business Manager ID', '', 'Merged into the Meta instructions'],
+    ['Meta Business Manager ID', '1255155904831766',
+      'Merged into the Meta instructions as the partner ID'],
     ['Merchant Center MCA ID', '', 'Merged into the Merchant Center instructions'],
     ['Shopify Partner Name', '', 'Merged into the Shopify instructions'],
     ['Default Onboarding Owner', '', '']

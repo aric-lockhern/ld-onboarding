@@ -5,8 +5,15 @@
  * wraps the blocks a client actually needs into one message so we send
  * one email instead of nine.
  *
- * Merge tags: {{company}} {{contact}} {{agency}} {{alias}} {{owner}}
- *             {{mcc_id}} {{bm_id}} {{mca_id}} {{shopify_partner}}
+ * Merge tags: {{company}} {{contact}} {{agency}} {{alias}} {{access_email}}
+ *             {{owner}} {{mcc_id}} {{bm_id}} {{mca_id}} {{shopify_partner}}
+ *
+ * {{alias}} vs {{access_email}}. The alias is per client and is the better
+ * shape: it survives staffing changes and offboarding is one clean revoke.
+ * {{access_email}} reads Config "Agency Access Email" first, so a single shared
+ * inbox can be used instead — fewer addresses to create, at the cost of a
+ * revoke that has to be done account by account. Setting that Config value
+ * switches every template below; leaving it blank keeps the alias behaviour.
  */
 
 /**
@@ -20,7 +27,9 @@ const TEMPLATE_MERGE_FIELDS = [
   { tag: '{{company}}', means: 'Client company name' },
   { tag: '{{contact}}', means: 'Primary contact name' },
   { tag: '{{agency}}', means: 'Your agency name, from Config' },
-  { tag: '{{alias}}', means: 'The client email alias we ask them to grant' },
+  { tag: '{{alias}}', means: 'The per-client email alias' },
+  { tag: '{{access_email}}', means:
+    'What to grant access to — Config "Agency Access Email", else the alias' },
   { tag: '{{owner}}', means: 'Onboarding owner' },
   { tag: '{{mcc_id}}', means: 'Google Ads manager ID, from Config' },
   { tag: '{{bm_id}}', means: 'Meta Business Manager ID, from Config' },
@@ -70,87 +79,114 @@ The constraints list is the one people skip. It's also the one that turns into a
   'Google Ads': {
     subject: 'Google Ads access — {{company}}',
     body:
-`We'll send a manager account invitation from {{agency}} (manager ID {{mcc_id}}).
+`We manage Google Ads through our manager account, which means you keep ownership throughout and removing us later is one click.
 
-1. Send us your Google Ads Customer ID — top right of the account, formatted xxx-xxx-xxxx.
-2. Watch for the invitation, then go to Admin → Access and security → Managers.
+We need your Customer ID first.
+
+Finding it: sign in at ads.google.com and look at the top right of the screen, next to your account name. It is ten digits formatted xxx-xxx-xxxx. If you manage several accounts, send the ID of the one you want us on — not the manager account above it.
+
+Reply to this email with that number and we will send the invitation from {{agency}} (manager ID {{mcc_id}}).
+
+Accepting it, once it arrives:
+
+1. Tools → Setup → Account access, or Admin → Access and security on newer accounts.
+2. Open the Managers tab.
 3. Accept the request from {{mcc_id}}.
 
-We ask for Admin so we can manage billing-adjacent settings and conversion tracking. If that's a problem, Standard works for everything except billing.
-
-You keep ownership of the account throughout. Removing us later is one click from the same screen.`
+We ask for Admin so we can manage conversion tracking and billing-adjacent settings. Standard works for everything except billing if Admin is a problem.`
   },
 
   'Microsoft Ads': {
     subject: 'Microsoft Advertising access — {{company}}',
     body:
-`1. Send us your Microsoft Advertising Account ID or Customer ID — Settings → Accounts.
-2. We'll send a link request from our agency account.
-3. Approve it under Settings → Account access → Requests.
+`Same shape as Google Ads: we link through our manager account, you keep ownership.
 
-If you don't have a Microsoft Ads account yet, tell us and we'll create one under our agency and transfer ownership to you.`
+We need your Account Number first.
+
+Finding it: sign in at ads.microsoft.com, then Settings → Accounts. The Account Number is an alphanumeric code next to the account name — usually eight characters. It is not the Customer ID, which is the number above it; if you are unsure, send both.
+
+Reply with that, and either:
+
+· We send a link request from {{agency}} and you accept it under Settings → Accounts → Manage access, or
+· You add {{access_email}} directly under Settings → Account access → Users → Invite, with the Standard role.
+
+Either works. The link is tidier if Microsoft Ads was set up by a previous agency, because it does not depend on anyone still having the old sign-in.`
   },
 
   'Meta Ads': {
-    subject: 'Meta ad account access — {{company}}',
+    subject: 'Meta access — {{company}}',
     body:
-`This runs through Business Manager, so we never need your personal login.
+`Please grant {{agency}} access to your Meta assets through Business Settings, rather than adding anyone as an individual user. Partner access survives staffing changes on both sides and is revoked in one action.
 
-1. Send us your Business Manager ID — business.facebook.com → Business settings → Business info.
-2. We'll send a partner request from {{agency}} (partner ID {{bm_id}}).
-3. Go to Business settings → Partners → and approve the request.
-4. Assign us the ad account with Manage campaigns, plus the pixel and catalog if you have them.
+1. Go to Meta Business Settings.
+2. Select Partners from the left-hand menu.
+3. Click Add, then "Give a partner access to your assets".
+4. Enter our Business ID: {{bm_id}}
+5. Select the assets — Facebook Page, Instagram account, ad account, Pixel/Dataset, and product catalog if you have one.
+6. Enable the permissions needed to manage campaigns and the associated assets.
+7. Save changes.
 
-If your ad account isn't inside a Business Manager yet, that's the first step — you'll want it there regardless of who runs the account.`
+If any of those assets do not exist yet — commonly the catalog, or a Pixel that was never installed — tell us rather than creating them. Getting the structure right first time is much easier than merging duplicates later.`
   },
 
   'Meta / Instagram Organic': {
     subject: 'Facebook Page and Instagram access — {{company}}',
     body:
-`Same partner request as the ad account, so if you've already approved us there, this is just an asset assignment.
+`This comes through the same partner grant as the ad account, so if you have already done that step you can ignore this.
 
-1. Business settings → Partners → {{agency}}.
-2. Assign the Facebook Page with Content and Community activity access.
-3. Instagram access follows the Page — confirm the IG account is connected under Business settings → Accounts → Instagram accounts.
+1. Meta Business Settings → Partners → Add → "Give a partner access to your assets".
+2. Enter our Business ID: {{bm_id}}
+3. Under assets, select the Facebook Page and the Instagram account.
+4. Give content and community permissions — creating posts and replying to comments and messages.
 
-Send us the Instagram handle so we can verify we're pointed at the right profile. We don't need the Instagram password.`
+Two things worth checking while you are in there:
+
+· The Instagram account should be a Professional account and connected to the Page. If it is a personal account, converting it takes a minute and does not lose anything.
+· If the Page is still owned by a personal profile rather than a Business Portfolio, moving it into one is worth doing now. It is the single most common reason an agency handover turns into a two-week support ticket.`
   },
 
   'Google Merchant Center': {
-    subject: 'Merchant Center access — {{company}}',
+    subject: 'Google Merchant Center access — {{company}}',
     body:
-`1. Send us your Merchant ID — top right of Merchant Center.
-2. We'll send a link request from our multi-client account ({{mca_id}}).
-3. Approve it under Settings → Account access, or Settings → Multi-client account.
+`Merchant Center is where your product feed lives, and feed problems are the most common reason Shopping spend quietly underdelivers.
 
-If you'd rather add us as a user instead of linking accounts, add {{alias}} as Admin under Settings → People and access. Linking is cleaner but either works.`
+We need your Merchant Center ID first: sign in at merchants.google.com and look at the top right, under the account name. It is a number, usually eight or nine digits.
+
+Reply with it and then add us either way:
+
+· As a user — Settings (the gear) → People and access → Add person → {{access_email}} → Admin. Simplest, and enough for everything.
+· Or by accepting our advisor link from {{mca_id}}, under the same screen, if you would rather we came in through our manager account.
+
+If the feed is fed from Shopify through the Google & YouTube app rather than a standalone feed, mention that — it changes where we fix things and we would rather know before we start moving anything.`
   },
 
   'Shopify': {
-    subject: 'Shopify collaborator access — {{company}}',
+    subject: 'Shopify access — {{company}}',
     body:
-`We request access as a collaborator, which doesn't use one of your staff seats.
+`Shopify collaborator access rather than a staff account. It does not use a seat on your plan, it is scoped to only what we need, and you can revoke it without touching anyone else's login.
 
-1. Go to Settings → Users → Security and find your collaborator request code (4 digits). Send it to us along with your store URL.
-2. We'll send the request from {{shopify_partner}}.
-3. Approve it under Settings → Users → Collaborators.
+Two things to send us:
 
-Permissions we need: Products, Orders, Online Store, Apps, and Settings. If you'd rather start narrower, Products and Online Store unblock the feed work and we can ask for the rest later.
+1. Your myshopify URL — the permanent one, not your custom domain. It looks like your-store.myshopify.com. Find it in Shopify admin under Settings → Domains; it is listed as the store's primary .myshopify.com address, or just read it out of the browser address bar while you are in the admin.
 
-If you have collaborator requests locked to a code you'd rather not share, you can disable the code requirement temporarily instead.`
+2. Your collaborator request code. Shopify admin → Settings → Users → Security, under "Collaborator request". If it says "Only collaborators with a request code can send a request", the four-digit code is right there — send it. If it says anyone can request, no code is needed and you can tell us that instead.
+
+With those two we send the request, and it appears for you to approve under Settings → Users → Collaborators. We will ask for Orders, Products, and Themes at minimum; the exact list is on the request so you can see it before approving.`
   },
 
   'Google Analytics (GA4)': {
     subject: 'Google Analytics access — {{company}}',
     body:
-`1. Open analytics.google.com and select the {{company}} property.
-2. Admin → Property access management → the + button, top right.
-3. Add {{alias}} with the Administrator role.
-4. Leave "Notify new users by email" checked.
+`We need GA4 to see what happens after the click. Without it we are optimising to platform-reported conversions, which are consistently generous.
 
-Administrator lets us create conversions, audiences, and the Google Ads link. If your policy caps us at Editor, everything works except managing other users.
+1. Open analytics.google.com and check you are in the right property — the name is top left.
+2. Admin (bottom left) → Property access management.
+3. The + in the top right → Add users.
+4. Enter {{access_email}}, tick "Administrator", and leave "Notify by email" ticked.
 
-Also send us the Property ID (Admin → Property details, a 9-digit number).`
+Administrator lets us fix tracking rather than only look at it — creating conversion events, linking Google Ads, correcting attribution settings. If that is too much, Editor covers most of it but not the account links.
+
+While you are there: if there is an old Universal Analytics property still listed, tell us. The historical data in it stops being reachable at some point and it is worth exporting before that happens.`
   },
 
   'Google Tag Manager': {
@@ -166,15 +202,17 @@ Send us the container ID as well (GTM-XXXXXX).`
   },
 
   'Google Search Console': {
-    subject: 'Search Console access — {{company}}',
+    subject: 'Google Search Console access — {{company}}',
     body:
-`1. Open search.google.com/search-console and select the {{company}} property.
-2. Settings → Users and permissions → Add user.
-3. Add {{alias}} as a Full user.
+`Search Console is how we see what people actually search before they land on you, and which pages Google is having trouble with. Read access is enough for most of it; we ask for Full so we can submit sitemaps and request indexing when pages change.
 
-Full covers everything we need day to day. If we need to submit a change of address or manage other users later, we'll ask for Owner then.
+1. Open search.google.com/search-console and pick the property.
+2. Settings → Users and permissions.
+3. Add user → {{access_email}} → permission Full.
 
-If the property is a URL-prefix property rather than a domain property, let us know — we may recommend adding the domain property so we see all subdomains and protocols.`
+If you see more than one property listed — one for the domain and one for the URL prefix, or an http and an https version — add us to the domain property if there is one. It covers the others.
+
+If nobody has ever set Search Console up, say so and we will verify the domain ourselves; it needs one DNS record and we will send you the exact value.`
   },
 
   'Google Business Profile': {
@@ -200,15 +238,28 @@ Reddit has no partner-account structure like Google or Meta, so this is a direct
   },
 
   'Reddit Organic': {
-    subject: 'Reddit brand account access — {{company}}',
+    subject: 'Reddit account setup — {{company}}',
     body:
-`Reddit doesn't support delegated access for regular accounts, so this depends on what you're running:
+`Reddit does not have partner access the way Meta does, so this one needs a brand account that we work in together.
 
-If you have a brand account: share the credentials through a password manager — 1Password, Bitwarden, or LastPass all have a secure share link. Please don't email or Slack them.
+Please create a standalone Reddit account for {{company}}, if one does not exist already:
 
-If you moderate a subreddit: add {{alias}}'s Reddit username as a moderator under Mod Tools → User Management → Moderators. Send us the subreddit and we'll send the username.
+· Use a company-controlled email address, not an employee's.
+· Sign up with email and a unique password — not Google or Apple sign-in. Those tie the account to a personal login and cannot be handed over.
+· Choose a username closely tied to the brand.
+· Verify the email address.
+· Turn on two-factor authentication if you are able to share the backup codes.
 
-Either way, turn on two-factor and give us a recovery path that doesn't run through one person's phone.`
+Then send us, securely:
+
+· The Reddit username
+· The email address on the account
+· The password
+· How two-factor is set up, and the backup codes if it is on
+
+Please share the password through your password manager or another secure channel rather than in an email. If you do not have one, say so and we will send you a one-time secure link instead.
+
+We will finish the profile — image, description, brand presentation — and send the first batch of posts for your review before anything goes live.`
   },
 
   'WordPress': {
@@ -334,6 +385,10 @@ function mergeTags_(text, client) {
     contact: client.contact || 'there',
     agency: cfg('Agency Name') || 'Lockhern Digital',
     alias: client.alias || cfg('Agency Access Email') || '[access email]',
+    // The address we ask the client to grant. Config first, so one shared
+    // inbox can be used across every account; the per-client alias is the
+    // fallback and is still the better shape — see the note in the header.
+    access_email: cfg('Agency Access Email') || client.alias || '[access email]',
     owner: client.owner || '',
     mcc_id: cfg('Google Ads MCC ID') || '[MCC ID]',
     bm_id: cfg('Meta Business Manager ID') || '[Business Manager ID]',
