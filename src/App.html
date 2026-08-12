@@ -232,6 +232,7 @@
   .crow .meta{font-size:12.5px; color:var(--faint); margin-top:2px;
     overflow-wrap:anywhere}
   .crow .btn{flex:none; align-self:center}
+  .crow.off{opacity:.55}
   .task .ping{flex:none; width:30px; height:34px; padding:0; border-radius:7px;
     border:1px solid var(--line); background:var(--surface); cursor:pointer;
     color:var(--muted); font-size:13px; line-height:1}
@@ -567,6 +568,7 @@
     <button data-v="queue"><span class="ic">▸</span>Queue</button>
     <button data-v="clients"><span class="ic">▤</span>Clients</button>
     <button data-v="team"><span class="ic">◍</span>Team</button>
+    <button data-v="settings"><span class="ic">⚙</span>Settings</button>
     <div class="spacer"></div>
     <div class="foot">
       <button class="mono" id="refresh">↻ Refresh</button>
@@ -622,6 +624,8 @@ var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
+  'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
+  'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
@@ -709,6 +713,7 @@ var TITLES = {
   queue:['Queue','What can be sent, and what is blocking the rest'],
   clients:['Clients','Every account and where it has got to'],
   team:['Team','Who works here, what they cover, and which accounts they own'],
+  settings:['Settings','The task library and the email copy every client gets'],
   'new':['New client','One submit builds the record, tasks, folder and plan']
 };
 [].forEach.call(document.querySelectorAll('nav button[data-v]'), function(b){
@@ -730,6 +735,7 @@ function go(v){
   if (v === 'overview') renderOverview();
   else if (v === 'queue') renderQueue();
   else if (v === 'team') renderTeam();
+  else if (v === 'settings') renderSettings();
   else if (v === 'clients') renderClients();
   else renderIntake();
 }
@@ -932,6 +938,350 @@ function pField(field, label, value, options, area){
   }
   return '<div class="f' + (area ? ' wide' : '') + '"><label>' + esc(label) + '</label>'
     + input + '</div>';
+}
+
+// --------------------------------------------------------------- settings
+
+/**
+ * The task library and the email copy.
+ *
+ * Both already lived on tabs and both were already editable — by whoever knew
+ * which tab, which column, and that Gate is a checkbox rather than the word
+ * "yes". That is the same reason the Team tab sat empty for a month: a thing
+ * only one person can safely change is a thing that stops getting changed.
+ */
+var SETTINGS = { tab: 'tasks', lib: null, mail: null, editing: null };
+
+function renderSettings(){
+  el('view').innerHTML = '<div class="grp">Settings</div>'
+    + '<div class="card"><div class="sect">'
+    + '<div class="startrow" style="margin:0">'
+    + '<button class="btn' + (SETTINGS.tab === 'tasks' ? ' pri' : '') + '" '
+    + 'id="stTasks">Onboarding tasks</button>'
+    + '<button class="btn' + (SETTINGS.tab === 'mail' ? ' pri' : '') + '" '
+    + 'id="stMail">Email templates</button>'
+    + '<span class="note">Editing a template changes what the NEXT client gets. '
+    + 'Checklists that already exist are left alone.</span>'
+    + '</div></div></div>'
+    + '<div id="stBody">' + loading() + '</div>';
+
+  el('stTasks').addEventListener('click', function(){
+    SETTINGS.tab = 'tasks'; SETTINGS.editing = null; renderSettings();
+  });
+  el('stMail').addEventListener('click', function(){
+    SETTINGS.tab = 'mail'; SETTINGS.editing = null; renderSettings();
+  });
+
+  if (SETTINGS.tab === 'tasks') loadTaskLibrary();
+  else loadEmailTemplates();
+}
+
+function loadTaskLibrary(){
+  api('getTaskLibrary', TOKEN).then(function(r){
+    SETTINGS.lib = r;
+    if (!el('stBody')) return;
+    el('stBody').innerHTML = (r && r.ok) ? taskLibraryCard(r)
+      : emptyState('Could not load', (r && r.message) || 'No response.');
+    if (r && r.ok) wireTaskLibrary();
+  }).catch(function(e){
+    if (el('stBody')) el('stBody').innerHTML =
+      emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+/**
+ * The library, grouped by phase then category.
+ *
+ * Phase is the axis people think in — "what happens in phase 2" is a real
+ * question and "show me everything alphabetically" is not. Category is the
+ * channel grouping inside it.
+ */
+function taskLibraryCard(r){
+  var tasks = r.tasks || [];
+  var byPhase = {};
+  tasks.forEach(function(t){ (byPhase[t.phase] = byPhase[t.phase] || []).push(t); });
+
+  var h = '';
+  Object.keys(byPhase).sort().forEach(function(k){
+    var list = byPhase[k].slice().sort(function(a, b){
+      return (a.category || '').localeCompare(b.category || '')
+        || a.task.localeCompare(b.task);
+    });
+    h += '<div class="grp">Phase ' + esc(k) + ' <span class="n">'
+      + list.length + '</span></div><div class="card"><div class="sect">'
+      + list.map(function(t){
+          var bits = [t.category || 'Uncategorised', t.method];
+          if (t.always) bits.push('always included');
+          if (t.bizType) bits.push(t.bizType + ' only');
+          if (t.gate) bits.push('gate');
+          if (t.offset !== '') bits.push('due +' + t.offset + 'd');
+          if (t.owner) bits.push(t.owner);
+          return '<div class="crow' + (t.active ? '' : ' off') + '">'
+            + '<div class="bd"><div class="nm">' + esc(t.task)
+            + (t.active ? '' : ' <span class="pill">inactive</span>') + '</div>'
+            + '<div class="meta">' + esc(bits.join(' · ')) + '</div></div>'
+            + '<button class="btn sm" data-edit-task="' + t.row + '">Edit</button>'
+            + '</div>';
+        }).join('')
+      + '</div></div>';
+  });
+
+  if (!tasks.length){
+    h = emptyState('No task templates',
+      'Run setup() in the sheet to seed the standard library.');
+  }
+
+  h += '<div class="grp">Editor</div><div class="card">'
+    + '<div class="sect" id="stEdit">'
+    + (SETTINGS.editing
+        ? taskTemplateForm(SETTINGS.editing, r)
+        : '<h3>Nobody selected</h3><div class="hint" style="margin:0">Pick a task '
+          + 'above, or add one.</div>')
+    + '</div><div class="sect"><div class="startrow">'
+    + '<button class="btn pri" id="addTaskTpl">+ Add a task</button></div>'
+    + '</div></div>';
+  return h;
+}
+
+function taskTemplateForm(t, r){
+  t = t || { row:0, task:'', category:'', method:'INTERNAL', needs:'', how:'',
+             lead:'', offset:'', owner:'', phase:1, gate:false, always:false,
+             active:true, bizType:'' };
+
+  function sel(id, val, opts, blank){
+    return '<select id="' + id + '">'
+      + (blank ? '<option value="">' + esc(blank) + '</option>' : '')
+      + opts.map(function(o){
+          return '<option' + (String(o) === String(val) ? ' selected' : '') + '>'
+            + esc(o) + '</option>';
+        }).join('') + '</select>';
+  }
+
+  return '<h3>' + (t.row ? esc(t.task) : 'New task') + '</h3>'
+    + '<div class="hint">The name is the key. Every checklist matches on it, so '
+    + 'renaming one here does not rename it on a client that already has it.</div>'
+    + '<input type="hidden" id="tpRow" value="' + (t.row || 0) + '">'
+    + '<div class="fields">'
+    + '<div class="f"><label>Task</label><input id="tpTask" value="' + esc(t.task) + '"></div>'
+    + '<div class="f"><label>Category</label><input id="tpCat" value="'
+      + esc(t.category) + '" placeholder="Paid, Organic, Measurement…"></div>'
+    + '<div class="f"><label>Phase</label>' + sel('tpPhase', t.phase, r.phases) + '</div>'
+    + '<div class="f"><label>How access is granted</label>'
+      + sel('tpMethod', t.method, r.methods) + '</div>'
+    + '<div class="f"><label>Business type</label>'
+      + sel('tpBiz', t.bizType, r.bizTypes, 'Any') + '</div>'
+    + '<div class="f"><label>Default owner</label>'
+      + sel('tpOwner', t.owner, r.team, 'Onboarding owner') + '</div>'
+    + '<div class="f"><label>Due offset (days from contract start)</label>'
+      + '<input id="tpOffset" type="number" value="' + esc(t.offset) + '"></div>'
+    + '<div class="f"><label>Typical lead time</label>'
+      + '<input id="tpLead" value="' + esc(t.lead) + '" placeholder="1-3 days"></div>'
+    + '<div class="f wide"><label>What we need from the client</label>'
+      + '<input id="tpNeeds" value="' + esc(t.needs) + '"></div>'
+    + '<div class="f wide"><label>How it is granted, in words</label>'
+      + '<textarea id="tpHow">' + esc(t.how) + '</textarea></div>'
+    + '</div>'
+    + '<div class="startrow">'
+    + '<label class="mini"><input type="checkbox" id="tpAlways"'
+      + (t.always ? ' checked' : '') + '> Always include</label>'
+    + '<label class="mini"><input type="checkbox" id="tpGate"'
+      + (t.gate ? ' checked' : '') + '> Gate</label>'
+    + '<label class="mini"><input type="checkbox" id="tpActive"'
+      + (t.active ? ' checked' : '') + '> Active</label>'
+    + (t.row ? '<button class="btn danger" id="tpDel">Delete</button>' : '')
+    + '<button class="btn" id="tpCancel">Cancel</button>'
+    + '<button class="btn pri" id="tpSave">Save</button></div>'
+    + '<div class="hint" style="margin:10px 0 0">Always include puts it on every '
+    + 'checklist whatever was sold. Gate holds the next phase until it is done — '
+    + 'use it sparingly, a gate on something that always trails stalls every '
+    + 'account. Inactive keeps the row but stops it being added to anyone new.</div>';
+}
+
+function wireTaskLibrary(){
+  [].forEach.call(document.querySelectorAll('[data-edit-task]'), function(b){
+    b.addEventListener('click', function(){
+      var row = Number(b.getAttribute('data-edit-task'));
+      SETTINGS.editing = (SETTINGS.lib.tasks || [])
+        .filter(function(t){ return t.row === row; })[0];
+      renderSettings();
+    });
+  });
+
+  if (el('addTaskTpl')){
+    el('addTaskTpl').addEventListener('click', function(){
+      SETTINGS.editing = null;
+      el('stEdit').innerHTML = taskTemplateForm(null, SETTINGS.lib);
+      wireTaskForm();
+      el('stEdit').scrollIntoView({ behavior:'smooth', block:'nearest' });
+    });
+  }
+  wireTaskForm();
+}
+
+function wireTaskForm(){
+  if (!el('tpSave')) return;
+
+  el('tpCancel').addEventListener('click', function(){
+    SETTINGS.editing = null; renderSettings();
+  });
+
+  if (el('tpDel')){
+    el('tpDel').addEventListener('click', function(){
+      var b = this;
+      if (b.getAttribute('data-armed') !== '1'){
+        b.setAttribute('data-armed', '1'); b.textContent = 'Really delete?';
+        setTimeout(function(){
+          if (!b.parentNode) return;
+          b.removeAttribute('data-armed'); b.textContent = 'Delete';
+        }, 5000);
+        return;
+      }
+      b.disabled = true;
+      api('deleteTaskTemplate', TOKEN, Number(el('tpRow').value)).then(function(r){
+        if (!r.ok){ b.disabled = false; b.textContent = 'Delete'; toast(r.message, true); return; }
+        toast('Deleted "' + r.task + '". Existing checklists keep it.');
+        SETTINGS.editing = null; renderSettings();
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Delete'; fail(e);
+      });
+    });
+  }
+
+  el('tpSave').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Saving…';
+    api('saveTaskTemplate', TOKEN, {
+      row: Number(el('tpRow').value) || 0,
+      task: el('tpTask').value,
+      category: el('tpCat').value,
+      method: el('tpMethod').value,
+      needs: el('tpNeeds').value,
+      how: el('tpHow').value,
+      lead: el('tpLead').value,
+      offset: el('tpOffset').value,
+      owner: el('tpOwner').value,
+      phase: Number(el('tpPhase').value) || 1,
+      gate: el('tpGate').checked,
+      always: el('tpAlways').checked,
+      active: el('tpActive').checked,
+      bizType: el('tpBiz').value
+    }).then(function(r){
+      b.disabled = false; b.textContent = 'Save';
+      if (!r.ok){ toast(r.message, true); return; }
+      toast(r.created ? 'Added "' + r.task + '".' : 'Saved.');
+      SETTINGS.editing = null; renderSettings();
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Save'; fail(e);
+    });
+  });
+}
+
+// ------------------------------------------------------- email templates
+
+function loadEmailTemplates(){
+  api('getEmailTemplates', TOKEN).then(function(r){
+    SETTINGS.mail = r;
+    if (!el('stBody')) return;
+    el('stBody').innerHTML = (r && r.ok) ? emailTemplatesCard(r)
+      : emptyState('Could not load', (r && r.message) || 'No response.');
+    if (r && r.ok) wireEmailTemplates();
+  }).catch(function(e){
+    if (el('stBody')) el('stBody').innerHTML =
+      emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+function emailTemplatesCard(r){
+  function group(title, list, hint){
+    if (!list.length) return '';
+    return '<div class="grp">' + esc(title) + ' <span class="n">' + list.length
+      + '</span></div><div class="card"><div class="sect">'
+      + (hint ? '<div class="hint">' + hint + '</div>' : '')
+      + list.map(function(t){
+          return '<div class="crow"><div class="bd">'
+            + '<div class="nm">' + esc(t.label)
+            + (t.subject ? '' : ' <span class="pill">no copy yet</span>') + '</div>'
+            + '<div class="meta">' + esc(t.subject || t.when || 'Not written') + '</div>'
+            + '</div>'
+            + '<button class="btn sm" data-edit-mail="' + esc(t.key) + '">'
+            + (t.subject ? 'Edit' : 'Write') + '</button></div>';
+        }).join('')
+      + '</div></div>';
+  }
+
+  var h = group('Moments', r.moments || [],
+    'Emails that belong to a point in the relationship rather than to a task. '
+    + 'Before this they lived in somebody\'s drafts folder.');
+
+  h += group('Per task', r.tasks || [],
+    'The access request for each task. Anything left blank falls back to the '
+    + 'wording shipped in the code, so an empty row is not a broken email.');
+
+  h += group('Orphaned', r.orphans || [],
+    'Copy on the Templates tab matching no task or moment — usually a task '
+    + 'renamed since. Nothing sends these.');
+
+  h += '<div class="grp">Editor</div><div class="card"><div class="sect" id="mailEdit">'
+    + '<h3>Nothing open</h3><div class="hint" style="margin:0">Pick a template '
+    + 'above.</div></div></div>';
+  return h;
+}
+
+function mailForm(t, merge){
+  return '<h3>' + esc(t.label) + '</h3>'
+    + (t.when ? '<div class="hint">' + esc(t.when) + '</div>' : '')
+    + '<input type="hidden" id="mlKey" value="' + esc(t.key) + '">'
+    + '<div class="fields">'
+    + '<div class="f wide"><label>Subject</label>'
+      + '<input id="mlSubject" value="' + esc(t.subject) + '"></div>'
+    + '<div class="f wide"><label>Body</label>'
+      + '<textarea id="mlBody" style="min-height:220px">' + esc(t.body) + '</textarea></div>'
+    + '</div>'
+    + '<div class="pri-h">Merge tags</div>'
+    + '<div class="tags">' + (merge || []).map(function(m){
+        return '<span class="tag" title="' + esc(m.means) + '">' + esc(m.tag) + '</span>';
+      }).join('') + '</div>'
+    + '<div class="startrow">'
+    + (t.row ? '<button class="btn" id="mlReset">Reset to the shipped copy</button>' : '')
+    + '<button class="btn" id="mlCancel">Cancel</button>'
+    + '<button class="btn pri" id="mlSave">Save</button></div>';
+}
+
+function wireEmailTemplates(){
+  [].forEach.call(document.querySelectorAll('[data-edit-mail]'), function(b){
+    b.addEventListener('click', function(){
+      var key = b.getAttribute('data-edit-mail');
+      var all = (SETTINGS.mail.moments || [])
+        .concat(SETTINGS.mail.tasks || [], SETTINGS.mail.orphans || []);
+      var t = all.filter(function(x){ return x.key === key; })[0];
+      if (!t) return;
+      el('mailEdit').innerHTML = mailForm(t, SETTINGS.mail.merge);
+      el('mailEdit').scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+      el('mlCancel').addEventListener('click', function(){ loadEmailTemplates(); });
+
+      if (el('mlReset')){
+        el('mlReset').addEventListener('click', function(){
+          api('resetEmailTemplate', TOKEN, key).then(function(r){
+            toast(r.ok ? 'Reset to the shipped copy.' : r.message, !r.ok);
+            if (r.ok) loadEmailTemplates();
+          }).catch(fail);
+        });
+      }
+
+      el('mlSave').addEventListener('click', function(){
+        var sb = this; sb.disabled = true; sb.textContent = 'Saving…';
+        api('saveEmailTemplate', TOKEN, key, el('mlSubject').value, el('mlBody').value)
+          .then(function(r){
+            sb.disabled = false; sb.textContent = 'Save';
+            if (!r.ok){ toast(r.message, true); return; }
+            toast('Saved.');
+            loadEmailTemplates();
+          }).catch(function(e){
+            sb.disabled = false; sb.textContent = 'Save'; fail(e);
+          });
+      });
+    });
+  });
 }
 
 // ------------------------------------------------------------------- team
@@ -2446,7 +2796,10 @@ function openClient(clientId){
     h += '<div class="grp">Recent context</div><div class="card">'
       + '<div class="sect" id="recentWrap">' + loading() + '</div></div>';
 
-    h += '<div class="grp">Slack</div><div class="card">'
+    h += '<div class="grp"><button class="phtog" id="slackTog">'
+      + '<span class="tw">▶</span>Slack <span class="st">'
+      + (c.slack ? esc(c.slack) : 'no channel yet') + '</span></button></div>'
+      + '<div class="card" id="slackCard" style="display:none">'
       + '<div class="sect" id="slackWrap">' + slackCard(c) + '</div></div>';
 
     h += '<div class="grp">Action items</div><div class="card">'
@@ -2564,6 +2917,14 @@ function openClient(clientId){
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
 
+    if (el('slackTog')){
+      el('slackTog').addEventListener('click', function(){
+        var b = el('slackCard');
+        var shut = b.style.display === 'none';
+        b.style.display = shut ? '' : 'none';
+        el('slackTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+      });
+    }
     wireSlack(clientId, c);
     wireCalls(clientId);
     loadRecent(clientId);

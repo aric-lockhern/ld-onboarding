@@ -9,6 +9,26 @@
  *             {{mcc_id}} {{bm_id}} {{mca_id}} {{shopify_partner}}
  */
 
+/**
+ * The merge tags a template can use, for the settings editor to list.
+ *
+ * Kept beside the copy it documents. A merge field list in a comment is one
+ * nobody editing through the web app will ever see, and a typo'd tag renders
+ * as literal braces in a client's inbox.
+ */
+const TEMPLATE_MERGE_FIELDS = [
+  { tag: '{{company}}', means: 'Client company name' },
+  { tag: '{{contact}}', means: 'Primary contact name' },
+  { tag: '{{agency}}', means: 'Your agency name, from Config' },
+  { tag: '{{alias}}', means: 'The client email alias we ask them to grant' },
+  { tag: '{{owner}}', means: 'Onboarding owner' },
+  { tag: '{{mcc_id}}', means: 'Google Ads manager ID, from Config' },
+  { tag: '{{bm_id}}', means: 'Meta Business Manager ID, from Config' },
+  { tag: '{{mca_id}}', means: 'Merchant Center advisor ID, from Config' },
+  { tag: '{{shopify_partner}}', means: 'Shopify partner name, from Config' }
+];
+
+
 const TEMPLATES = {
 
   'Media billing setup': {

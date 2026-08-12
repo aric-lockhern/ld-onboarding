@@ -204,6 +204,51 @@ const FAKE = {
   updateActionItem: { ok:true },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
   addTask: { ok:true, task:'Chase the dev for the theme file', phase:2 },
+  getTaskLibrary: { ok:true, methods:['INTERNAL','API','SEMI-API','EMAIL','MANUAL'],
+    categories:['Internal','Paid','Measurement'], bizTypes:['Lead Gen','eCommerce'],
+    team:['Drake King','Alexandra McCurdy'], phases:[1,2,3,4,5],
+    tasks:[
+      { row:2, task:'Lockhern email alias', category:'Internal', method:'INTERNAL',
+        needs:'', how:'', lead:'Same day', offset:0, owner:'', phase:1,
+        gate:true, always:true, active:true, bizType:'' },
+      { row:6, task:'Google Ads', category:'Paid', method:'API',
+        needs:'Customer ID', how:'AddClientLinks', lead:'1-3 days', offset:5,
+        owner:'Drake King', phase:2, gate:true, always:false, active:true, bizType:'' },
+      // Scoped to one business type, and switched off — the two states the
+      // library exists to make editable.
+      { row:9, task:'Google Merchant Center', category:'Feed', method:'API',
+        needs:'Merchant ID', how:'accounts.link', lead:'1-2 days', offset:3,
+        owner:'', phase:2, gate:true, always:false, active:true, bizType:'eCommerce' },
+      { row:14, task:'Legacy Bing import', category:'Paid', method:'MANUAL',
+        needs:'', how:'', lead:'', offset:'', owner:'', phase:2,
+        gate:false, always:false, active:false, bizType:'' }
+    ] },
+  saveTaskTemplate: { ok:true, row:15, created:true, task:'Shopify theme access' },
+  deleteTaskTemplate: { ok:true, task:'Legacy Bing import' },
+  getEmailTemplates: { ok:true,
+    merge:[{ tag:'{{company}}', means:'Client company name' },
+           { tag:'{{contact}}', means:'Primary contact name' },
+           { tag:'{{alias}}', means:'The client email alias' }],
+    moments:[
+      { key:'_welcome', label:'Welcome email', kind:'moment', row:2,
+        when:'Sent once the client record exists.', subject:'Welcome to {{agency}}',
+        body:'Hi {{contact}},\n\nDelighted to be working with {{company}}.' },
+      { key:'_scope', label:'Scope confirmation', kind:'moment', row:0,
+        when:'Confirms in writing what was bought.', subject:'', body:'' }
+    ],
+    tasks:[
+      { key:'Google Ads', label:'Google Ads', kind:'task', row:3,
+        when:'', subject:'Google Ads access — {{company}}', body:'Steps…' },
+      { key:'Meta Ads', label:'Meta Ads', kind:'task', row:0,
+        when:'', subject:'', body:'' }
+    ],
+    orphans:[
+      { key:'Bing Ads', label:'Bing Ads', kind:'orphan', row:8,
+        when:'No task or moment of this name — probably renamed.',
+        subject:'Bing access', body:'Old copy' }
+    ] },
+  saveEmailTemplate: { ok:true, row:2, created:false },
+  resetEmailTemplate: { ok:true },
   deleteTask: { ok:true },
   getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
     calls:[
@@ -469,7 +514,7 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.press('#pin', 'Enter');
   await page.waitForSelector('#app.on', { timeout: 5000 });
 
-  for (const view of ['overview', 'queue', 'clients', 'team', 'new']) {
+  for (const view of ['overview', 'queue', 'clients', 'team', 'settings', 'new']) {
     // "New client" is the header CTA, not a sidebar item.
     await page.click(view === 'new' ? '#newBtn' : `nav button[data-v="${view}"]`);
     await page.waitForTimeout(250);
@@ -530,6 +575,46 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       }
       await page.click('#rosterAdd');
       await page.waitForTimeout(400);
+    }
+
+    // Settings is where the task library and the email copy become editable by
+    // someone who does not know which tab Gate lives on.
+    if (view === 'settings') {
+      await page.waitForSelector('[data-edit-task]', { timeout: 5000 });
+      // An inactive template must still be listed — it is the row somebody
+      // needs to find in order to switch it back on.
+      const off = await page.$$eval('.crow.off .nm', els => els.map(e => e.textContent));
+      if (!off.some(t => /Legacy Bing import/.test(t))) {
+        throw new Error('Inactive task templates are not listed: ' + JSON.stringify(off));
+      }
+      await page.click('[data-edit-task="9"]');
+      await page.waitForSelector('#tpTask', { timeout: 5000 });
+      const biz = await page.$eval('#tpBiz', s => s.value);
+      if (biz !== 'eCommerce') {
+        throw new Error('The business-type scope did not load into the form: ' + biz);
+      }
+      await page.waitForTimeout(200);
+      const fSet = `${OUT}/${name}-settings-tasks.png`;
+      await page.screenshot({ path: fSet, fullPage: name === 'desktop' });
+      shots.push(fSet);
+
+      await page.click('#stMail');
+      await page.waitForSelector('[data-edit-mail]', { timeout: 5000 });
+      // A template with no copy has to be offered to WRITE, not to edit — the
+      // useful question is which ones are still empty.
+      const mailBtns = await page.$$eval('[data-edit-mail]', els =>
+        els.map(e => e.textContent.trim()));
+      if (!mailBtns.includes('Write') || !mailBtns.includes('Edit')) {
+        throw new Error('Email template buttons do not distinguish empty from written: '
+          + JSON.stringify(mailBtns));
+      }
+      await page.click('[data-edit-mail="_welcome"]');
+      await page.waitForSelector('#mlBody', { timeout: 5000 });
+      await page.waitForTimeout(200);
+      const fMail = `${OUT}/${name}-settings-email.png`;
+      await page.screenshot({ path: fMail, fullPage: name === 'desktop' });
+      shots.push(fMail);
+      SETTINGS_DONE: ;
     }
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
@@ -841,6 +926,14 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.screenshot({ path: fProfOpen, fullPage: name === 'desktop' });
   shots.push(fProfOpen);
   await page.click('#proAll');
+  await page.waitForTimeout(150);
+
+  // Slack folds away now — it is a people picker, a channel picker and five
+  // buttons, and on a client whose channel is set nobody needs any of it. Open
+  // it before anything below tries to click into it.
+  const slackShut = await page.$eval('#slackCard', e => e.style.display);
+  if (slackShut !== 'none') throw new Error('The Slack card did not start folded');
+  await page.click('#slackTog');
   await page.waitForTimeout(150);
 
   // Regression: the Slack card painted "Loading the team…" and stayed there
