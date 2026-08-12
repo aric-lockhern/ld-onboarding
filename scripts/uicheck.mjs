@@ -266,17 +266,49 @@ const FAKE = {
   resetEmailTemplate: { ok:true },
   deleteTask: { ok:true },
   getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
+    today:'12 Aug 2026',
     calls:[
+      // One filed by hand, one found by the scan. They render differently and
+      // the daily scan must not evict the first.
+      { key:'call_q3-planning-call-8-aug-2026', name:'Q3 planning call',
+        at:'8 Aug 2026', chars:41200, source:'manual',
+        url:'https://docs.google.com/document/d/1AbCdEf/view' },
       { docId:'h6apc-44014', name:'Meeting - 08/06/2026', at:'6 Aug 2026',
+        source:'clickup',
         url:'https://app.clickup.com/18033356/docs/h6apc-44014' },
       { docId:'h6apc-41002', name:'Meeting - 07/16/2026', at:'16 Jul 2026',
+        source:'clickup',
         url:'https://app.clickup.com/18033356/docs/h6apc-41002' }
     ],
     notes:[
       { at:'11 Aug 2026', by:'aric',
         text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
     ] },
+  // A 1x1 transparent GIF is a real image the browser will actually paint,
+  // which is what makes "did the photo replace the initials" testable.
+  getContactPhoto: { ok:true, photo:'data:image/gif;base64,'
+    + 'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' },
+  setContactPhoto: { ok:true, photo:'data:image/gif;base64,'
+    + 'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' },
+  clearContactPhoto: { ok:true, photo:'' },
+  getClientTeam: { ok:true,
+    members:[
+      // Three ways onto an account, and only the third can be removed here.
+      { name:'Drake King', known:true, role:'Paid lead', tasks:6,
+        why:['Onboarding owner','Owns tasks'], pinned:false },
+      { name:'Priya Raman', known:true, role:'Analytics', tasks:3,
+        why:['Owns tasks'], pinned:false },
+      { name:'Alexandra McCurdy', known:true, role:'Strategy', tasks:0,
+        why:['Added to the account'], pinned:true }
+    ],
+    available:[{ name:'Sam Okafor', role:'Organic social', skills:['Reddit'] }],
+    teamEmpty:false },
+  addClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
+  removeClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
   addRecentNote: { ok:true, notes:[] },
+  addManualCall: { ok:true, key:'call_q3-planning-call-8-aug-2026',
+                   label:'Q3 planning call', chars:41200, words:7300, calls:[] },
+  deleteRecentCall: { ok:true, calls:[] },
   draftScopeEmail: { ok:true,
     read:['Scope of work','Pitch deck'],
     subject:'Scope confirmation — Harbor & Sons',
@@ -314,7 +346,10 @@ const FAKE = {
     // Sizes are the point of the picker: the transcripts are what pushed the
     // request past the fetch deadline, and two labels alone hide that.
     sources:[
-      { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:true },
+      // With an audit on file it is the default and the pitch deck is not:
+      // ticking both is how the request gets big enough to time out again.
+      { key:'audit', label:'Audit presentation', chars:21400, isCall:false, suggested:true },
+      { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:false },
       { key:'sow', label:'Scope of work', chars:17335, isCall:false, suggested:true },
       { key:'sales', label:'Sales call transcript', chars:18039, isCall:true, suggested:false },
       { key:'kickoff', label:'Onboarding / kickoff call transcript', chars:62476, isCall:true, suggested:false },
@@ -872,13 +907,109 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   const reopened = await page.$eval('[data-phbody="1"]', e => e.style.display);
   if (reopened === 'none') throw new Error('A folded phase would not reopen');
 
+  // A mark in front of every task name. Twenty rows of plain text is a list
+  // you read; twenty marked rows is a list you glance at. The Google Merchant
+  // Center row must NOT take the Google mark — longest keyword wins, and
+  // getting that backwards is the whole reason the table is ordered.
+  const marks = await page.evaluate(() => ({
+    onTasks: document.querySelectorAll('.task .n .mk').length,
+    tasks: document.querySelectorAll('.task').length,
+    merchant: (function(){
+      var m = brandFor('Google Merchant Center');
+      return m && m[2];
+    })(),
+    ads: (function(){ var m = brandFor('Google Ads'); return m && m[2]; })(),
+    ga: (function(){ var m = brandFor('Google Analytics (GA4)'); return m && m[2]; })(),
+    unknown: brandFor('Chase the dev for the theme file')
+  }));
+  if (!marks.tasks || marks.onTasks !== marks.tasks) {
+    throw new Error('Task rows are missing marks: ' + JSON.stringify(marks));
+  }
+  if (marks.merchant !== 'MC' || marks.ads !== 'G' || marks.ga !== 'GA') {
+    throw new Error('Brand matching picked the wrong mark: ' + JSON.stringify(marks));
+  }
+  if (marks.unknown) {
+    throw new Error('A hand-added task matched a brand it has nothing to do with');
+  }
+
+  // The contact's photo. It arrives after the page paints, so the card has to
+  // render with initials first and swap — a card that only appears once the
+  // photo lands is a card that never appears for the clients without one.
+  const photo = await page.evaluate(() => ({
+    img: document.querySelectorAll('#photoWrap .ph').length,
+    fallback: document.querySelectorAll('#photoWrap .av').length,
+    canEdit: !!document.getElementById('phEdit')
+  }));
+  if (photo.img !== 1 || photo.fallback !== 0 || !photo.canEdit) {
+    throw new Error('The contact photo did not render: ' + JSON.stringify(photo));
+  }
+  // The form is the whole feature — LinkedIn cannot be read automatically, so
+  // the one manual step has to be reachable and has to explain itself.
+  await page.click('#phEdit');
+  const form = await page.evaluate(() => ({
+    open: document.getElementById('phForm').style.display,
+    saysWhy: /media\.licdn\.com/.test(document.getElementById('phForm').innerHTML),
+    upload: !!document.getElementById('phFile')
+  }));
+  if (form.open === 'none' || !form.saysWhy || !form.upload) {
+    throw new Error('The photo form is wrong: ' + JSON.stringify(form));
+  }
+  await page.click('#phCancel');
+
+  // Who is on the account, at the top. The Remove button is the assertion
+  // that matters: offering it against somebody who holds six tasks promises
+  // something the server refuses to do, and a button that reliably fails is
+  // worse than no button.
+  const teamCard = await page.evaluate(() => {
+    const wrap = document.getElementById('teamWrap');
+    return {
+      people: [].map.call(wrap.querySelectorAll('.crow .nm'),
+        e => e.textContent.trim()),
+      avatars: wrap.querySelectorAll('.av').length,
+      removable: [].map.call(wrap.querySelectorAll('[data-rmteam]'),
+        e => e.getAttribute('data-rmteam')),
+      canAdd: !!document.getElementById('addTeam')
+    };
+  });
+  if (teamCard.people.length !== 3 || teamCard.avatars !== 3) {
+    throw new Error('The client team did not render: ' + JSON.stringify(teamCard));
+  }
+  if (teamCard.removable.join(',') !== 'Alexandra McCurdy') {
+    throw new Error('Remove is offered against derived membership: '
+      + JSON.stringify(teamCard.removable));
+  }
+  if (!teamCard.canAdd) throw new Error('No way to add somebody to the account');
+
   // Recent context: the calls are links, not imports.
   const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
     els.map(e => e.getAttribute('href')));
-  if (recentLinks.length !== 2) {
+  if (recentLinks.length !== 3) {
     throw new Error('Recent calls did not render as links: '
       + JSON.stringify(recentLinks));
   }
+
+  // Not every call comes from the notetaker. The way in for a Google Doc or a
+  // pasted transcript has to be on this card, next to the calls it joins —
+  // filing one through the intake form means creating a second draft.
+  const addCall = await page.evaluate(() => ({
+    box: !!document.getElementById('mcText'),
+    button: !!document.getElementById('addCall'),
+    // A call added by hand is the one the daily scan could silently replace,
+    // so the list has to say which is which.
+    handMarked: /added by hand/.test(document.getElementById('recentWrap').innerHTML),
+    removable: document.querySelectorAll('[data-delcall]').length
+  }));
+  if (!addCall.box || !addCall.button) {
+    throw new Error('No way to add a non-ClickUp call: ' + JSON.stringify(addCall));
+  }
+  if (!addCall.handMarked || addCall.removable !== 3) {
+    throw new Error('Manual calls are not distinguishable or removable: '
+      + JSON.stringify(addCall));
+  }
+  await page.fill('#mcText', 'https://docs.google.com/document/d/1AbCdEf/edit');
+  await page.fill('#mcName', 'Q3 planning call');
+  await page.click('#addCall');
+  await page.waitForTimeout(250);
 
   // Deal documents fold away — a long list nobody opened the page to find.
   const docsShut = await page.$eval('#docsBody', e => e.style.display);
@@ -903,19 +1034,19 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // is 172k characters and is exactly what failed.
   const picked = await page.$$eval('[data-src]', els =>
     els.filter(e => e.checked).map(e => e.getAttribute('data-src')));
-  if (picked.join(',') !== 'deck,sow') {
-    throw new Error('Action item sources did not default to deck + SOW: '
+  if (picked.join(',') !== 'audit,sow') {
+    throw new Error('Action item sources did not default to the audit + SOW: '
       + JSON.stringify(picked));
   }
   const sum = await page.$eval('#srcSum', e => e.textContent);
-  if (sum !== '36k characters') {
+  if (sum !== '39k characters') {
     throw new Error('The character total did not reflect the default: ' + sum);
   }
   // Ticking a transcript has to move the number, or the size is decoration.
   await page.click('[data-src="kickoff"]');
   await page.waitForTimeout(120);
   const sum2 = await page.$eval('#srcSum', e => e.textContent);
-  if (sum2 !== '99k characters') {
+  if (sum2 !== '101k characters') {
     throw new Error('The total did not update when a transcript was added: ' + sum2);
   }
   await page.click('[data-src="kickoff"]');

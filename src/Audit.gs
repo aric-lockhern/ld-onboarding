@@ -49,13 +49,34 @@ const ACTIONS_CHAR_BUDGET = 120000;
 /**
  * The documents a commitment is ever found in.
  *
- * The deck is where the promises are made, the two calls are where they are
- * made verbally and sometimes revised, and the scope of work is what decides
- * whether a promise is inside the contract or a sales lead. The ClickUp intake
- * form is deliberately absent: it is the client answering questions, not us
- * committing to anything, and it only crowds the prompt.
+ * The audit deck first: every slide on it is a finding with a recommendation
+ * beside it, and a recommendation shown to a client is a thing they now expect.
+ * The pitch deck is where the promises are made, the two calls are where they
+ * are made verbally and sometimes revised, and the scope of work is what
+ * decides whether a promise is inside the contract or a sales lead. The ClickUp
+ * intake form is deliberately absent: it is the client answering questions, not
+ * us committing to anything, and it only crowds the prompt.
  */
-const ACTION_SOURCE_KEYS = ['deck', 'sales', 'kickoff', 'sow'];
+const ACTION_SOURCE_KEYS = ['audit', 'deck', 'sales', 'kickoff', 'sow'];
+
+/**
+ * What is ticked when the picker opens.
+ *
+ * The audit deck when there is one, because that is the document this feature
+ * exists for — and the scope of work beside it, since half the value is
+ * separating what we are contracted to do from what somebody would have to buy.
+ * With no audit on file the pitch deck stands in: it is the next densest source
+ * of promises. Ticking both when both exist is how a request gets big enough to
+ * time out, so the audit displaces the pitch deck rather than joining it.
+ */
+function preferredActionSources_(keys) {
+  const has = {};
+  (keys || []).forEach(k => { has[k] = true; });
+
+  const want = { sow: 1 };
+  if (has.audit) want.audit = 1; else want.deck = 1;
+  return want;
+}
 
 // ---------------------------------------------------------------- PUBLIC
 
@@ -91,11 +112,11 @@ function buildActionItems(clientId, keys) {
         + 'against this client any more.' };
     }
   } else {
-    // Imported ClickUp calls carry a cu_ key rather than one of the fixed
+    // Imported calls carry a cu_ or call_ key rather than one of the fixed
     // names, and a promise made on last week's call counts exactly as much as
     // one made on the kickoff.
     docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1
-      || String(d.key || '').indexOf('cu_') === 0);
+      || isImportedCallKey_(d.key));
   }
 
   if (!docs.length) {
@@ -124,8 +145,8 @@ function buildActionItems(clientId, keys) {
              message: ((e && e.message) || String(e))
                + ' — reading ' + read.join(', ') + ' ('
                + Math.round(chars / 1000) + 'k characters). Untick the longest '
-               + 'documents and try again; the pitch deck alone is usually '
-               + 'enough.' };
+               + 'documents and try again; the audit deck alone is usually '
+               + 'enough, and the pitch deck if there is no audit.' };
   }
 
   const items = (out && out.actions) || [];
@@ -204,10 +225,10 @@ function getActionItems(clientId) {
  * finishes. A 62,000-character kickoff transcript and a 19,000-character deck
  * are not comparable choices, and nobody can tell them apart from two labels.
  *
- * The deck and the scope of work are ticked by default: the deck is where
- * promises are made and the SOW is what decides whether one is in contract.
- * Transcripts are offered but left off, because they are long and they are the
- * reason the whole thing used to time out.
+ * The audit deck and the scope of work are ticked by default — the pitch deck
+ * standing in when there is no audit — for the reasons in
+ * preferredActionSources_. Transcripts are offered but left off, because they
+ * are long and they are the reason the whole thing used to time out.
  */
 function actionSources_(clientId) {
   const draftId = draftIdForClient_(clientId);
@@ -223,15 +244,15 @@ function actionSources_(clientId) {
       + (d && d.message ? ' — ' + d.message : '') + '.' };
   }
 
-  const preferred = { deck: 1, sow: 1 };
   const all = (d.sources || []).filter(s => s && s.key !== 'form');
+  const preferred = preferredActionSources_(all.map(s => s.key));
   const rows = all
     .filter(s => s.fileId)
     .map(s => ({
       key: s.key,
       label: s.label,
       chars: s.chars || 0,
-      isCall: String(s.key).indexOf('cu_') === 0
+      isCall: isImportedCallKey_(s.key)
         || s.key === 'sales' || s.key === 'kickoff',
       suggested: !!preferred[s.key]
     }));
@@ -329,14 +350,19 @@ function buildActionsPrompt_(client, docs, team) {
     'You turn what ' + agency + ' promised a client into work. ' + agency + ' is',
     'a paid search and organic social agency.',
     '',
-    'You are reading the pitch deck, the sales call, the kickoff call and the',
-    'signed scope of work. Find everything specific that was said would be done,',
-    'and write each one as a task somebody can pick up.',
+    // Named from what was actually picked rather than assumed. Telling the
+    // model it is reading a deck it was not given is how a thin answer gets
+    // blamed on the client having promised nothing.
+    'You are reading: ' + docs.map(d => d.label).join(', ') + '. Find',
+    'everything specific that was said would be done, and write each one as a',
+    'task somebody can pick up.',
     '',
     'Commitments come in three shapes and all three count:',
-    '- An audit finding in the deck with a fix attached. "60% impression share',
-    '  lost to ad rank" is a finding; the commitment is the restructure that',
-    '  was proposed beside it.',
+    '- An audit finding with a fix attached. "60% impression share lost to ad',
+    '  rank" is a finding; the commitment is the restructure proposed beside',
+    '  it. An audit presentation is wall-to-wall these — it was written to show',
+    '  the client what is wrong and what we would do about it, and every one of',
+    '  those slides is a thing they now expect.',
     '- Something said out loud on a call. "We will rebuild the feed in month',
     '  two", "we will get that Reddit thread sorted" — spoken promises are the',
     '  ones that get forgotten, because they are not written anywhere.',

@@ -32,7 +32,14 @@ const SOURCE_KINDS = [
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript' },
   { key: 'sow', label: 'Scope of work' },
   { key: 'form', label: 'ClickUp onboarding form' },
-  { key: 'deck', label: 'Pitch deck' }
+  { key: 'deck', label: 'Pitch deck' },
+  // The audit deck, and the call where it was walked through. It is the
+  // densest source of commitments there is — every slide is a finding with a
+  // recommendation attached, and the recommendations are what somebody then
+  // expects us to do. Kept separate from the pitch deck because they are
+  // different documents doing different jobs: the pitch deck sells the
+  // engagement, the audit says what is wrong with the account today.
+  { key: 'audit', label: 'Audit presentation' }
 ];
 
 // ---------------------------------------------------------------- READ ONE
@@ -691,6 +698,12 @@ function buildExtractPrompt_(docs) {
     '  READ THE ATTACHED PAGES for money, not just the transcription. If a',
     '  transcription trails off at "client shall pay:" the figures are in the',
     '  attachment.',
+    '- An "Audit presentation" is a diagnosis of the account as it stands, not',
+    '  a record of what was bought. Numbers on it are recommendations — a',
+    '  proposed budget, a target CPA, spend it thinks should move — and none of',
+    '  them is a fee unless the scope of work also says so. Never take mrr or a',
+    '  fee line from it, and never tick a service because the audit recommends',
+    '  it. Its findings matter, but for a different job than this one.',
     '- If the documents sell something with no matching service name, put it in',
     '  unmatchedServices rather than dropping it or forcing it into the nearest',
     '  name. Organic social management is not the same product as paid ads on',

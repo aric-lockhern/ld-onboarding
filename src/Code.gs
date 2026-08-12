@@ -142,7 +142,7 @@ const C = {
   ALIAS: 15, DRIVE: 16, SERVICES: 17, APPROVALS: 18, TERM: 19, CALL: 20,
   BIZTYPE: 21, FEES: 22, ONBOARDING: 23,
   PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, PROFILE: 28,
-  RECENT: 29, WIDTH: 29
+  RECENT: 29, TEAM: 30, PHOTO: 31, WIDTH: 31
 };
 
 /**
@@ -253,7 +253,8 @@ function setup() {
     'Onboarding Owner', 'Scope', 'Meeting Cadence', 'Slack Channel', 'Email Alias',
     'Drive Folder', 'Services', 'Approvals Contact', 'Contract Term',
     'Onboarding Call', 'Business Type', 'Fees', 'Onboarding',
-    'Progress', 'Plan Status', 'Plan Doc', 'Created', 'Profile', 'Recent'
+    'Progress', 'Plan Status', 'Plan Doc', 'Created', 'Profile', 'Recent',
+    'Team', 'Contact Photo'
   ]);
 
   mkTab_(ss, TABS.INTAKE, [
