@@ -190,9 +190,10 @@ function getActionItems(clientId) {
   const order = { 'Now': 0, 'Next': 1, 'Later': 2 };
   items.sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
 
+  const picker = actionSources_(clientId);
   return { ok: true, items: items, statuses: ACTION_STATUSES,
            team: getTeam().map(t => t.name),
-           sources: actionSources_(clientId) };
+           sources: picker.rows, sourcesNote: picker.note };
 }
 
 /**
@@ -209,14 +210,22 @@ function getActionItems(clientId) {
  */
 function actionSources_(clientId) {
   const draftId = draftIdForClient_(clientId);
-  if (!draftId) return [];
+  if (!draftId) {
+    return { rows: [], note: 'No draft is linked to this client, so there is '
+      + 'nothing to read. Drafts hold the extracted text; a client created '
+      + 'before drafts existed, or by hand, has none.' };
+  }
 
   const d = openDraft(draftId);
-  if (!d || !d.ok) return [];
+  if (!d || !d.ok) {
+    return { rows: [], note: 'The draft for this client could not be opened'
+      + (d && d.message ? ' — ' + d.message : '') + '.' };
+  }
 
   const preferred = { deck: 1, sow: 1 };
-  return (d.sources || [])
-    .filter(s => s && s.fileId && s.key !== 'form')
+  const all = (d.sources || []).filter(s => s && s.key !== 'form');
+  const rows = all
+    .filter(s => s.fileId)
     .map(s => ({
       key: s.key,
       label: s.label,
@@ -225,6 +234,22 @@ function actionSources_(clientId) {
         || s.key === 'sales' || s.key === 'kickoff',
       suggested: !!preferred[s.key]
     }));
+
+  // The distinction that matters. "No documents" and "documents whose text was
+  // never extracted" look identical on the page and have completely different
+  // fixes — and the second is the common one, because the Deal documents card
+  // below lists the ORIGINALS from Drive whether or not anything ever read
+  // them. A page saying "5 documents" above a picker with nothing to tick is
+  // the bug this sentence exists to prevent.
+  let note = '';
+  if (!rows.length) {
+    note = all.length
+      ? all.length + ' document' + (all.length === 1 ? ' is' : 's are')
+        + ' on the draft but none has extracted text yet, so there is nothing '
+        + 'to read. Re-analyse the draft to pull the text out.'
+      : 'The draft has no documents on it.';
+  }
+  return { rows: rows, note: note };
 }
 
 /** Status or owner change from the client page. */

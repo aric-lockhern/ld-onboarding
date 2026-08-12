@@ -417,14 +417,18 @@
   .prof-half::-webkit-scrollbar{width:9px}
   .prof-half::-webkit-scrollbar-thumb{background:var(--tick-off); border-radius:9px}
 
-  /* A phase heading is a button now, so a finished phase can be folded away. */
-  .grp .phtog{background:none; border:0; padding:0; cursor:pointer; font:inherit;
+  /* A phase heading is a button now, so a finished phase can be folded away.
+     NOT scoped to .grp: docsCard renders the same toggle inside .card, where a
+     .grp-scoped rule never matched — so it fell back to a default browser
+     button, border and all, with "5 documents" and "uploaded at intake" run
+     together because the flex gap was never applied either. */
+  .phtog{background:none; border:0; padding:0; cursor:pointer; font:inherit;
     color:inherit; text-transform:inherit; letter-spacing:inherit;
-    display:inline-flex; align-items:center; gap:7px}
-  .grp .phtog .tw{font-size:9px; color:var(--mid)}
-  .grp .phtog:hover{color:var(--blue)}
-  .grp .phtog .st{font-weight:500; color:var(--faint); text-transform:none;
-    letter-spacing:0; margin-left:2px}
+    display:inline-flex; align-items:center; gap:7px; text-align:left}
+  .phtog .tw{font-size:9px; color:var(--mid)}
+  .phtog:hover{color:var(--blue)}
+  .phtog .st{font-weight:500; color:var(--faint); text-transform:none;
+    letter-spacing:0}
 
   /* ----------------------------------------------------------- team admin */
   .person{display:flex; gap:14px; align-items:flex-start; padding:14px 0;
@@ -1776,8 +1780,15 @@ function actionsCard(r){
       + 'owner chosen by skill. Anything promised that sits outside the '
       + 'contract comes back flagged rather than queued.</div>'
       + sourcePicker(r)
-      + '<div class="startrow"><button class="btn pri" id="mkActions">'
-      + 'Build action items</button></div>';
+      // No pickable documents means the button can only ever answer "tick at
+      // least one" against a list with nothing in it. Say why instead, and do
+      // not render an action that cannot succeed.
+      + (((r && r.sources) || []).length
+        ? '<div class="startrow"><button class="btn pri" id="mkActions">'
+          + 'Build action items</button></div>'
+        : '<div class="hint" style="margin-top:10px"><strong>Nothing to read.</strong> '
+          + esc((r && r.sourcesNote) || 'No documents are available on the draft.')
+          + '</div>');
   }
 
   var byPri = { 'Now': [], 'Next': [], 'Later': [] };
@@ -1818,7 +1829,12 @@ function actionsCard(r){
     + 'was sold.</div>'
     + h
     + sourcePicker(r)
-    + '<div class="startrow"><button class="btn" id="mkActions">Rebuild</button>'
+    + '<div class="startrow">'
+    + (((r && r.sources) || []).length
+      ? '<button class="btn" id="mkActions">Rebuild</button>'
+      : '<span class="hint">'
+        + esc((r && r.sourcesNote) || 'No documents available to rebuild from.')
+        + '</span>')
     + '<span class="note">Anything already started is kept.</span></div>';
 }
 
