@@ -2112,7 +2112,7 @@ function docsCard(r){
   if (docs.length){
     return '<button class="phtog" id="docsTog"><span class="tw">▶</span>'
       + docs.length + ' document' + (docs.length === 1 ? '' : 's')
-      + '<span class="st">uploaded at intake</span></button>'
+      + ' <span class="st">uploaded at intake</span></button>'
       + '<div id="docsBody" style="display:none; margin-top:12px">'
       + docsBody(r) + '</div>';
   }
