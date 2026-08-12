@@ -69,7 +69,8 @@ function getTaskLibrary(token) {
           gate: r[P.GATE - 1] === true,
           always: r[P.ALWAYS - 1] === true,
           active: r[P.ACTIVE - 1] !== false,
-          bizType: safeStr_(r[P.BIZTYPE - 1])
+          bizType: safeStr_(r[P.BIZTYPE - 1]),
+          requires: safeStr_(r[P.REQUIRES - 1])
         }))
         .filter(t => t.task);
 
@@ -83,7 +84,10 @@ function getTaskLibrary(token) {
     categories: Object.keys(cats).sort(),
     bizTypes: BIZ_TYPES,
     team: getTeam().map(t => t.name),
-    phases: [1, 2, 3, 4, 5]
+    phases: [1, 2, 3, 4, 5],
+    // Every task name, so Requires can be a list rather than typed from
+    // memory — a Requires that names nothing simply never fires, silently.
+    taskNames: tasks.map(t => t.task)
   };
 }
 
@@ -120,6 +124,7 @@ function saveTaskTemplate(token, t) {
   values[P.ALWAYS - 1] = t.always === true;
   values[P.ACTIVE - 1] = t.active !== false;
   values[P.BIZTYPE - 1] = BIZ_TYPES.indexOf(t.bizType) === -1 ? '' : t.bizType;
+  values[P.REQUIRES - 1] = String(t.requires || '').trim();
 
   const row = Number(t.row) || 0;
   if (row >= 2 && row <= sh.getLastRow()) {

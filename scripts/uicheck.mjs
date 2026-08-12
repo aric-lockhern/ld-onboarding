@@ -207,6 +207,8 @@ const FAKE = {
   getTaskLibrary: { ok:true, methods:['INTERNAL','API','SEMI-API','EMAIL','MANUAL'],
     categories:['Internal','Paid','Measurement'], bizTypes:['Lead Gen','eCommerce'],
     team:['Drake King','Alexandra McCurdy'], phases:[1,2,3,4,5],
+    taskNames:['Lockhern email alias','Google Ads','Google Merchant Center',
+               'Legacy Bing import','Label the Google Ads account Active'],
     tasks:[
       { row:2, task:'Lockhern email alias', category:'Internal', method:'INTERNAL',
         needs:'', how:'', lead:'Same day', offset:0, owner:'', phase:1,
@@ -221,7 +223,12 @@ const FAKE = {
         owner:'', phase:2, gate:true, always:false, active:true, bizType:'eCommerce' },
       { row:14, task:'Legacy Bing import', category:'Paid', method:'MANUAL',
         needs:'', how:'', lead:'', offset:'', owner:'', phase:2,
-        gate:false, always:false, active:false, bizType:'' }
+        gate:false, always:false, active:false, bizType:'', requires:'' },
+      // Follow-on work: real, ours, and only for clients who have Google Ads.
+      { row:20, task:'Label the Google Ads account Active', category:'Paid',
+        method:'INTERNAL', needs:'—', how:'Manager account → Labels',
+        lead:'Same day', offset:6, owner:'', phase:2, gate:false, always:false,
+        active:true, bizType:'', requires:'Google Ads' }
     ] },
   saveTaskTemplate: { ok:true, row:15, created:true, task:'Shopify theme access' },
   deleteTaskTemplate: { ok:true, task:'Legacy Bing import' },
@@ -601,6 +608,27 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       if (!off.some(t => /Legacy Bing import/.test(t))) {
         throw new Error('Inactive task templates are not listed: ' + JSON.stringify(off));
       }
+      // Follow-on tasks say what they depend on, or the library reads as if
+      // the row applies to everybody.
+      const dep = await page.$$eval('.crow .meta', els =>
+        els.map(e => e.textContent).filter(t => /needs Google Ads/.test(t)));
+      if (!dep.length) {
+        throw new Error('A Requires dependency was not shown in the library');
+      }
+      await page.click('[data-edit-task="20"]');
+      await page.waitForSelector('#tpReq', { timeout: 5000 });
+      const req = await page.$eval('#tpReq', s => s.value);
+      if (req !== 'Google Ads') {
+        throw new Error('Requires did not load into the form: ' + req);
+      }
+      // A task must never be able to require itself — that is a row that can
+      // never be included, and nothing would say why.
+      const selfRef = await page.$$eval('#tpReq option', els =>
+        els.map(e => e.textContent));
+      if (selfRef.includes('Label the Google Ads account Active')) {
+        throw new Error('A task was offered itself as a dependency');
+      }
+
       await page.click('[data-edit-task="9"]');
       await page.waitForSelector('#tpTask', { timeout: 5000 });
       const biz = await page.$eval('#tpBiz', s => s.value);

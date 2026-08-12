@@ -1013,6 +1013,7 @@ function taskLibraryCard(r){
       + list.map(function(t){
           var bits = [t.category || 'Uncategorised', t.method];
           if (t.always) bits.push('always included');
+          if (t.requires) bits.push('needs ' + t.requires);
           if (t.bizType) bits.push(t.bizType + ' only');
           if (t.gate) bits.push('gate');
           if (t.offset !== '') bits.push('due +' + t.offset + 'd');
@@ -1071,6 +1072,10 @@ function taskTemplateForm(t, r){
       + sel('tpMethod', t.method, r.methods) + '</div>'
     + '<div class="f"><label>Business type</label>'
       + sel('tpBiz', t.bizType, r.bizTypes, 'Any') + '</div>'
+    + '<div class="f"><label>Only when we also have</label>'
+      + sel('tpReq', t.requires,
+            (r.taskNames || []).filter(function(n){ return n !== t.task; }),
+            'Nothing — include on its own') + '</div>'
     + '<div class="f"><label>Default owner</label>'
       + sel('tpOwner', t.owner, r.team, 'Onboarding owner') + '</div>'
     + '<div class="f"><label>Due offset (days from contract start)</label>'
@@ -1092,7 +1097,10 @@ function taskTemplateForm(t, r){
     + (t.row ? '<button class="btn danger" id="tpDel">Delete</button>' : '')
     + '<button class="btn" id="tpCancel">Cancel</button>'
     + '<button class="btn pri" id="tpSave">Save</button></div>'
-    + '<div class="hint" style="margin:10px 0 0">Always include puts it on every '
+    + '<div class="hint" style="margin:10px 0 0">"Only when we also have" is for '
+    + 'follow-on work: labelling the Google Ads account only makes sense on a '
+    + 'client who has Google Ads, and Always include would put it on everyone. '
+    + 'Always include puts it on every '
     + 'checklist whatever was sold. Gate holds the next phase until it is done — '
     + 'use it sparingly, a gate on something that always trails stalls every '
     + 'account. Inactive keeps the row but stops it being added to anyone new.</div>';
@@ -1164,7 +1172,8 @@ function wireTaskForm(){
       gate: el('tpGate').checked,
       always: el('tpAlways').checked,
       active: el('tpActive').checked,
-      bizType: el('tpBiz').value
+      bizType: el('tpBiz').value,
+      requires: el('tpReq').value
     }).then(function(r){
       b.disabled = false; b.textContent = 'Save';
       if (!r.ok){ toast(r.message, true); return; }
