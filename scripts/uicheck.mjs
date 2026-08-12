@@ -237,20 +237,28 @@ const FAKE = {
            { tag:'{{contact}}', means:'Primary contact name' },
            { tag:'{{alias}}', means:'The client email alias' }],
     moments:[
-      { key:'_welcome', label:'Welcome email', kind:'moment', row:2,
-        when:'Sent once the client record exists.', subject:'Welcome to {{agency}}',
-        body:'Hi {{contact}},\n\nDelighted to be working with {{company}}.' },
-      { key:'_scope', label:'Scope confirmation', kind:'moment', row:0,
-        when:'Confirms in writing what was bought.', subject:'', body:'' }
+      // A template seeded before the moment existed: no row on the tab, and
+      // the copy comes from the code. This is the shape the welcome email is
+      // in on every installed sheet, and it used to render as an empty box.
+      { key:'_welcome', label:'Welcome email', kind:'moment', row:0,
+        source:'shipped',
+        when:'Sent once the client record exists.', subject:'Welcome to {{agency}}!',
+        body:'Hi {{contact}},\n\nThank you for choosing {{agency}}.' },
+      { key:'_scope', label:'Scope confirmation', kind:'moment', row:2,
+        source:'edited',
+        when:'Confirms in writing what was bought.', subject:'Your scope — {{company}}',
+        body:'Edited copy.' },
+      { key:'_handover', label:'Handover to steady state', kind:'moment', row:0,
+        source:'none', when:'Sent when onboarding closes.', subject:'', body:'' }
     ],
     tasks:[
-      { key:'Google Ads', label:'Google Ads', kind:'task', row:3,
+      { key:'Google Ads', label:'Google Ads', kind:'task', row:3, source:'edited',
         when:'', subject:'Google Ads access — {{company}}', body:'Steps…' },
-      { key:'Meta Ads', label:'Meta Ads', kind:'task', row:0,
-        when:'', subject:'', body:'' }
+      { key:'Meta Ads', label:'Meta Ads', kind:'task', row:0, source:'shipped',
+        when:'', subject:'Meta access — {{company}}', body:'Shipped steps…' }
     ],
     orphans:[
-      { key:'Bing Ads', label:'Bing Ads', kind:'orphan', row:8,
+      { key:'Bing Ads', label:'Bing Ads', kind:'orphan', row:8, source:'edited',
         when:'No task or moment of this name — probably renamed.',
         subject:'Bing access', body:'Old copy' }
     ] },
@@ -652,6 +660,24 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       }
       await page.click('[data-edit-mail="_welcome"]');
       await page.waitForSelector('#mlBody', { timeout: 5000 });
+
+      // The welcome email has no row on any sheet installed before it was
+      // written — rule 3, seeds bail on a populated tab — so it arrives as
+      // shipped copy. Opening it used to show an empty box, which reads as
+      // "this email does not exist" while it is being sent every week.
+      const welcome = await page.evaluate(() => ({
+        subject: document.getElementById('mlSubject').value,
+        body: document.getElementById('mlBody').value,
+        reset: !!document.getElementById('mlReset')
+      }));
+      if (!welcome.subject || !welcome.body) {
+        throw new Error('Shipped welcome copy did not reach the editor: '
+          + JSON.stringify(welcome));
+      }
+      // Nothing has been overridden, so there is nothing to reset TO.
+      if (welcome.reset) {
+        throw new Error('Reset offered on a template that was never overridden');
+      }
       await page.waitForTimeout(200);
       const fMail = `${OUT}/${name}-settings-email.png`;
       await page.screenshot({ path: fMail, fullPage: name === 'desktop' });
