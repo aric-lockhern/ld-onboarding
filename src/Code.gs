@@ -569,6 +569,8 @@ function seedConfig_(ss) {
   const rows = [
     ['Setting', 'Value', 'Notes'],
     ['Agency Name', 'Lockhern Digital', ''],
+    ['Onboarding Questionnaire URL', '',
+      'Linked from the welcome email. Blank leaves a visible placeholder'],
     ['Agency Access Email', 'marketing@lockherndigital.com',
       'What clients grant access to. Blank uses the per-client alias instead'],
     ['Alias Domain', 'lockherndigital.com', 'Aliases render as client@thisdomain'],
