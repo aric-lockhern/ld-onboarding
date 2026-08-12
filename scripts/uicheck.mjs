@@ -731,6 +731,20 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   const docsShut = await page.$eval('#docsBody', e => e.style.display);
   if (docsShut !== 'none') throw new Error('Deal documents did not start folded');
 
+  // The picker must render on the EMPTY state too. It used to be dropped there
+  // by an early return in getActionItems, which is the one screen that cannot
+  // work without it: no items yet is exactly when somebody is building them,
+  // and the button answered "tick at least one document" with nothing to tick.
+  const emptyPicker = await page.evaluate(function(){
+    var card = actionsCard({ ok:true, items:[], statuses:['To do'], team:[],
+      sources:[{ key:'deck', label:'Pitch deck', chars:19068, isCall:false,
+                 suggested:true }] });
+    return /data-src="deck"/.test(card) && /id="mkActions"/.test(card);
+  });
+  if (!emptyPicker) {
+    throw new Error('The empty action-items card renders no document picker');
+  }
+
   // The document picker is the fix for the timeout, so it has to default to
   // the short high-signal documents rather than everything — ticking all five
   // is 172k characters and is exactly what failed.

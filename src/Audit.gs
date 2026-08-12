@@ -160,7 +160,17 @@ function buildActionItems(clientId, keys) {
 /** The stored action items, newest generation first. */
 function getActionItems(clientId) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACTIONS);
-  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+
+  // The empty case returns the SAME shape as the populated one. It used to
+  // return { ok, items } alone, which dropped the document picker on the one
+  // screen that cannot work without it: no items yet is exactly when somebody
+  // is trying to build them, and the button answered "tick at least one
+  // document" with nothing to tick.
+  if (!sh || sh.getLastRow() < 2) {
+    return { ok: true, items: [], statuses: ACTION_STATUSES,
+             team: getTeam().map(t => t.name),
+             sources: actionSources_(clientId) };
+  }
 
   const id = String(clientId).trim();
   const items = sh.getRange(2, 1, sh.getLastRow() - 1, ACT.WIDTH).getValues()
