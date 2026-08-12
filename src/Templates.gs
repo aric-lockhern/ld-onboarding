@@ -408,6 +408,21 @@ function getTemplate_(task) {
     const hit = rows.find(r => String(r[0]).trim() === task);
     if (hit && hit[2]) return { subject: hit[1], body: hit[2] };
   }
+  return shippedTemplate_(task);
+}
+
+/**
+ * The copy in the code, with no sheet lookup.
+ *
+ * The settings editor needs this half on its own. It used to read the tab and
+ * only the tab, so every template seeded before the row existed — the welcome
+ * email above all — rendered as "no copy yet" against an empty box, while the
+ * send path merged and sent the shipped wording perfectly well. Two different
+ * answers to "what does this email say", and the one on screen was the wrong
+ * one. Rule 3 guarantees it: seeds bail on a populated tab, so any template
+ * added after install has no row and never will have one.
+ */
+function shippedTemplate_(task) {
   if (TEMPLATES[task]) return TEMPLATES[task];
   if (task === '_intro') return { subject: 'Access request — {{company}}', body: EMAIL_INTRO };
   if (task === '_nudge') return { subject: EMAIL_NUDGE_SUBJECT, body: EMAIL_NUDGE };

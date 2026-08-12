@@ -175,9 +175,12 @@ function deleteTaskTemplate(token, row) {
 /**
  * Every email template: the per-task ones and the standalone moments.
  *
- * A task with no row on the Templates tab still appears, empty, because the
- * useful question is "which of these has copy" and a list of only the filled
- * ones cannot answer it.
+ * A task with no row on the Templates tab still appears, because the useful
+ * question is "which of these has copy" and a list of only the tab rows cannot
+ * answer it — the send path falls back to the wording in the code, so a blank
+ * row is usually a working email rather than a missing one. What it shows in
+ * that case is the shipped copy, marked as shipped. Showing an empty box was
+ * how the welcome email came to look like it had never been written.
  */
 function getEmailTemplates(token) {
   checkToken_(token);
@@ -195,9 +198,23 @@ function getEmailTemplates(token) {
     });
   }
 
+  // A row exists but the body is blank: the send path ignores it and falls
+  // back to the code, so the editor has to as well, or "Reset" is the only way
+  // to see copy that is already in use.
+  const resolve = key => {
+    const row = stored[key];
+    if (row && row.body) return Object.assign({ source: 'edited' }, row);
+    const shipped = shippedTemplate_(key);
+    if (shipped && shipped.body) {
+      return { row: row ? row.row : 0, source: 'shipped',
+               subject: safeStr_(shipped.subject), body: safeStr_(shipped.body) };
+    }
+    return { row: row ? row.row : 0, source: 'none', subject: '', body: '' };
+  };
+
   const standalone = STANDALONE_TEMPLATES.map(t => Object.assign({
     key: t.key, label: t.label, when: t.when, kind: 'moment'
-  }, stored[t.key] || { row: 0, subject: '', body: '' }));
+  }, resolve(t.key)));
 
   const taskNames = [];
   const pSh = ss.getSheetByName(TABS.PLATFORMS);
@@ -208,7 +225,7 @@ function getEmailTemplates(token) {
 
   const perTask = taskNames.map(n => Object.assign({
     key: n, label: n, when: '', kind: 'task'
-  }, stored[n] || { row: 0, subject: '', body: '' }));
+  }, resolve(n)));
 
   // Anything on the tab that matches neither — a task since renamed, or copy
   // written for something that no longer exists. Shown rather than hidden:
@@ -216,7 +233,7 @@ function getEmailTemplates(token) {
   const known = {};
   standalone.concat(perTask).forEach(t => { known[t.key] = true; });
   const orphans = Object.keys(stored).filter(k => !known[k]).map(k => ({
-    key: k, label: k, kind: 'orphan',
+    key: k, label: k, kind: 'orphan', source: 'edited',
     when: 'No task or moment of this name — probably renamed.',
     row: stored[k].row, subject: stored[k].subject, body: stored[k].body
   }));

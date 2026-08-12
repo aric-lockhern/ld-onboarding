@@ -237,6 +237,7 @@ function onOpen() {
     .addItem('Set ClickUp API token', 'promptForClickUpToken')
     .addItem('Set Slack bot token', 'promptForSlackToken')
     .addItem('Set dashboard PIN', 'promptForPin')
+    .addItem('Remove dashboard PIN', 'removePin')
     .addItem('Re-run setup / repair tabs', 'setup')
     .addToUi();
 }
