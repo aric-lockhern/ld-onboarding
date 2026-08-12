@@ -141,7 +141,8 @@ const C = {
   PLATFORMS: 8, START: 9, MRR: 10, OWNER: 11, SCOPE: 12, CADENCE: 13, SLACK: 14,
   ALIAS: 15, DRIVE: 16, SERVICES: 17, APPROVALS: 18, TERM: 19, CALL: 20,
   BIZTYPE: 21, FEES: 22, ONBOARDING: 23,
-  PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, PROFILE: 28, WIDTH: 28
+  PROGRESS: 24, PLAN_STATUS: 25, PLAN_DOC: 26, CREATED: 27, PROFILE: 28,
+  RECENT: 29, WIDTH: 29
 };
 
 /**
@@ -176,6 +177,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Send digest now', 'sendDigestNow')
     .addItem('Enable daily digest', 'installDigestTrigger')
+    .addItem('Scan ClickUp for calls now', 'scanRecentCallsNow')
+    .addItem('Enable daily call scan', 'installCallScanTrigger')
     .addSeparator()
     .addItem('Set Anthropic API key', 'promptForApiKey')
     .addItem('Set ClickUp API token', 'promptForClickUpToken')
@@ -196,7 +199,7 @@ function setup() {
     'Onboarding Owner', 'Scope', 'Meeting Cadence', 'Slack Channel', 'Email Alias',
     'Drive Folder', 'Services', 'Approvals Contact', 'Contract Term',
     'Onboarding Call', 'Business Type', 'Fees', 'Onboarding',
-    'Progress', 'Plan Status', 'Plan Doc', 'Created', 'Profile'
+    'Progress', 'Plan Status', 'Plan Doc', 'Created', 'Profile', 'Recent'
   ]);
 
   mkTab_(ss, TABS.INTAKE, [
@@ -548,8 +551,11 @@ function applyValidation_(ss) {
   clients.getRange(2, C.BIZTYPE, 500).setDataValidation(list(BIZ_TYPES));
   clients.getRange(2, C.ONBOARDING, 500).setDataValidation(
     list(['Not started', 'Started', 'Complete']));
+  // Completed is on the list because by the time anyone reads a client page the
+  // call has usually happened, and a state set that cannot say so leaves every
+  // finished onboarding reading "Scheduled".
   clients.getRange(2, C.CALL, 500).setDataValidation(
-    list(['Not applicable', 'To schedule', 'Scheduled', 'Running']));
+    list(['Not applicable', 'To schedule', 'Scheduled', 'Running', 'Completed']));
   clients.getRange(2, C.PLAN_STATUS, 500).setDataValidation(
     list(['Not started', 'Generating', 'Ready', 'Approved']));
 

@@ -67,16 +67,36 @@ const ACTION_SOURCE_KEYS = ['deck', 'sales', 'kickoff', 'sow'];
  * has already moved off "To do" — a half-finished job is a fact about the
  * world, and regenerating should not quietly reopen it.
  */
-function buildActionItems(clientId) {
+/**
+ * @param {Array<string>} keys optional — the documents to read. Omitted means
+ *   everything that could hold a commitment.
+ */
+function buildActionItems(clientId, keys) {
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, message: 'Client not found.' };
 
   const all = profileSources_(draftIdForClient_(clientId));
-  // Imported ClickUp calls carry a cu_ key rather than one of the fixed names,
-  // and a promise made on last week's call counts exactly as much as one made
-  // on the kickoff.
-  const docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1
-    || String(d.key || '').indexOf('cu_') === 0);
+
+  // Picking the documents is the difference between a request that finishes and
+  // one that runs past the fetch deadline. Four transcripts is 120,000
+  // characters; the deck alone is 19,000, and the deck is where the promises
+  // are. So the caller chooses, and the default is only a default.
+  let docs;
+  if (keys && keys.length) {
+    const want = {};
+    keys.forEach(k => { want[k] = true; });
+    docs = all.filter(d => want[d.key]);
+    if (!docs.length) {
+      return { ok: false, message: 'None of the documents you picked are stored '
+        + 'against this client any more.' };
+    }
+  } else {
+    // Imported ClickUp calls carry a cu_ key rather than one of the fixed
+    // names, and a promise made on last week's call counts exactly as much as
+    // one made on the kickoff.
+    docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1
+      || String(d.key || '').indexOf('cu_') === 0);
+  }
 
   if (!docs.length) {
     return { ok: false,
@@ -89,6 +109,7 @@ function buildActionItems(clientId) {
   }
 
   const team = getTeam();
+  const chars = docs.reduce((n, d) => n + d.text.length, 0);
   // Named on every outcome, good or bad. "It failed" with no list of what it
   // read is a bug report nobody can act on — including the deck being absent,
   // which is the single most common reason for a thin result.
@@ -99,9 +120,12 @@ function buildActionItems(clientId) {
     out = callAnthropic_(buildActionsPrompt_(client, docs, team),
                          { maxTokens: ACTIONS_MAX_TOKENS });
   } catch (e) {
-    return { ok: false, read: read,
+    return { ok: false, read: read, chars: chars,
              message: ((e && e.message) || String(e))
-               + ' (read: ' + read.join(', ') + ')' };
+               + ' — reading ' + read.join(', ') + ' ('
+               + Math.round(chars / 1000) + 'k characters). Untick the longest '
+               + 'documents and try again; the pitch deck alone is usually '
+               + 'enough.' };
   }
 
   const items = (out && out.actions) || [];
@@ -157,7 +181,40 @@ function getActionItems(clientId) {
   items.sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
 
   return { ok: true, items: items, statuses: ACTION_STATUSES,
-           team: getTeam().map(t => t.name) };
+           team: getTeam().map(t => t.name),
+           sources: actionSources_(clientId) };
+}
+
+/**
+ * The documents that could be read, with their sizes and a default tick.
+ *
+ * Size is shown because it is the thing that decides whether the request
+ * finishes. A 62,000-character kickoff transcript and a 19,000-character deck
+ * are not comparable choices, and nobody can tell them apart from two labels.
+ *
+ * The deck and the scope of work are ticked by default: the deck is where
+ * promises are made and the SOW is what decides whether one is in contract.
+ * Transcripts are offered but left off, because they are long and they are the
+ * reason the whole thing used to time out.
+ */
+function actionSources_(clientId) {
+  const draftId = draftIdForClient_(clientId);
+  if (!draftId) return [];
+
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return [];
+
+  const preferred = { deck: 1, sow: 1 };
+  return (d.sources || [])
+    .filter(s => s && s.fileId && s.key !== 'form')
+    .map(s => ({
+      key: s.key,
+      label: s.label,
+      chars: s.chars || 0,
+      isCall: String(s.key).indexOf('cu_') === 0
+        || s.key === 'sales' || s.key === 'kickoff',
+      suggested: !!preferred[s.key]
+    }));
 }
 
 /** Status or owner change from the client page. */

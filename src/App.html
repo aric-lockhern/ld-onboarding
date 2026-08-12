@@ -401,6 +401,31 @@
   .btn.danger{border-color:#F0C9C9; color:var(--critical)}
   .btn.danger:hover{background:#FDF2F2; border-color:var(--critical)}
 
+  /* Facts first: name, contact, website, what they pay. Two columns of
+     label/value, no inputs — reading these is a hundred times more common than
+     editing them, and the editable form is still down in Details. */
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    padding:6px 4px}
+  .fact{display:flex; gap:12px; padding:9px 18px; min-width:0}
+  .fact .k{flex:none; width:104px; font-size:12.5px; color:var(--muted);
+    padding-top:1px}
+  .fact .v{flex:1; min-width:0; font-size:14px; overflow-wrap:anywhere}
+
+  /* The profile is 10,000 characters even collapsed-by-section. Capping it and
+     letting it scroll keeps the rest of the page reachable without a fold. */
+  .prof-half{max-height:46vh; overflow-y:auto}
+  .prof-half::-webkit-scrollbar{width:9px}
+  .prof-half::-webkit-scrollbar-thumb{background:var(--tick-off); border-radius:9px}
+
+  /* A phase heading is a button now, so a finished phase can be folded away. */
+  .grp .phtog{background:none; border:0; padding:0; cursor:pointer; font:inherit;
+    color:inherit; text-transform:inherit; letter-spacing:inherit;
+    display:inline-flex; align-items:center; gap:7px}
+  .grp .phtog .tw{font-size:9px; color:var(--mid)}
+  .grp .phtog:hover{color:var(--blue)}
+  .grp .phtog .st{font-weight:500; color:var(--faint); text-transform:none;
+    letter-spacing:0; margin-left:2px}
+
   /* ----------------------------------------------------------- team admin */
   .person{display:flex; gap:14px; align-items:flex-start; padding:14px 0;
     border-top:1px solid var(--line)}
@@ -592,6 +617,7 @@ var DETAIL = null;
 var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
+  'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
@@ -770,6 +796,36 @@ function clientRow(c){
     + tags + ticks(c.done, c.total)
     + '<div class="frac">' + c.done + '/' + c.total + '</div></div>';
 }
+/**
+ * The answers to "who are these people", above everything else.
+ *
+ * Every one of these already existed on the page, as an editable field halfway
+ * down. That is the right place to CHANGE a website and the wrong place to
+ * READ one — answering "what is their URL" meant scrolling past ten thousand
+ * characters of profile to reach a text input.
+ */
+function factsCard(c){
+  var rows = [
+    ['Contact', c.contact],
+    ['Email', c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : '', true],
+    ['Website', c.website
+      ? '<a href="' + esc(/^https?:/i.test(c.website) ? c.website : 'https://' + c.website)
+        + '" target="_blank">' + esc(c.website) + '</a>' : '', true],
+    ['Vertical', c.vertical],
+    ['Contract start', c.contractStart],
+    ['MRR', c.mrr ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr) : ''],
+    ['Term', c.term],
+    ['Owner', c.owner],
+    ['Services', c.services],
+    ['Slack', c.slack]
+  ].filter(function(r){ return r[1]; });
+
+  return '<div class="card facts">' + rows.map(function(r){
+    return '<div class="fact"><span class="k">' + esc(r[0]) + '</span>'
+      + '<span class="v">' + (r[2] ? r[1] : esc(r[1])) + '</span></div>';
+  }).join('') + '</div>';
+}
+
 /**
  * Who a task is on, and how long it has been on them.
  *
@@ -1715,12 +1771,12 @@ function actionsCard(r){
   var items = (r && r.items) || [];
   if (!items.length){
     return '<h3>None yet</h3>'
-      + '<div class="hint">Reads the audit stored on this client, checks each '
-      + 'finding against what was actually sold and what the calls said, and '
-      + 'writes action items with an owner picked by skill. Anything the audit '
-      + 'recommends that is outside the contract comes back flagged rather than '
-      + 'queued as work.</div>'
-      + '<div class="startrow"><button class="btn" id="mkActions">'
+      + '<div class="hint">Reads the documents you pick, finds everything '
+      + 'specific that was said would be done, and writes it as work with an '
+      + 'owner chosen by skill. Anything promised that sits outside the '
+      + 'contract comes back flagged rather than queued.</div>'
+      + sourcePicker(r)
+      + '<div class="startrow"><button class="btn pri" id="mkActions">'
       + 'Build action items</button></div>';
   }
 
@@ -1758,10 +1814,41 @@ function actionsCard(r){
   });
 
   return '<h3>' + items.length + ' action item' + (items.length === 1 ? '' : 's')
-    + '</h3><div class="hint">From the audit, in the context of what was sold.</div>'
+    + '</h3><div class="hint">What we said we would do, in the context of what '
+    + 'was sold.</div>'
     + h
-    + '<div class="startrow"><button class="btn" id="mkActions">Rebuild from the audit</button>'
+    + sourcePicker(r)
+    + '<div class="startrow"><button class="btn" id="mkActions">Rebuild</button>'
     + '<span class="note">Anything already started is kept.</span></div>';
+}
+
+/**
+ * Which documents to read.
+ *
+ * Size is on every row because it is the thing that decides whether the request
+ * finishes at all — a 62k transcript and a 19k deck are not comparable choices,
+ * and two labels alone make them look identical. Ticking everything is what
+ * pushed this past the fetch deadline and returned "Address unavailable".
+ */
+function sourcePicker(r){
+  var src = (r && r.sources) || [];
+  if (!src.length) return '';
+
+  var total = src.filter(function(s){ return s.suggested; })
+    .reduce(function(n, s){ return n + s.chars; }, 0);
+
+  return '<div class="pri-h">Read from <span id="srcSum">'
+    + Math.round(total / 1000) + 'k characters</span></div>'
+    + '<div class="checks">' + src.map(function(s){
+        return '<label class="chk"><input type="checkbox" data-src="' + esc(s.key)
+          + '" data-chars="' + s.chars + '"' + (s.suggested ? ' checked' : '') + '>'
+          + '<span><span class="nm">' + esc(s.label) + '</span><br>'
+          + '<span class="cat">' + Math.round(s.chars / 1000) + 'k'
+          + (s.isCall ? ' · transcript' : '') + '</span></span></label>';
+      }).join('') + '</div>'
+    + '<div class="hint" style="margin:8px 0 0">The deck is where promises are '
+    + 'made and the scope of work says which of them are in contract, so both '
+    + 'start ticked. Transcripts are long — add one at a time.</div>';
 }
 
 function wireActions(clientId, r){
@@ -1769,7 +1856,12 @@ function wireActions(clientId, r){
     el('mkActions').addEventListener('click', function(){
       var b = this;
       b.disabled = true; b.textContent = 'Reading the audit…';
-      api('buildActionItems', clientId).then(function(res){
+      var picked = [].filter.call(document.querySelectorAll('[data-src]'),
+        function(i){ return i.checked; })
+        .map(function(i){ return i.getAttribute('data-src'); });
+      if (!picked.length){ b.disabled = false; b.textContent = 'Build action items';
+        toast('Tick at least one document to read.', true); return; }
+      api('buildActionItems', clientId, picked).then(function(res){
         b.disabled = false; b.textContent = 'Build action items';
         if (!res.ok){ toast(res.message || 'Could not build them.', true); return; }
         if (res.nothing){ toast(res.message, true); return; }
@@ -1790,6 +1882,15 @@ function wireActions(clientId, r){
       });
     });
   }
+  [].forEach.call(document.querySelectorAll('[data-src]'), function(i){
+    i.addEventListener('change', function(){
+      var n = [].filter.call(document.querySelectorAll('[data-src]'),
+        function(x){ return x.checked; })
+        .reduce(function(t, x){ return t + Number(x.getAttribute('data-chars')); }, 0);
+      if (el('srcSum')) el('srcSum').textContent = Math.round(n / 1000) + 'k characters';
+    });
+  });
+
   [].forEach.call(document.querySelectorAll('[data-act-row]'), function(sel){
     sel.addEventListener('change', function(){
       api('updateActionItem', TOKEN, Number(sel.getAttribute('data-act-row')),
@@ -1809,6 +1910,102 @@ function wireActions(clientId, r){
  * date, and the client appears in the attendee list and the body. That costs a
  * fetch per doc, so it is on a button rather than on page load.
  */
+/**
+ * The last few calls, and what has changed since the deal documents.
+ *
+ * Links rather than imports: opening the notes is the common case, and reading
+ * 55,000 characters into Drive to do that is a cost nobody asked for. Import
+ * stays on the ClickUp card for when a call should actually feed the profile.
+ */
+function recentCard(r){
+  if (!r || !r.ok){
+    return '<h3>Recent context</h3><div class="hint">'
+      + esc((r && r.message) || 'Could not read it.') + '</div>';
+  }
+
+  var h = '';
+  var calls = r.calls || [];
+
+  if (calls.length){
+    h += '<div class="pri-h">Last ' + calls.length + ' call'
+      + (calls.length === 1 ? '' : 's') + '</div>'
+      + calls.map(function(c){
+          return '<div class="crow"><div class="bd">'
+            + '<div class="nm"><a href="' + esc(c.url) + '" target="_blank">'
+            + esc(c.name) + '</a></div>'
+            + '<div class="meta">' + esc(c.at) + '</div></div></div>';
+        }).join('');
+  } else {
+    h += '<div class="hint">' + (r.scanInstalled
+      ? 'No ClickUp calls have matched this client yet. The scan runs each '
+        + 'morning; use Find recent calls below to check now.'
+      : 'The daily call scan is not switched on. In the sheet: Onboarding → '
+        + 'Enable daily call scan. Until then, use Find recent calls below.')
+      + '</div>';
+  }
+
+  var notes = r.notes || [];
+  h += '<div class="pri-h">Notes' + (r.scanned
+    ? ' <span>scanned ' + esc(r.scanned) + '</span>' : '') + '</div>';
+
+  h += notes.length
+    ? notes.map(function(n, i){
+        return '<div class="crow"><div class="bd">'
+          + '<div class="nm" style="font-weight:400">' + esc(n.text) + '</div>'
+          + '<div class="meta">' + esc(n.at) + (n.by ? ' · ' + esc(n.by) : '')
+          + '</div></div>'
+          + '<button class="btn sm" data-delnote="' + i + '">Remove</button></div>';
+      }).join('')
+    : '<div class="hint">Nothing yet. A changed promo, a new contact, a target '
+      + 'revised on a call — anything true now that the deal documents do not '
+      + 'say.</div>';
+
+  h += '<div class="fields" style="margin-top:14px">'
+    + '<div class="f wide"><label>Add a note</label>'
+    + '<input id="ntxNote" placeholder="What changed"></div></div>'
+    + '<div class="startrow"><button class="btn" id="addNote">Add note</button></div>';
+
+  return h;
+}
+
+function loadRecent(clientId){
+  api('getRecentContext', clientId).then(function(r){
+    if (!el('recentWrap')) return;
+    el('recentWrap').innerHTML = recentCard(r);
+    wireRecent(clientId);
+  }).catch(function(e){
+    if (el('recentWrap')) el('recentWrap').innerHTML =
+      '<h3>Recent context</h3><div class="hint">Could not read it: '
+      + esc((e && e.message) || 'unknown error') + '.</div>';
+  });
+}
+
+function wireRecent(clientId){
+  if (el('addNote')){
+    el('addNote').addEventListener('click', function(){
+      var b = this, v = el('ntxNote').value.trim();
+      if (!v){ toast('Nothing to add.', true); return; }
+      b.disabled = true; b.textContent = 'Adding…';
+      api('addRecentNote', TOKEN, clientId, v).then(function(r){
+        b.disabled = false; b.textContent = 'Add note';
+        if (!r.ok){ toast(r.message, true); return; }
+        loadRecent(clientId);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Add note'; fail(e);
+      });
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-delnote]'), function(b){
+    b.addEventListener('click', function(){
+      api('deleteRecentNote', TOKEN, clientId, Number(b.getAttribute('data-delnote')))
+        .then(function(r){
+          if (!r.ok){ toast(r.message, true); return; }
+          loadRecent(clientId);
+        }).catch(fail);
+    });
+  });
+}
+
 function callsCard(r){
   if (!r){
     return '<h3>Calls in ClickUp</h3>'
@@ -1860,6 +2057,17 @@ function callsCard(r){
     + '</div>';
 }
 
+function wireDocs(){
+  if (!el('docsTog')) return;
+  el('docsTog').addEventListener('click', function(){
+    var b = el('docsBody');
+    if (!b) return;
+    var shut = b.style.display === 'none';
+    b.style.display = shut ? '' : 'none';
+    el('docsTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+  });
+}
+
 function wireCalls(clientId){
   if (el('findCalls')){
     el('findCalls').addEventListener('click', function(){
@@ -1888,6 +2096,7 @@ function wireCalls(clientId){
         // The documents card is now out of date, so refresh just that one.
         api('getClientDocs', clientId).then(function(d){
           if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(d);
+          wireDocs();
         }).catch(function(){ /* the card keeps its last good state */ });
       }).catch(function(e){
         b.disabled = false; b.textContent = was; fail(e);
@@ -1897,6 +2106,20 @@ function wireCalls(clientId){
 }
 
 function docsCard(r){
+  var docs = (r && r.docs) || [];
+  // Folded by default. It is a long list, it never changes, and it is almost
+  // never what someone opened the client page to find.
+  if (docs.length){
+    return '<button class="phtog" id="docsTog"><span class="tw">▶</span>'
+      + docs.length + ' document' + (docs.length === 1 ? '' : 's')
+      + '<span class="st">uploaded at intake</span></button>'
+      + '<div id="docsBody" style="display:none; margin-top:12px">'
+      + docsBody(r) + '</div>';
+  }
+  return docsBody(r);
+}
+
+function docsBody(r){
   var docs = (r && r.docs) || [];
   if (!docs.length){
     return '<h3>No documents stored</h3><div class="hint">'
@@ -2176,13 +2399,41 @@ function openClient(clientId){
         + '<button class="btn pri" id="startOnb">Start onboarding</button></div></div>';
     }
 
+    // Who they are and where they are, above everything else. This was
+    // scattered down the page in an editable form, so answering "what is their
+    // website" meant scrolling past ten thousand characters of profile.
+    h += factsCard(c);
+
+    var ps = d.phaseState || {};
+    var s = d.summary || {done:0, total:0, pct:0};
+    if (ps.phases && ps.phases.length){
+      h += '<div class="grp">Phase</div><div class="card"><div class="rail">'
+        + ps.phases.map(function(p){
+            var cls = p.phase < ps.current ? 'done' : (p.phase === ps.current ? 'cur' : '');
+            return '<div class="step ' + cls + '"><div class="p">Phase ' + p.phase + '</div>'
+              + '<div class="n">' + esc(p.name) + '</div></div>';
+          }).join('')
+        + '</div><div class="row" style="border-top:1px solid var(--line)">'
+        + '<div class="who"><div class="co">' + s.done + ' of ' + s.total
+        + ' tasks complete</div><div class="meta">' + s.pct + '%</div></div>'
+        + ticks(s.done, s.total) + '</div></div>';
+    } else {
+      h += '<div class="grp">Progress</div><div class="card"><div class="row">'
+        + '<div class="who"><div class="co">' + s.done + ' of ' + s.total
+        + ' tasks complete</div><div class="meta">' + s.pct + '%</div></div>'
+        + ticks(s.done, s.total) + '</div></div>';
+    }
+
     h += '<div class="grp">Client profile</div><div class="card">'
-      + '<div class="sect" id="profWrap">' + profileCard(c.profile) + '</div></div>';
+      + '<div class="sect prof-half" id="profWrap">' + profileCard(c.profile) + '</div></div>';
+
+    h += '<div class="grp">Recent context</div><div class="card">'
+      + '<div class="sect" id="recentWrap">' + loading() + '</div></div>';
 
     h += '<div class="grp">Slack</div><div class="card">'
       + '<div class="sect" id="slackWrap">' + slackCard(c) + '</div></div>';
 
-    h += '<div class="grp">Audit action items</div><div class="card">'
+    h += '<div class="grp">Action items</div><div class="card">'
       + '<div class="sect" id="actWrap">' + loading() + '</div></div>';
 
     // Filled in after the page paints. The documents are a second read and
@@ -2191,37 +2442,35 @@ function openClient(clientId){
       + '<div class="sect" id="docsWrap">' + loading() + '</div>'
       + '<div class="sect" id="callsWrap">' + callsCard(null) + '</div></div>';
 
-    var ps = d.phaseState || {};
-    if (ps.phases && ps.phases.length){
-      h += '<div class="grp">Phases</div><div class="card"><div class="rail">'
-        + ps.phases.map(function(p){
-            var cls = p.phase < ps.current ? 'done' : (p.phase === ps.current ? 'cur' : '');
-            return '<div class="step ' + cls + '"><div class="p">Phase ' + p.phase + '</div>'
-              + '<div class="n">' + esc(p.name) + '</div></div>';
-          }).join('') + '</div></div>';
-    }
-
-    var s = d.summary || {done:0, total:0, pct:0};
-    h += '<div class="grp">Progress</div><div class="card"><div class="row">'
-      + '<div class="who"><div class="co">' + s.done + ' of ' + s.total + ' tasks complete</div>'
-      + '<div class="meta">' + s.pct + '%</div></div>' + ticks(s.done, s.total) + '</div></div>';
-
     var tasks = d.tasks || [];
     var byPhase = {};
     tasks.forEach(function(t){ (byPhase[t.phase] = byPhase[t.phase] || []).push(t); });
     var canPing = !!(c.slack);
+    var curPhase = (d.phaseState && d.phaseState.current) || 1;
     Object.keys(byPhase).sort().forEach(function(k){
       // Only what is still open can be nudged, so a phase that is finished
       // offers nothing rather than a button that posts "nothing outstanding".
       var openHere = byPhase[k].filter(function(t){
         return t.status !== 'Complete' && t.status !== 'N/A';
       });
-      h += '<div class="grp">Phase ' + esc(k) + ' <span class="n">'
-        + byPhase[k].length + '</span>'
+      // A phase that is finished, or has not begun, is folded away. Five open
+      // phases is most of the page and only one of them is this week's work.
+      var doneHere = byPhase[k].length - openHere.length;
+      var allDone = !openHere.length;
+      var notStarted = doneHere === 0 && Number(k) > curPhase;
+      var shut = allDone || notStarted;
+      var state = allDone ? 'all done'
+        : (notStarted ? 'not started' : doneHere + ' of ' + byPhase[k].length + ' done');
+
+      h += '<div class="grp"><button class="phtog" data-ph="' + esc(k) + '">'
+        + '<span class="tw">' + (shut ? '▶' : '▼') + '</span>Phase ' + esc(k)
+        + ' <span class="n">' + byPhase[k].length + '</span>'
+        + '<span class="st">' + state + '</span></button>'
         + (canPing && openHere.length
             ? '<button class="gact" data-pingphase="' + esc(k) + '">Ping '
               + openHere.length + ' outstanding</button>' : '')
-        + '</div><div class="card">';
+        + '</div><div class="card phbody" data-phbody="' + esc(k) + '"'
+        + (shut ? ' style="display:none"' : '') + '>';
       h += byPhase[k].map(function(t){
         var open = t.status !== 'Complete' && t.status !== 'N/A';
         return '<div class="task"><div class="n">' + esc(t.task)
@@ -2240,6 +2489,27 @@ function openClient(clientId){
       h += '</div>';
     });
 
+    h += '<div class="grp">Add a task</div><div class="card"><div class="sect">'
+      + '<div class="hint">The seeded checklist covers access and the standard '
+      + 'beats. It cannot cover "chase the dev for the theme file" — and a '
+      + 'checklist you cannot add to is one people stop using.</div>'
+      + '<div class="fields">'
+      + '<div class="f wide"><label>Task</label>'
+      + '<input id="ntName" placeholder="What needs doing"></div>'
+      + '<div class="f"><label>Phase</label><select id="ntPhase">'
+      + [1,2,3,4,5].map(function(n){
+          return '<option' + (n === curPhase ? ' selected' : '') + '>' + n + '</option>';
+        }).join('') + '</select></div>'
+      + '<div class="f"><label>Owner</label><select id="ntOwner">'
+      + '<option value="">Unassigned</option>'
+      + (d.assignees || []).map(function(p){
+          return '<option>' + esc(p.name) + '</option>';
+        }).join('') + '</select></div>'
+      + '<div class="f"><label>Due</label><input id="ntDue" type="date"></div>'
+      + '<div class="f"><label>Notes</label><input id="ntNotes"></div>'
+      + '</div><div class="startrow">'
+      + '<button class="btn pri" id="addTask">Add task</button></div></div></div>';
+
     // Only the fields updateClientField accepts — anything else silently
     // returns { ok:false, message:'Unknown field.' }.
     h += '<div class="grp">Details</div><div class="card"><div class="sect"><div class="fields">'
@@ -2248,7 +2518,11 @@ function openClient(clientId){
       + pField('cadence', 'Meeting cadence', c.cadence, d.cadences || CACHE.options.cadences)
       + pField('term', 'Contract term', c.term, d.terms)
       + pField('bizType', 'Business type', c.bizType, d.bizTypes)
-      + pField('call', 'Onboarding call', c.call, CALL_STATES)
+      // Completed belongs on this list. By the time anyone opens the client
+      // page the call has usually happened, and a state list that cannot say so
+      // leaves it reading "Scheduled" forever.
+      + pField('call', 'Onboarding call', c.call,
+               CALL_STATES.concat(['Completed']))
       + pField('slack', 'Slack channel', c.slack)
       + pField('alias', 'Email alias', c.alias)
       + pField('approvals', 'Approvals contact', c.approvals)
@@ -2276,10 +2550,12 @@ function openClient(clientId){
 
     wireSlack(clientId, c);
     wireCalls(clientId);
+    loadRecent(clientId);
     loadActions(clientId);
 
     api('getClientDocs', clientId).then(function(r){
       if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(r);
+      wireDocs();
     }).catch(function(){
       if (el('docsWrap')) el('docsWrap').innerHTML =
         '<h3>Documents</h3><div class="hint">Could not read them.</div>';
@@ -2365,6 +2641,40 @@ function openClient(clientId){
           + (r.joined ? ' (bot joined the channel)' : '') + '.');
       }).catch(function(e){
         btn.disabled = false; btn.innerHTML = was; fail(e);
+      });
+    }
+
+    [].forEach.call(document.querySelectorAll('[data-ph]'), function(b){
+      b.addEventListener('click', function(){
+        var body = document.querySelector('[data-phbody="' + b.getAttribute('data-ph') + '"]');
+        if (!body) return;
+        var shut = body.style.display === 'none';
+        body.style.display = shut ? '' : 'none';
+        b.querySelector('.tw').textContent = shut ? '▼' : '▶';
+      });
+    });
+
+    if (el('addTask')){
+      el('addTask').addEventListener('click', function(){
+        var b = this;
+        var name = el('ntName').value.trim();
+        if (!name){ toast('The task needs a name.', true); return; }
+        b.disabled = true; b.textContent = 'Adding…';
+        api('addTask', TOKEN, clientId, {
+          task: name,
+          phase: Number(el('ntPhase').value) || 1,
+          owner: el('ntOwner').value,
+          due: el('ntDue').value,
+          notes: el('ntNotes').value
+        }).then(function(r){
+          b.disabled = false; b.textContent = 'Add task';
+          if (!r.ok){ toast(r.message, true); return; }
+          toast('Added "' + r.task + '" to phase ' + r.phase + '.');
+          CACHE.overview = null;
+          openClient(clientId);
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Add task'; fail(e);
+        });
       });
     }
 

@@ -210,6 +210,85 @@ function assignTask(token, clientId, task, owner) {
   return { ok: false, message: 'That task is no longer on this client.' };
 }
 
+/**
+ * Adds a task to a client's checklist by hand.
+ *
+ * The seeded checklist covers access and the standard onboarding beats. It
+ * cannot cover "chase the Shopify dev for the theme file", and a checklist you
+ * cannot add to is one people stop using — the real list moves to somebody's
+ * notes app and the tool becomes a report of a report.
+ *
+ * Written straight to the Access tab so it behaves like every other task:
+ * assignable, pingable, and counted in the progress rollup.
+ */
+function addTask(token, clientId, task) {
+  checkToken_(token);
+  task = task || {};
+
+  const name = String(task.task || '').trim();
+  if (!name) return { ok: false, message: 'The task needs a name.' };
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(TABS.ACCESS);
+  if (!sh) return { ok: false, message: 'No Access tab yet — run setup().' };
+
+  // A second row with the same name on the same client would make every
+  // status write ambiguous: setTaskStatus_ and assignTask both match on it.
+  const clash = getClientTasks_(clientId)
+    .some(t => t.task.toLowerCase() === name.toLowerCase());
+  if (clash) {
+    return { ok: false, message: 'This client already has a task called "'
+      + name + '". Task names are how status and assignment find their row, so '
+      + 'they have to be unique per client.' };
+  }
+
+  const phase = Math.min(5, Math.max(1, Number(task.phase) || 1));
+  const owner = String(task.owner || '').trim();
+
+  const row = new Array(A.WIDTH).fill('');
+  row[A.ID - 1] = clientId;
+  row[A.COMPANY - 1] = client.company;
+  row[A.TASK - 1] = name;
+  row[A.CATEGORY - 1] = String(task.category || 'Manual');
+  row[A.METHOD - 1] = 'INTERNAL';
+  row[A.NEEDS - 1] = String(task.needs || '');
+  row[A.STATUS - 1] = 'Not started';
+  row[A.DUE - 1] = task.due ? parseDate_(task.due) || '' : '';
+  row[A.OWNER - 1] = owner;
+  if (owner) row[A.ASSIGNED - 1] = new Date();
+  row[A.NOTES - 1] = String(task.notes || '');
+  row[A.PHASE - 1] = phase;
+  // Never a gate. A hand-added task that blocks phase progression would stall
+  // the client emails, and nobody adding a to-do expects that.
+  row[A.GATE - 1] = false;
+
+  sh.getRange(sh.getLastRow() + 1, 1, 1, A.WIDTH).setValues([row]);
+  return { ok: true, task: name, phase: phase };
+}
+
+/** Removes a task. Only ever one row, because names are unique per client. */
+function deleteTask(token, clientId, task) {
+  checkToken_(token);
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, message: 'No tasks.' };
+
+  const id = String(clientId).trim();
+  const want = String(task).trim();
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+    if (String(rows[i][A.TASK - 1]).trim() !== want) continue;
+    sh.deleteRow(i + 2);
+    return { ok: true };
+  }
+  return { ok: false, message: 'That task is no longer on this client.' };
+}
+
 function fmtDate_(v) {
   if (!v) return '';
   if (Object.prototype.toString.call(v) === '[object Date]') {
