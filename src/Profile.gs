@@ -79,16 +79,24 @@ function profileSources_(draftId) {
 
   const order = ['sales', 'kickoff', 'form', 'sow', 'deck'];
   const docs = [];
+  const take = s => {
+    if (!s || !s.fileId) return;
+    const text = readStored_(s.fileId);
+    if (text && text.trim()) docs.push({ key: s.key, label: s.label, text: text });
+  };
 
   order.forEach(key => {
-    (d.sources || []).forEach(s => {
-      if (s.key !== key || !s.fileId) return;
-      const text = readStored_(s.fileId);
-      if (text && text.trim()) {
-        docs.push({ key: key, label: s.label, text: text });
-      }
-    });
+    (d.sources || []).forEach(s => { if (s.key === key) take(s); });
   });
+
+  // Anything the fixed order does not name — a call imported from ClickUp
+  // months after the deal, for instance. Listing them last keeps the original
+  // deal documents leading, and dropping them would mean importing a
+  // transcript and then having nothing read it.
+  (d.sources || []).forEach(s => {
+    if (s && order.indexOf(s.key) === -1) take(s);
+  });
+
   return docs;
 }
 

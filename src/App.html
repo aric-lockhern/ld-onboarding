@@ -222,6 +222,16 @@
      without — which is what knocked the two dropdowns out of line. */
   .asgw .age{display:block; height:14px; font-size:11.5px; color:var(--faint);
     padding-left:2px; font-variant-numeric:tabular-nums; overflow:hidden}
+  /* Own class rather than reusing the reading checklist's row: these carry two
+     buttons, and a flex row that stretches its children turns them into two
+     tall columns on a phone. */
+  .crow{display:flex; align-items:flex-start; gap:10px; padding:13px 0;
+    border-top:1px solid var(--line); flex-wrap:wrap}
+  .crow .bd{flex:1 1 240px; min-width:0}
+  .crow .nm{font-size:14px; font-weight:500}
+  .crow .meta{font-size:12.5px; color:var(--faint); margin-top:2px;
+    overflow-wrap:anywhere}
+  .crow .btn{flex:none; align-self:center}
   .task .ping{flex:none; width:30px; height:34px; padding:0; border-radius:7px;
     border:1px solid var(--line); background:var(--surface); cursor:pointer;
     color:var(--muted); font-size:13px; line-height:1}
@@ -592,6 +602,7 @@ var SERVER_FNS = [
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'slackPingTasks', 'slackJoinChannel',
+  'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
 ];
@@ -1791,6 +1802,100 @@ function wireActions(clientId, r){
   });
 }
 
+/**
+ * Meeting notes in ClickUp that mention this client.
+ *
+ * Scanned rather than searched by title: the notetaker names a doc after the
+ * date, and the client appears in the attendee list and the body. That costs a
+ * fetch per doc, so it is on a button rather than on page load.
+ */
+function callsCard(r){
+  if (!r){
+    return '<h3>Calls in ClickUp</h3>'
+      + '<div class="hint">Scans recent ClickUp meeting docs for ones that '
+      + 'mention this client, so a later call can be filed against them without '
+      + 'anyone pasting a link. Imported calls are read by the profile and by '
+      + 'the action items.</div>'
+      + '<div class="startrow"><button class="btn" id="findCalls">'
+      + 'Find recent calls</button></div>';
+  }
+  if (!r.ok){
+    return '<h3>Calls in ClickUp</h3><div class="hint">' + esc(r.message) + '</div>'
+      + '<div class="startrow"><button class="btn" id="findCalls">'
+      + 'Try again</button></div>';
+  }
+
+  var calls = r.calls || [];
+  if (!calls.length){
+    return '<h3>No calls found</h3>'
+      + '<div class="hint">Scanned ' + r.scanned + ' recent docs for '
+      + esc((r.terms || []).join(' or ')) + ' and none mentioned them. The notes '
+      + 'may be older than the scan window, or in a Space this token cannot '
+      + 'see.</div>'
+      + '<div class="startrow"><button class="btn" id="findCalls">'
+      + 'Scan again</button></div>';
+  }
+
+  return '<h3>' + calls.length + ' call' + (calls.length === 1 ? '' : 's')
+    + ' mention this client</h3>'
+    + '<div class="hint">Out of ' + r.scanned + ' recent docs. Import files the '
+    + 'transcript with the deal documents, where the profile and the action '
+    + 'items will read it.</div>'
+    + calls.map(function(c){
+        return '<div class="crow"><div class="bd">'
+          + '<div class="nm">' + esc(c.name)
+          + (c.imported ? ' <span class="pill">imported</span>' : '') + '</div>'
+          + '<div class="meta">' + esc(c.updated) + ' · '
+          + Math.round(c.chars / 1000) + 'k chars · matched '
+          + esc((c.matchedOn || []).join(', ')) + '</div>'
+          + (c.preview ? '<div class="meta">' + esc(c.preview) + '</div>' : '')
+          + '</div>'
+          + '<a class="btn sm" href="' + esc(c.url) + '" target="_blank">Open</a>'
+          + '<button class="btn sm pri" data-import="' + esc(c.docId) + '" '
+          + 'data-label="' + esc(c.name) + '">'
+          + (c.imported ? 'Re-import' : 'Import') + '</button></div>';
+      }).join('')
+    + '<div class="startrow"><button class="btn" id="findCalls">Scan again</button>'
+    + '<span class="note">Rebuild the profile afterwards to fold the new call in.</span>'
+    + '</div>';
+}
+
+function wireCalls(clientId){
+  if (el('findCalls')){
+    el('findCalls').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Scanning ClickUp…';
+      api('clickupFindCalls', clientId).then(function(r){
+        if (!el('callsWrap')) return;
+        el('callsWrap').innerHTML = callsCard(r || { ok:false,
+          message:'The server returned nothing.' });
+        wireCalls(clientId);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Find recent calls'; fail(e);
+      });
+    });
+  }
+
+  [].forEach.call(document.querySelectorAll('[data-import]'), function(b){
+    b.addEventListener('click', function(){
+      var was = b.textContent;
+      b.disabled = true; b.textContent = 'Importing…';
+      api('clickupImportCall', TOKEN, clientId, b.getAttribute('data-import'),
+          b.getAttribute('data-label')).then(function(r){
+        b.disabled = false; b.textContent = was;
+        if (!r.ok){ toast(r.message, true); return; }
+        toast('Filed ' + r.label + ' — ' + Math.round(r.chars / 1000)
+          + 'k characters. Rebuild the profile to fold it in.');
+        // The documents card is now out of date, so refresh just that one.
+        api('getClientDocs', clientId).then(function(d){
+          if (el('docsWrap')) el('docsWrap').innerHTML = docsCard(d);
+        }).catch(function(){ /* the card keeps its last good state */ });
+      }).catch(function(e){
+        b.disabled = false; b.textContent = was; fail(e);
+      });
+    });
+  });
+}
+
 function docsCard(r){
   var docs = (r && r.docs) || [];
   if (!docs.length){
@@ -2083,7 +2188,8 @@ function openClient(clientId){
     // Filled in after the page paints. The documents are a second read and
     // should not hold up everything else on the page.
     h += '<div class="grp">Deal documents</div><div class="card">'
-      + '<div class="sect" id="docsWrap">' + loading() + '</div></div>';
+      + '<div class="sect" id="docsWrap">' + loading() + '</div>'
+      + '<div class="sect" id="callsWrap">' + callsCard(null) + '</div></div>';
 
     var ps = d.phaseState || {};
     if (ps.phases && ps.phases.length){
@@ -2169,6 +2275,7 @@ function openClient(clientId){
     el('back').addEventListener('click', function(){ go('clients'); });
 
     wireSlack(clientId, c);
+    wireCalls(clientId);
     loadActions(clientId);
 
     api('getClientDocs', clientId).then(function(r){
