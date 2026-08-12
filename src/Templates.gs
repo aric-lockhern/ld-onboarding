@@ -7,6 +7,7 @@
  *
  * Merge tags: {{company}} {{contact}} {{agency}} {{alias}} {{access_email}}
  *             {{owner}} {{mcc_id}} {{bm_id}} {{mca_id}} {{shopify_partner}}
+ *             {{questionnaire}}
  *
  * {{alias}} vs {{access_email}}. The alias is per client and is the better
  * shape: it survives staffing changes and offboarding is one clean revoke.
@@ -34,11 +35,49 @@ const TEMPLATE_MERGE_FIELDS = [
   { tag: '{{mcc_id}}', means: 'Google Ads manager ID, from Config' },
   { tag: '{{bm_id}}', means: 'Meta Business Manager ID, from Config' },
   { tag: '{{mca_id}}', means: 'Merchant Center advisor ID, from Config' },
-  { tag: '{{shopify_partner}}', means: 'Shopify partner name, from Config' }
+  { tag: '{{shopify_partner}}', means: 'Shopify partner name, from Config' },
+  { tag: '{{questionnaire}}', means: 'Onboarding questionnaire link, from Config' }
 ];
 
 
 const TEMPLATES = {
+
+  /**
+   * The first email after the deal closes.
+   *
+   * Three asks and no more: sign the contract, tell us when you are free, fill
+   * in the questionnaire. Every one of them is a thing only the client can do,
+   * and every one of them blocks something on our side — which is why they are
+   * numbered rather than buried in a paragraph of warmth.
+   *
+   * No access requests here on purpose. Those come in Phase 2, after the alias
+   * and the Drive folder exist, and mixing them in doubles the length of the
+   * first thing a new client reads.
+   */
+  '_welcome': {
+    subject: 'Welcome to {{agency}}!',
+    body:
+`Hi {{contact}},
+
+Thank you for choosing {{agency}} — we're glad to be working with you and the team at {{company}}.
+
+Three things to get us started:
+
+1. The contract. We've sent it over via DocuSign; whenever you have a moment to sign it.
+
+2. The kickoff call. Let us know a few times that work in the next week or so and we'll send a calendar invite once we've settled on one.
+
+3. The onboarding questionnaire, before that call: {{questionnaire}}
+
+It's the questionnaire that makes the kickoff useful — it covers your goals, your customers, what has and hasn't worked before, and who does what on your side. Filling it in first means we spend the call on decisions rather than on background.
+
+Nothing else is needed from you yet. We'll ask for account access after the kickoff, in one email rather than a trickle.
+
+Looking forward to it,
+
+{{owner}}
+{{agency}}`
+  },
 
   'Media billing setup': {
     subject: 'Media billing setup — {{company}}',
@@ -393,7 +432,12 @@ function mergeTags_(text, client) {
     mcc_id: cfg('Google Ads MCC ID') || '[MCC ID]',
     bm_id: cfg('Meta Business Manager ID') || '[Business Manager ID]',
     mca_id: cfg('Merchant Center MCA ID') || '[Merchant Center ID]',
-    shopify_partner: cfg('Shopify Partner Name') || (cfg('Agency Name') || 'our Partner account')
+    shopify_partner: cfg('Shopify Partner Name') || (cfg('Agency Name') || 'our Partner account'),
+    // Left visibly unset rather than silently empty. A welcome email that says
+    // "fill in the questionnaire" with no link is worse than one that says the
+    // link is missing, because only the second gets noticed before sending.
+    questionnaire: cfg('Onboarding Questionnaire URL')
+      || '[set the questionnaire URL on the Config tab]'
   };
   return String(text || '').replace(/\{\{(\w+)\}\}/g, (m, k) =>
     map[k] !== undefined ? map[k] : m);
