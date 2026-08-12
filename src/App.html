@@ -445,6 +445,11 @@
   /* Specialties are a chip list, not a comma string in a cell. The whole point
      of the admin screen is that the sheet's free text stopped being editable
      by anyone who is not the person who built the sheet. */
+  /* Initials, coloured off the name so the same person looks the same
+     everywhere. A row of six people is scanned by shape before it is read. */
+  .av{display:inline-flex; align-items:center; justify-content:center;
+    width:32px; height:32px; flex:0 0 32px; border-radius:999px;
+    font:600 12px/1 "Inter",sans-serif; letter-spacing:.02em}
   .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:7px}
   .tag{font:500 12px/1 "Inter",sans-serif; padding:5px 9px; border-radius:999px;
     background:var(--blue-wash); color:var(--blue-ink); border:1px solid var(--blue-line)}
@@ -625,6 +630,7 @@ var SERVER_FNS = [
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'addManualCall', 'deleteRecentCall',
+  'getClientTeam', 'addClientTeamMember', 'removeClientTeamMember',
   'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
@@ -860,6 +866,127 @@ function factsCard(c){
     return '<div class="fact"><span class="k">' + esc(r[0]) + '</span>'
       + '<span class="v">' + (r[2] ? r[1] : esc(r[1])) + '</span></div>';
   }).join('') + '</div>';
+}
+
+/**
+ * Initials, coloured off the name.
+ *
+ * Deterministic rather than random: the same person is the same colour on
+ * every page, which is what makes a row of six scannable at all.
+ */
+function initials(name){
+  var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : ''))
+    .toUpperCase();
+}
+
+function nameHue(name){
+  var n = 0, s = String(name || '');
+  for (var i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) % 360;
+  return n;
+}
+
+function avatar(name){
+  var h = nameHue(name);
+  return '<span class="av" style="background:hsl(' + h + ',52%,92%);color:hsl('
+    + h + ',48%,32%)">' + esc(initials(name)) + '</span>';
+}
+
+function teamCard(r){
+  if (!r || !r.ok){
+    return '<h3>Team</h3><div class="hint">'
+      + esc((r && r.message) || 'Could not read it.') + '</div>';
+  }
+
+  var members = r.members || [];
+  var h = members.length
+    ? members.map(function(m){
+        // Why somebody is here decides whether they can be taken off, so it is
+        // on screen rather than only in the code that enforces it. Offering
+        // Remove against a person holding six tasks promises something the
+        // server refuses to do.
+        var pinned = m.why.indexOf('Added to the account') !== -1;
+        var derived = m.why.filter(function(w){
+          return w !== 'Added to the account'; }).join(' · ');
+        return '<div class="crow"><div class="bd" style="display:flex;gap:10px;'
+          + 'align-items:center">' + avatar(m.name)
+          + '<div><div class="nm">' + esc(m.name)
+          + (m.known ? '' : ' <span class="pill">not on the team</span>')
+          + '</div><div class="meta">'
+          + esc([m.role, derived].filter(Boolean).join(' · ')
+                || 'Added to the account')
+          + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') : '')
+          + '</div></div></div>'
+          + (pinned && !derived
+              ? '<button class="btn sm" data-rmteam="' + esc(m.name) + '">Remove</button>'
+              : '')
+          + '</div>';
+      }).join('')
+    : '<div class="hint">Nobody is on this account yet — no owner, and no task '
+      + 'has been assigned.</div>';
+
+  if (r.teamEmpty){
+    h += '<div class="hint">The Team tab is empty, so there is nobody to add. '
+      + 'Build the directory on the Team page — it can import straight from '
+      + 'Slack.</div>';
+    return h;
+  }
+
+  if ((r.available || []).length){
+    h += '<div class="startrow" style="margin-top:12px">'
+      + '<select id="teamPick"><option value="">Add somebody…</option>'
+      + r.available.map(function(p){
+          return '<option value="' + esc(p.name) + '">' + esc(p.name)
+            + (p.role ? ' — ' + esc(p.role) : '') + '</option>';
+        }).join('')
+      + '</select>'
+      + '<button class="btn" id="addTeam">Add to account</button></div>';
+  } else {
+    h += '<div class="hint">Everybody on the Team tab is already on this '
+      + 'account.</div>';
+  }
+
+  return h;
+}
+
+function loadClientTeam(clientId){
+  api('getClientTeam', clientId).then(function(r){
+    if (!el('teamWrap')) return;
+    el('teamWrap').innerHTML = teamCard(r);
+    wireClientTeam(clientId);
+  }).catch(function(e){
+    if (el('teamWrap')) el('teamWrap').innerHTML =
+      '<h3>Team</h3><div class="hint">Could not read it: '
+      + esc((e && e.message) || 'unknown error') + '.</div>';
+  });
+}
+
+function wireClientTeam(clientId){
+  if (el('addTeam')){
+    el('addTeam').addEventListener('click', function(){
+      var b = this, who = el('teamPick').value;
+      if (!who){ toast('Pick somebody first.', true); return; }
+      b.disabled = true;
+      api('addClientTeamMember', TOKEN, clientId, who).then(function(r){
+        b.disabled = false;
+        if (!r.ok){ toast(r.message, true); return; }
+        el('teamWrap').innerHTML = teamCard(r);
+        wireClientTeam(clientId);
+        toast(who + ' added.');
+      }).catch(function(e){ b.disabled = false; fail(e); });
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-rmteam]'), function(b){
+    b.addEventListener('click', function(){
+      var who = b.getAttribute('data-rmteam');
+      api('removeClientTeamMember', TOKEN, clientId, who).then(function(r){
+        if (!r.ok){ toast(r.message, true); return; }
+        el('teamWrap').innerHTML = teamCard(r);
+        wireClientTeam(clientId);
+      }).catch(fail);
+    });
+  });
 }
 
 /**
@@ -2972,6 +3099,12 @@ function openClient(clientId){
     // website" meant scrolling past ten thousand characters of profile.
     h += factsCard(c);
 
+    // Who is on it, before the work itself. The answer was previously spread
+    // across an Owner cell and twenty task rows, and somebody who sits on every
+    // call but owns no checklist row appeared nowhere at all.
+    h += '<div class="grp">Team</div><div class="card">'
+      + '<div class="sect" id="teamWrap">' + loading() + '</div></div>';
+
     var ps = d.phaseState || {};
     var s = d.summary || {done:0, total:0, pct:0};
     if (ps.phases && ps.phases.length){
@@ -3144,6 +3277,7 @@ function openClient(clientId){
     wireScope(clientId);
     wireSlack(clientId, c);
     wireCalls(clientId);
+    loadClientTeam(clientId);
     loadRecent(clientId);
     loadActions(clientId);
 

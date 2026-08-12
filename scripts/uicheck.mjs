@@ -284,6 +284,20 @@ const FAKE = {
       { at:'11 Aug 2026', by:'aric',
         text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
     ] },
+  getClientTeam: { ok:true,
+    members:[
+      // Three ways onto an account, and only the third can be removed here.
+      { name:'Drake King', known:true, role:'Paid lead', tasks:6,
+        why:['Onboarding owner','Owns tasks'], pinned:false },
+      { name:'Priya Raman', known:true, role:'Analytics', tasks:3,
+        why:['Owns tasks'], pinned:false },
+      { name:'Alexandra McCurdy', known:true, role:'Strategy', tasks:0,
+        why:['Added to the account'], pinned:true }
+    ],
+    available:[{ name:'Sam Okafor', role:'Organic social', skills:['Reddit'] }],
+    teamEmpty:false },
+  addClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
+  removeClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
   addRecentNote: { ok:true, notes:[] },
   addManualCall: { ok:true, key:'call_q3-planning-call-8-aug-2026',
                    label:'Q3 planning call', chars:41200, words:7300, calls:[] },
@@ -885,6 +899,30 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForTimeout(120);
   const reopened = await page.$eval('[data-phbody="1"]', e => e.style.display);
   if (reopened === 'none') throw new Error('A folded phase would not reopen');
+
+  // Who is on the account, at the top. The Remove button is the assertion
+  // that matters: offering it against somebody who holds six tasks promises
+  // something the server refuses to do, and a button that reliably fails is
+  // worse than no button.
+  const teamCard = await page.evaluate(() => {
+    const wrap = document.getElementById('teamWrap');
+    return {
+      people: [].map.call(wrap.querySelectorAll('.crow .nm'),
+        e => e.textContent.trim()),
+      avatars: wrap.querySelectorAll('.av').length,
+      removable: [].map.call(wrap.querySelectorAll('[data-rmteam]'),
+        e => e.getAttribute('data-rmteam')),
+      canAdd: !!document.getElementById('addTeam')
+    };
+  });
+  if (teamCard.people.length !== 3 || teamCard.avatars !== 3) {
+    throw new Error('The client team did not render: ' + JSON.stringify(teamCard));
+  }
+  if (teamCard.removable.join(',') !== 'Alexandra McCurdy') {
+    throw new Error('Remove is offered against derived membership: '
+      + JSON.stringify(teamCard.removable));
+  }
+  if (!teamCard.canAdd) throw new Error('No way to add somebody to the account');
 
   // Recent context: the calls are links, not imports.
   const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
