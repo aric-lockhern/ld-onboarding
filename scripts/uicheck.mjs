@@ -54,6 +54,9 @@ const FAKE = {
   },
   getClientDetail: {
     client: { clientId:'HARBOR-2608', company:'Harbor & Sons', status:'Access Pending',
+      contact:'Dana Whitlock', email:'dana@harborandsons.com',
+      website:'harborandsons.com', vertical:'Bespoke joinery, trade and D2C',
+      contractStart:'1 Aug 2026', mrr:6000,
       owner:'Drake', cadence:'Weekly', billing:'Client card on account', call:'Scheduled',
       slack:'#harbor-sons', alias:'harborandsons@lockherndigital.com',
       approvals:'dana@harborandsons.com', term:'Month to month',
@@ -200,6 +203,21 @@ const FAKE = {
       needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
   updateActionItem: { ok:true },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
+  addTask: { ok:true, task:'Chase the dev for the theme file', phase:2 },
+  deleteTask: { ok:true },
+  getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
+    calls:[
+      { docId:'h6apc-44014', name:'Meeting - 08/06/2026', at:'6 Aug 2026',
+        url:'https://app.clickup.com/18033356/docs/h6apc-44014' },
+      { docId:'h6apc-41002', name:'Meeting - 07/16/2026', at:'16 Jul 2026',
+        url:'https://app.clickup.com/18033356/docs/h6apc-41002' }
+    ],
+    notes:[
+      { at:'11 Aug 2026', by:'aric',
+        text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
+    ] },
+  addRecentNote: { ok:true, notes:[] },
+  deleteRecentNote: { ok:true, notes:[] },
   slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2, joined:false },
   clickupFindCalls: { ok:true, scanned:38, workspaceId:'18033356',
     terms:['harbor & sons','dana whitlock'], calls:[
@@ -219,6 +237,15 @@ const FAKE = {
   slackJoinChannel: { ok:true, joined:true, name:'#harbor-sons',
     message:'Joined #harbor-sons.' },
   getActionItems: { ok:true, statuses:['To do','In progress','Done','Not doing'],
+    // Sizes are the point of the picker: the transcripts are what pushed the
+    // request past the fetch deadline, and two labels alone hide that.
+    sources:[
+      { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:true },
+      { key:'sow', label:'Scope of work', chars:17335, isCall:false, suggested:true },
+      { key:'sales', label:'Sales call transcript', chars:18039, isCall:true, suggested:false },
+      { key:'kickoff', label:'Onboarding / kickoff call transcript', chars:62476, isCall:true, suggested:false },
+      { key:'cu_h6apc-44014', label:'Meeting - 08/06/2026', chars:55300, isCall:true, suggested:false }
+    ],
     team:['Drake King','Alexandra McCurdy'],
     items:[
       { row:2, priority:'Now', status:'To do', owner:'Drake King', effort:'half a day',
@@ -669,6 +696,62 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('Assignee and status selects are out of line by up to '
       + worst + 'px: ' + JSON.stringify(rowAlign));
   }
+
+  // Facts above everything else: answering "what is their website" must not
+  // mean scrolling past ten thousand characters of profile.
+  const facts = await page.$$eval('.facts .fact .k', els => els.map(e => e.textContent));
+  ['Contact', 'Email', 'Website', 'Contract start'].forEach(function(k){
+    if (facts.indexOf(k) === -1) {
+      throw new Error('The facts card is missing ' + k + ': ' + JSON.stringify(facts));
+    }
+  });
+
+  // A finished phase and one that has not begun are folded; the current one is
+  // open. Five expanded phases is most of the page and only one is this week.
+  const phases = await page.$$eval('[data-phbody]', els => els.map(function(e){
+    return e.getAttribute('data-phbody') + ':' + (e.style.display === 'none' ? 'shut' : 'open');
+  }));
+  if (phases.indexOf('1:shut') === -1 || phases.indexOf('2:open') === -1) {
+    throw new Error('Phase folding is wrong: ' + JSON.stringify(phases));
+  }
+  await page.click('[data-ph="1"]');
+  await page.waitForTimeout(120);
+  const reopened = await page.$eval('[data-phbody="1"]', e => e.style.display);
+  if (reopened === 'none') throw new Error('A folded phase would not reopen');
+
+  // Recent context: the calls are links, not imports.
+  const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
+    els.map(e => e.getAttribute('href')));
+  if (recentLinks.length !== 2) {
+    throw new Error('Recent calls did not render as links: '
+      + JSON.stringify(recentLinks));
+  }
+
+  // Deal documents fold away — a long list nobody opened the page to find.
+  const docsShut = await page.$eval('#docsBody', e => e.style.display);
+  if (docsShut !== 'none') throw new Error('Deal documents did not start folded');
+
+  // The document picker is the fix for the timeout, so it has to default to
+  // the short high-signal documents rather than everything — ticking all five
+  // is 172k characters and is exactly what failed.
+  const picked = await page.$$eval('[data-src]', els =>
+    els.filter(e => e.checked).map(e => e.getAttribute('data-src')));
+  if (picked.join(',') !== 'deck,sow') {
+    throw new Error('Action item sources did not default to deck + SOW: '
+      + JSON.stringify(picked));
+  }
+  const sum = await page.$eval('#srcSum', e => e.textContent);
+  if (sum !== '36k characters') {
+    throw new Error('The character total did not reflect the default: ' + sum);
+  }
+  // Ticking a transcript has to move the number, or the size is decoration.
+  await page.click('[data-src="kickoff"]');
+  await page.waitForTimeout(120);
+  const sum2 = await page.$eval('#srcSum', e => e.textContent);
+  if (sum2 !== '99k characters') {
+    throw new Error('The total did not update when a transcript was added: ' + sum2);
+  }
+  await page.click('[data-src="kickoff"]');
 
   // Importing a call is the whole point of the scan, so the scan has to render
   // its results and mark what is already filed — offering "Import" on a doc
