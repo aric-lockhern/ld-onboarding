@@ -190,18 +190,49 @@ function callAnthropic_(prompt, opts) {
     content.push({ type: 'text', text: prompt.user });
   }
 
-  const res = UrlFetchApp.fetch(ANTHROPIC_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    muteHttpExceptions: true,
-    payload: JSON.stringify({
-      model: cfg('Model') || 'claude-opus-5',
-      max_tokens: opts.maxTokens || 8000,
-      system: prompt.system,
-      messages: [{ role: 'user', content: content }]
-    })
+  const payload = JSON.stringify({
+    model: cfg('Model') || 'claude-opus-5',
+    max_tokens: opts.maxTokens || 8000,
+    system: prompt.system,
+    messages: [{ role: 'user', content: content }]
   });
+
+  // muteHttpExceptions catches HTTP statuses, not connection failures. A
+  // request that runs past the fetch deadline THROWS, with "Address
+  // unavailable" — which reads as the API being down when it is really this
+  // request having been asked for more than it can produce in the time.
+  //
+  // Retried once, because it is sometimes genuinely transient. Named properly
+  // when it is not, since the fix is a smaller request and nobody would guess
+  // that from Google's wording.
+  let res;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      res = UrlFetchApp.fetch(ANTHROPIC_URL, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        muteHttpExceptions: true,
+        payload: payload
+      });
+      break;
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      if (attempt === 0 && /address unavailable|timeout|timed out/i.test(msg)) {
+        Utilities.sleep(2000);
+        continue;
+      }
+      if (/address unavailable|timeout|timed out/i.test(msg)) {
+        throw new Error('The request to Anthropic ran past the fetch deadline '
+          + 'and Google cut it off ("' + msg + '"). This is a size problem, not '
+          + 'an outage: the model was asked for up to '
+          + (opts.maxTokens || 8000) + ' tokens against '
+          + Math.round(String(prompt.user || '').length / 1000) + 'k characters '
+          + 'of input. Retry with fewer documents, or a smaller answer.');
+      }
+      throw e;
+    }
+  }
 
   const code = res.getResponseCode();
   const body = res.getContentText();

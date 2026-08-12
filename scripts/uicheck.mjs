@@ -200,7 +200,9 @@ const FAKE = {
       needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
   updateActionItem: { ok:true },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
-  slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2 },
+  slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2, joined:false },
+  slackJoinChannel: { ok:true, joined:true, name:'#harbor-sons',
+    message:'Joined #harbor-sons.' },
   getActionItems: { ok:true, statuses:['To do','In progress','Done','Not doing'],
     team:['Drake King','Alexandra McCurdy'],
     items:[
@@ -651,6 +653,13 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   if (worst > 1) {
     throw new Error('Assignee and status selects are out of line by up to '
       + worst + 'px: ' + JSON.stringify(rowAlign));
+  }
+
+  // A bot that is not in the channel cannot post, and the fix differs by
+  // channel type — so the button has to exist rather than the failure being
+  // discovered mid-nudge.
+  if (!(await page.$('#slackJoin'))) {
+    throw new Error('No "Add bot to channel" control on a client with a channel');
   }
 
   // Ping, individually and by phase. Both need a channel on the client.

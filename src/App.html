@@ -591,7 +591,7 @@ var SERVER_FNS = [
   'buildActionItems', 'getActionItems', 'updateActionItem',
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
-  'slackPingTasks',
+  'slackPingTasks', 'slackJoinChannel',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
 ];
@@ -1455,6 +1455,7 @@ function slackCard(c){
       + '<div id="slackPick"></div>'
       + '<div class="startrow">'
       + '<button class="btn" id="slackAdd">Add to channel</button>'
+      + '<button class="btn" id="slackJoin">Add bot to channel</button>'
       + '<button class="btn" id="slackPickBtn">Change channel</button>'
       + '<button class="btn" id="slackCheck">Test connection</button>'
       + '<button class="btn pri" id="slackPing">Ping outstanding items</button></div>';
@@ -1578,6 +1579,27 @@ function wireSlack(clientId, c){
                    : r.message, !r.ok);
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Add to channel'; fail(e);
+      });
+    });
+  }
+
+  if (el('slackJoin')){
+    el('slackJoin').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Joining…';
+      api('slackJoinChannel', TOKEN, clientId).then(function(r){
+        b.disabled = false; b.textContent = 'Add bot to channel';
+        // A private channel needs a human to run /invite, so the instruction
+        // has to stay on screen long enough to copy — a toast that clears in
+        // three seconds is not a place to put a command.
+        if (!r.ok && r.needsInvite){
+          var box = el('slackPick');
+          if (box) box.innerHTML = '<div class="okbox" style="margin-top:14px">'
+            + '<b>Invite the bot by hand</b><div>' + esc(r.message) + '</div></div>';
+          return;
+        }
+        toast(r.ok ? r.message : r.message, !r.ok);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Add bot to channel'; fail(e);
       });
     });
   }
@@ -2232,7 +2254,8 @@ function openClient(clientId){
         btn.disabled = false; btn.innerHTML = was;
         if (!r.ok){ toast(r.message, !r.nothing); return; }
         toast('Posted ' + r.posted + ' to ' + r.channel
-          + (r.owners > 1 ? ', grouped by owner' : '') + '.');
+          + (r.owners > 1 ? ', grouped by owner' : '')
+          + (r.joined ? ' (bot joined the channel)' : '') + '.');
       }).catch(function(e){
         btn.disabled = false; btn.innerHTML = was; fail(e);
       });

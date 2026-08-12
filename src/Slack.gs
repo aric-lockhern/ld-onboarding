@@ -70,8 +70,12 @@ function slackTest() {
   const granted = String(headers['x-oauth-scopes'] || headers['X-OAuth-Scopes'] || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
-  const wanted = ['channels:manage', 'groups:write', 'channels:read',
-                  'groups:read', 'users:read', 'users:read.email', 'chat:write'];
+  // channels:join is what lets the bot add itself to a public channel rather
+  // than failing every post with not_in_channel. There is no private equivalent
+  // — Slack requires a human to invite it — so nothing here covers that.
+  const wanted = ['channels:manage', 'channels:join', 'groups:write',
+                  'channels:read', 'groups:read', 'users:read',
+                  'users:read.email', 'chat:write'];
   const missing = granted.length ? wanted.filter(s => granted.indexOf(s) === -1) : [];
 
   return {
@@ -412,6 +416,114 @@ function slackRoster() {
  * people to ignore the next one.
  */
 /**
+ * Makes sure the bot is in the channel before anything tries to post to it.
+ *
+ * A bot cannot post where it is not a member, and the failure arrives as
+ * `not_in_channel` at the moment somebody presses send — which is both the
+ * least useful time to learn it and a thing the tool can usually just fix. A
+ * public channel can be self-joined; that happens here, silently, and the ping
+ * goes out as if nothing was wrong.
+ *
+ * A private channel cannot be. Slack does not allow a bot to add itself to a
+ * private conversation it was never invited to, and no scope changes that — so
+ * that case comes back with the exact command to run, naming the bot.
+ *
+ * @param {string} channel a name, with or without the leading #, or a channel ID
+ */
+function ensureBotInChannel_(channel) {
+  const raw = String(channel || '').replace(/^#/, '').trim();
+  if (!raw) return { ok: false, message: 'No channel set on this client.' };
+
+  const found = findChannel_(raw);
+  if (!found.ok) return found;
+
+  const ch = found.channel;
+  if (ch.is_member) return { ok: true, channelId: ch.id, name: ch.name };
+
+  if (ch.is_private) {
+    return { ok: false, needsInvite: true, channelId: ch.id, name: ch.name,
+             message: 'The bot is not in #' + ch.name + ', and Slack does not '
+               + 'let a bot add itself to a private channel. In #' + ch.name
+               + ', run:  /invite ' + botHandle_() };
+  }
+
+  const j = slackCall_('conversations.join', { channel: ch.id });
+  if (!j.ok) {
+    return { ok: false, channelId: ch.id, name: ch.name,
+             message: slackError_(j, 'join #' + ch.name) };
+  }
+  return { ok: true, joined: true, channelId: ch.id, name: ch.name };
+}
+
+/**
+ * A channel by name or ID.
+ *
+ * conversations.info takes an ID, and what is stored on the client is usually
+ * a name, so a name has to be resolved against the list first. Private channels
+ * the bot has never been invited to do not appear in that list at all — which
+ * is Slack's rule, and is reported as such rather than as "no such channel".
+ */
+function findChannel_(raw) {
+  if (/^[CG][A-Z0-9]{6,}$/.test(raw)) {
+    const info = slackCall_('conversations.info', { channel: raw });
+    if (!info.ok || !info.channel) {
+      return { ok: false, message: slackError_(info, 'read that channel') };
+    }
+    return { ok: true, channel: info.channel };
+  }
+
+  const want = raw.toLowerCase();
+  let cursor = '';
+  for (let page = 0; page < 20; page++) {
+    const r = slackCall_('conversations.list', Object.assign({
+      types: 'public_channel,private_channel', exclude_archived: true, limit: 200
+    }, cursor ? { cursor: cursor } : {}));
+    if (!r.ok) return { ok: false, message: slackError_(r, 'find that channel') };
+
+    const hit = (r.channels || []).find(c => String(c.name).toLowerCase() === want);
+    if (hit) return { ok: true, channel: hit };
+
+    cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    if (!cursor) break;
+  }
+
+  return { ok: false, notFound: true,
+           message: 'No channel called #' + raw + ' that this bot can see. If it '
+             + 'is private, the bot has to be invited to it before it can be '
+             + 'found at all — Slack does not list private channels to apps that '
+             + 'are not in them.' };
+}
+
+/** The bot's own @handle, for telling someone exactly what to type. */
+function botHandle_() {
+  const r = slackCall_('auth.test', {});
+  return (r && r.ok && r.user) ? '@' + r.user : '@your-bot';
+}
+
+/**
+ * Adds the bot to a client's channel on demand, from the Slack card.
+ *
+ * The pings self-heal, so this exists for the case where somebody wants to fix
+ * it deliberately rather than discover it mid-nudge — and to give the private
+ * channel instruction a place to appear before anything fails.
+ */
+function slackJoinChannel(token, clientId) {
+  checkToken_(token);
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+  if (!client.slack) {
+    return { ok: false, message: 'No Slack channel on this client yet.' };
+  }
+
+  const r = ensureBotInChannel_(client.slack);
+  if (!r.ok) return r;
+  return { ok: true, joined: !!r.joined, name: '#' + r.name,
+           message: r.joined ? 'Joined #' + r.name + '.'
+                             : 'Already in #' + r.name + '.' };
+}
+
+/**
  * Posts a named set of tasks to the client's channel, grouped by who owns them.
  *
  * One function for both the single-task nudge and the whole-phase one: they
@@ -448,13 +560,20 @@ function slackPingTasks(token, clientId, tasks) {
                : 'Nothing outstanding there — nothing sent.' };
   }
 
+  // Join before posting rather than reporting not_in_channel afterwards. For a
+  // public channel this is invisible; for a private one it is the only moment
+  // the instruction is any use, because the message has not been lost yet.
+  const member = ensureBotInChannel_(channel);
+  if (!member.ok) return member;
+
   const r = slackCall_('chat.postMessage', {
-    channel: channel.indexOf('C') === 0 ? channel : '#' + channel,
+    channel: member.channelId,
     text: taskLines_(client, open).join('\n')
   });
   if (!r.ok) return { ok: false, message: slackError_(r, 'post the message') };
 
-  return { ok: true, posted: open.length, channel: '#' + channel,
+  return { ok: true, posted: open.length, channel: '#' + member.name,
+           joined: !!member.joined,
            owners: Object.keys(byOwner_(open)).length };
 }
 
@@ -533,13 +652,17 @@ function slackPingOutstanding(token, clientId, channelOverride) {
     });
   });
 
+  const member = ensureBotInChannel_(channel);
+  if (!member.ok) return member;
+
   const r = slackCall_('chat.postMessage', {
-    channel: channel.indexOf('C') === 0 ? channel : '#' + channel,
+    channel: member.channelId,
     text: lines.join('\n')
   });
   if (!r.ok) return { ok: false, message: slackError_(r, 'post the message') };
 
-  return { ok: true, posted: open.length, channel: '#' + channel };
+  return { ok: true, posted: open.length, channel: '#' + member.name,
+           joined: !!member.joined };
 }
 
 // ---------------------------------------------------------------- INTERNALS
@@ -592,8 +715,11 @@ function slackError_(body, what) {
       + 'Token and set it again.';
   }
   if (err === 'not_in_channel') {
-    return 'The bot is not in that channel. Invite it there, or let the tool '
-      + 'create the channel so it is a member from the start.';
+    // Reached only when the pre-flight join could not run or was raced. The
+    // normal path now joins public channels before posting.
+    return 'The bot is not in that channel. Use "Add bot to channel" on the '
+      + 'client, or if the channel is private, run  /invite ' + botHandle_()
+      + '  in it — Slack does not let a bot add itself to a private channel.';
   }
   return 'Slack could not ' + what + ': ' + err;
 }

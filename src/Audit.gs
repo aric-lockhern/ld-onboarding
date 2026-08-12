@@ -20,13 +20,31 @@
  */
 
 /**
- * Enough for a page of items with reasons.
+ * Enough for a page of items with reasons — and no more.
  *
- * Raised from 8,000 after the model started running out mid-JSON on a five
- * document set. A truncated reply is not a smaller answer, it is no answer —
- * the parse fails and the whole run is lost.
+ * This was raised to 16,000 to stop the model running out mid-JSON, which
+ * traded one failure for a worse one: generating sixteen thousand tokens takes
+ * minutes, and UrlFetchApp gives up first with "Address unavailable" — a
+ * connection error for what is really a request that was asked to do too much.
+ *
+ * The right fix is a smaller answer rather than a longer wait, so the prompt
+ * now caps the list and this comes back down. Truncation is handled by asking
+ * for less, not by allowing more.
  */
-const ACTIONS_MAX_TOKENS = 16000;
+const ACTIONS_MAX_TOKENS = 6000;
+
+/** A list nobody will read is the same as no list. */
+const ACTIONS_MAX_ITEMS = 12;
+
+/**
+ * Characters of document text this task gets.
+ *
+ * Lower than PROMPT_CHAR_BUDGET on purpose. Commitments cluster in the deck and
+ * in what was agreed on the calls; a 62,000-character transcript in full is
+ * mostly rapport, and paying prefill time for it is what pushes an already slow
+ * request past the fetch deadline.
+ */
+const ACTIONS_CHAR_BUDGET = 120000;
 
 /**
  * The documents a commitment is ever found in.
@@ -234,6 +252,10 @@ function buildActionsPrompt_(client, docs, team) {
     'is a list nobody reads. If something was discussed but explicitly not',
     'agreed, leave it out of actions.',
     '',
+    'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost the',
+    'most to miss. A longer list is not a better one, and the tail is where',
+    'padding hides. Keep every field to one sentence.',
+    '',
     'The hard part is scope, and it is the part that matters most:',
     '- A deck written to win the deal proposes more than the contract bought.',
     '  An action item for work nobody is paying for is worse than no action',
@@ -306,7 +328,7 @@ function buildActionsPrompt_(client, docs, team) {
     '',
     '--- DOCUMENTS ---',
     docs.map(d => '### ' + d.label + '\n'
-      + trimForPrompt_(d.text, Math.floor(PROMPT_CHAR_BUDGET / Math.max(docs.length, 1)))
+      + trimForPrompt_(d.text, Math.floor(ACTIONS_CHAR_BUDGET / Math.max(docs.length, 1)))
     ).join('\n\n')
   ].join('\n');
 
