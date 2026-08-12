@@ -174,4 +174,6 @@ Two consequences worth holding onto:
 - **`--force` clobbers browser edits silently.** It's required because a non-interactive runner hangs on the manifest prompt. Nothing warns you, and there's no undo.
 - **`check` passing is not evidence the change works.** It parses and cross-references; that's all. Per rule 5 above, a behavioural change is unverified until someone clicks through the sheet. Say so rather than implying the deploy proved anything.
 
+**A daily deploy failure is a Workspace policy, not the code.** `invalid_rapt` means Google Cloud session control ended the session and wants a human to re-authenticate; a runner has no human. Setting it to "Session never expires" — ideally for an OU holding a dedicated deploy account rather than org-wide — is the only real fix. Re-running the job with the same secret will fail identically.
+
 Setup and secrets: `docs/OPERATIONS.md`.

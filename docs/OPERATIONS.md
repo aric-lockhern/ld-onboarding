@@ -258,6 +258,40 @@ The workflow pins `@google/clasp@3.3.0` exactly, and the pin has to be **at leas
 
 3.x reads all three; 2.x reads only its own. Since `npx clasp login` installs the latest, a 2.x pin in CI against a freshly generated file fails with `Cannot read properties of undefined (reading 'access_token')` — which looks like a broken token but is purely a version mismatch. The workflow now identifies the shape and prints it before pushing, so that failure names itself.
 
+### The credential expires daily unless you change one Workspace setting
+
+`invalid_grant … reauth related error (invalid_rapt)` is not a broken token and
+not a clasp bug. It is Google Workspace's **Google Cloud session control**
+reaching the end of its session and demanding the human re-authenticate. The
+default is 16 hours, which is why a CI credential that worked yesterday fails
+this morning, every morning.
+
+The refresh token in `~/.clasprc.json` is fine — the policy is simply refusing
+to honour it without a fresh human login, and a GitHub runner has no human.
+
+**Fix it in the Admin console:**
+
+Security → Access and data control → **Google Cloud session control** →
+set **Session never expires**.
+
+(Google moves this around; on older consoles it sits directly under Security.
+The error's own link — `support.google.com/a/answer/9368756` — always lands on
+the right page.)
+
+It governs OAuth tokens carrying Google Cloud and Apps Script API scopes, which
+is exactly what clasp holds. Nothing else about the setup changes.
+
+**If you would rather not relax it for everyone**, the setting applies per
+organisational unit. Put a dedicated deploy account in its own OU, give that
+account edit access to the script, generate `CLASPRC_JSON` as them, and leave
+everybody else on the shorter session. That is the better shape anyway: the
+credential in CI then belongs to a machine identity rather than to a founder's
+personal account, and revoking it costs nobody their morning.
+
+Until one of those is done, a failed deploy needs no re-merge — the workflow
+has a `workflow_dispatch` trigger, so refresh the secret and press **Run
+workflow**.
+
 ### Three things to know before you turn it on
 
 1. **`clasp push --force` overwrites the remote unconditionally.** The `--force` flag is there because a non-interactive runner would otherwise hang on the manifest-change prompt. The consequence: if someone edits in the browser and a deploy runs afterwards, their edits are gone with no warning and no undo. Either treat the browser editor as read-only, or `npm run pull` and commit before merging anything.
