@@ -325,7 +325,10 @@ const FAKE = {
     // Sizes are the point of the picker: the transcripts are what pushed the
     // request past the fetch deadline, and two labels alone hide that.
     sources:[
-      { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:true },
+      // With an audit on file it is the default and the pitch deck is not:
+      // ticking both is how the request gets big enough to time out again.
+      { key:'audit', label:'Audit presentation', chars:21400, isCall:false, suggested:true },
+      { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:false },
       { key:'sow', label:'Scope of work', chars:17335, isCall:false, suggested:true },
       { key:'sales', label:'Sales call transcript', chars:18039, isCall:true, suggested:false },
       { key:'kickoff', label:'Onboarding / kickoff call transcript', chars:62476, isCall:true, suggested:false },
@@ -937,19 +940,19 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // is 172k characters and is exactly what failed.
   const picked = await page.$$eval('[data-src]', els =>
     els.filter(e => e.checked).map(e => e.getAttribute('data-src')));
-  if (picked.join(',') !== 'deck,sow') {
-    throw new Error('Action item sources did not default to deck + SOW: '
+  if (picked.join(',') !== 'audit,sow') {
+    throw new Error('Action item sources did not default to the audit + SOW: '
       + JSON.stringify(picked));
   }
   const sum = await page.$eval('#srcSum', e => e.textContent);
-  if (sum !== '36k characters') {
+  if (sum !== '39k characters') {
     throw new Error('The character total did not reflect the default: ' + sum);
   }
   // Ticking a transcript has to move the number, or the size is decoration.
   await page.click('[data-src="kickoff"]');
   await page.waitForTimeout(120);
   const sum2 = await page.$eval('#srcSum', e => e.textContent);
-  if (sum2 !== '99k characters') {
+  if (sum2 !== '101k characters') {
     throw new Error('The total did not update when a transcript was added: ' + sum2);
   }
   await page.click('[data-src="kickoff"]');
