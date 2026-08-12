@@ -624,6 +624,7 @@ var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
+  'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
@@ -2283,6 +2284,83 @@ function wireActions(clientId, r){
  * 55,000 characters into Drive to do that is a cost nobody asked for. Import
  * stays on the ClickUp card for when a call should actually feed the profile.
  */
+/**
+ * The scope confirmation, drafted from the contract rather than a template.
+ *
+ * A shared template cannot do this job: a scope confirmation is a restatement
+ * of one specific contract, and a template version is either so vague it
+ * confirms nothing or a set of blanks somebody fills in by copying out of the
+ * SOW by hand — which is how a fee gets transcribed wrong, and a fee
+ * transcribed wrong in writing is a fee you have agreed to.
+ */
+function scopeCard(r){
+  if (!r){
+    return '<h3>Not drafted yet</h3>'
+      + '<div class="hint">Reads the signed scope of work and writes the email '
+      + 'that restates it — what was bought, what it costs, and what is not '
+      + 'included. It comes back for you to read and edit; nothing is sent.</div>'
+      + '<div class="startrow"><button class="btn pri" id="mkScope">'
+      + 'Draft from the contract</button></div>';
+  }
+  if (!r.ok){
+    return '<h3>Could not draft it</h3>'
+      + '<div class="hint">' + esc(r.message) + '</div>'
+      + '<div class="startrow"><button class="btn" id="mkScope">Try again</button></div>';
+  }
+
+  return '<h3>Draft</h3>'
+    + '<div class="hint">From ' + esc((r.read || []).join(', '))
+    + '. Read it before it goes anywhere — it restates a contract, and a number '
+    + 'restated wrong in writing is a number you have agreed to.</div>'
+    + (r.gaps && r.gaps.length
+        ? '<div class="okbox" style="margin:0 0 14px"><b>The contract does not say</b>'
+          + '<div>' + r.gaps.map(function(g){ return esc(g); }).join('<br>')
+          + '</div></div>'
+        : '')
+    + '<div class="fields">'
+    + '<div class="f wide"><label>Subject</label>'
+      + '<input id="scSubject" value="' + esc(r.subject) + '"></div>'
+    + '<div class="f wide"><label>Body</label>'
+      + '<textarea id="scBody" style="min-height:300px">' + esc(r.body) + '</textarea></div>'
+    + '</div>'
+    + '<div class="startrow">'
+    + '<button class="btn" id="mkScope">Redraft</button>'
+    + '<button class="btn pri" id="scCopy">Copy</button></div>';
+}
+
+function wireScope(clientId){
+  if (el('mkScope')){
+    el('mkScope').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Reading the contract…';
+      api('draftScopeEmail', TOKEN, clientId).then(function(r){
+        if (!el('scopeWrap')) return;
+        el('scopeWrap').innerHTML = scopeCard(r || { ok:false,
+          message:'The server returned nothing.' });
+        wireScope(clientId);
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Draft from the contract'; fail(e);
+      });
+    });
+  }
+  if (el('scCopy')){
+    el('scCopy').addEventListener('click', function(){
+      var text = el('scSubject').value + '\n\n' + el('scBody').value;
+      // No clipboard API in the Apps Script sandbox — a hidden textarea and
+      // execCommand is the only route that works inside the iframe.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      toast(ok ? 'Copied — subject and body.'
+               : 'Could not copy automatically; select the text and copy it.', !ok);
+    });
+  }
+}
+
 function recentCard(r){
   if (!r || !r.ok){
     return '<h3>Recent context</h3><div class="hint">'
@@ -2796,6 +2874,12 @@ function openClient(clientId){
     h += '<div class="grp">Recent context</div><div class="card">'
       + '<div class="sect" id="recentWrap">' + loading() + '</div></div>';
 
+    h += '<div class="grp"><button class="phtog" id="scopeTog">'
+      + '<span class="tw">▶</span>Scope confirmation '
+      + '<span class="st">drafted from the signed contract</span></button></div>'
+      + '<div class="card" id="scopeCard" style="display:none">'
+      + '<div class="sect" id="scopeWrap">' + scopeCard(null) + '</div></div>';
+
     h += '<div class="grp"><button class="phtog" id="slackTog">'
       + '<span class="tw">▶</span>Slack <span class="st">'
       + (c.slack ? esc(c.slack) : 'no channel yet') + '</span></button></div>'
@@ -2925,6 +3009,15 @@ function openClient(clientId){
         el('slackTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
       });
     }
+    if (el('scopeTog')){
+      el('scopeTog').addEventListener('click', function(){
+        var b = el('scopeCard');
+        var shut = b.style.display === 'none';
+        b.style.display = shut ? '' : 'none';
+        el('scopeTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+      });
+    }
+    wireScope(clientId);
     wireSlack(clientId, c);
     wireCalls(clientId);
     loadRecent(clientId);
