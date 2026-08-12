@@ -72,7 +72,11 @@ function buildActionItems(clientId) {
   if (!client) return { ok: false, message: 'Client not found.' };
 
   const all = profileSources_(draftIdForClient_(clientId));
-  const docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1);
+  // Imported ClickUp calls carry a cu_ key rather than one of the fixed names,
+  // and a promise made on last week's call counts exactly as much as one made
+  // on the kickoff.
+  const docs = all.filter(d => ACTION_SOURCE_KEYS.indexOf(d.key) !== -1
+    || String(d.key || '').indexOf('cu_') === 0);
 
   if (!docs.length) {
     return { ok: false,

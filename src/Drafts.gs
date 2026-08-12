@@ -244,7 +244,10 @@ function storeSource_(draftId, key, label, text, meta) {
     // just converted once — see runExtraction.
     originalMime: originalMime,
     chars: text.length, words: meta.words || 0,
-    preview: meta.preview || '', read: fmtWhen_(new Date())
+    preview: meta.preview || '', read: fmtWhen_(new Date()),
+    // Where it came from, when that is a system rather than an upload. Keeps a
+    // re-imported call updating its own copy instead of filing a second one.
+    clickupDocId: meta.clickupDocId || ''
   };
 
   const next = sources.filter(s => s && s.key !== key);

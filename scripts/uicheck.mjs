@@ -201,6 +201,21 @@ const FAKE = {
   updateActionItem: { ok:true },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
   slackPingTasks: { ok:true, posted:3, channel:'#harbor-sons', owners:2, joined:false },
+  clickupFindCalls: { ok:true, scanned:38, workspaceId:'18033356',
+    terms:['harbor & sons','dana whitlock'], calls:[
+      { docId:'h6apc-44014', name:'Meeting - 08/06/2026', updated:'6 Aug 2026',
+        updatedMs:1786039001377, url:'https://app.clickup.com/18033356/docs/h6apc-44014',
+        chars:55300, matchedOn:['harbor & sons','dana whitlock'],
+        preview:'Attendees: Drake King, Dana Whitlock, Alexandra McCurdy',
+        imported:false },
+      // Already filed: the button has to say Re-import, not offer a duplicate.
+      { docId:'h6apc-41002', name:'Meeting - 07/16/2026', updated:'16 Jul 2026',
+        updatedMs:1784000000000, url:'https://app.clickup.com/18033356/docs/h6apc-41002',
+        chars:18039, matchedOn:['harbor & sons'],
+        preview:'Attendees: Dana Whitlock, Aric Whiteley', imported:true }
+    ] },
+  clickupImportCall: { ok:true, key:'cu_h6apc-44014', label:'Meeting - 08/06/2026',
+    chars:55300, fileId:'fake-file' },
   slackJoinChannel: { ok:true, joined:true, name:'#harbor-sons',
     message:'Joined #harbor-sons.' },
   getActionItems: { ok:true, statuses:['To do','In progress','Done','Not doing'],
@@ -654,6 +669,22 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('Assignee and status selects are out of line by up to '
       + worst + 'px: ' + JSON.stringify(rowAlign));
   }
+
+  // Importing a call is the whole point of the scan, so the scan has to render
+  // its results and mark what is already filed — offering "Import" on a doc
+  // that is already in the folder is how a transcript ends up there twice.
+  await page.click('#findCalls');
+  await page.waitForSelector('[data-import]', { timeout: 5000 });
+  const callBtns = await page.$$eval('[data-import]', els =>
+    els.map(e => e.textContent.trim()));
+  if (callBtns.join('|') !== 'Import|Re-import') {
+    throw new Error('Call import buttons did not reflect what is already filed: '
+      + JSON.stringify(callBtns));
+  }
+  await page.waitForTimeout(200);
+  const fCalls = `${OUT}/${name}-detail-clickup-calls.png`;
+  await page.screenshot({ path: fCalls, fullPage: name === 'desktop' });
+  shots.push(fCalls);
 
   // A bot that is not in the channel cannot post, and the fix differs by
   // channel type — so the button has to exist rather than the failure being
