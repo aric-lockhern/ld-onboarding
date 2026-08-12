@@ -284,6 +284,13 @@ const FAKE = {
       { at:'11 Aug 2026', by:'aric',
         text:'Bonus bundle dropping from $300 to $250 — check landing pages against the site.' }
     ] },
+  // A 1x1 transparent GIF is a real image the browser will actually paint,
+  // which is what makes "did the photo replace the initials" testable.
+  getContactPhoto: { ok:true, photo:'data:image/gif;base64,'
+    + 'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' },
+  setContactPhoto: { ok:true, photo:'data:image/gif;base64,'
+    + 'R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==' },
+  clearContactPhoto: { ok:true, photo:'' },
   getClientTeam: { ok:true,
     members:[
       // Three ways onto an account, and only the third can be removed here.
@@ -899,6 +906,55 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.waitForTimeout(120);
   const reopened = await page.$eval('[data-phbody="1"]', e => e.style.display);
   if (reopened === 'none') throw new Error('A folded phase would not reopen');
+
+  // A mark in front of every task name. Twenty rows of plain text is a list
+  // you read; twenty marked rows is a list you glance at. The Google Merchant
+  // Center row must NOT take the Google mark — longest keyword wins, and
+  // getting that backwards is the whole reason the table is ordered.
+  const marks = await page.evaluate(() => ({
+    onTasks: document.querySelectorAll('.task .n .mk').length,
+    tasks: document.querySelectorAll('.task').length,
+    merchant: (function(){
+      var m = brandFor('Google Merchant Center');
+      return m && m[2];
+    })(),
+    ads: (function(){ var m = brandFor('Google Ads'); return m && m[2]; })(),
+    ga: (function(){ var m = brandFor('Google Analytics (GA4)'); return m && m[2]; })(),
+    unknown: brandFor('Chase the dev for the theme file')
+  }));
+  if (!marks.tasks || marks.onTasks !== marks.tasks) {
+    throw new Error('Task rows are missing marks: ' + JSON.stringify(marks));
+  }
+  if (marks.merchant !== 'MC' || marks.ads !== 'G' || marks.ga !== 'GA') {
+    throw new Error('Brand matching picked the wrong mark: ' + JSON.stringify(marks));
+  }
+  if (marks.unknown) {
+    throw new Error('A hand-added task matched a brand it has nothing to do with');
+  }
+
+  // The contact's photo. It arrives after the page paints, so the card has to
+  // render with initials first and swap — a card that only appears once the
+  // photo lands is a card that never appears for the clients without one.
+  const photo = await page.evaluate(() => ({
+    img: document.querySelectorAll('#photoWrap .ph').length,
+    fallback: document.querySelectorAll('#photoWrap .av').length,
+    canEdit: !!document.getElementById('phEdit')
+  }));
+  if (photo.img !== 1 || photo.fallback !== 0 || !photo.canEdit) {
+    throw new Error('The contact photo did not render: ' + JSON.stringify(photo));
+  }
+  // The form is the whole feature — LinkedIn cannot be read automatically, so
+  // the one manual step has to be reachable and has to explain itself.
+  await page.click('#phEdit');
+  const form = await page.evaluate(() => ({
+    open: document.getElementById('phForm').style.display,
+    saysWhy: /media\.licdn\.com/.test(document.getElementById('phForm').innerHTML),
+    upload: !!document.getElementById('phFile')
+  }));
+  if (form.open === 'none' || !form.saysWhy || !form.upload) {
+    throw new Error('The photo form is wrong: ' + JSON.stringify(form));
+  }
+  await page.click('#phCancel');
 
   // Who is on the account, at the top. The Remove button is the assertion
   // that matters: offering it against somebody who holds six tasks promises

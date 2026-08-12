@@ -445,6 +445,30 @@
   /* Specialties are a chip list, not a comma string in a cell. The whole point
      of the admin screen is that the sheet's free text stopped being editable
      by anyone who is not the person who built the sheet. */
+  /* Platform marks. Brand-coloured monograms rather than logotypes — see the
+     note on brandMark. Square so a row of them lines up whatever the letters. */
+  .mk{display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; flex:0 0 20px; border-radius:5px; margin-right:8px;
+    font:700 9.5px/1 "Inter",sans-serif; letter-spacing:.02em;
+    text-transform:uppercase; vertical-align:-4px}
+  .mk.none{background:var(--paper); border:1px solid var(--line)}
+  .mk.ms{background:none}
+  .mk.ms svg{width:13px; height:13px; display:block}
+  /* The contact, with a face on it. Same footprint whether the photo is there
+     or the initials are standing in, so the card does not jump when it loads. */
+  .phrow{display:flex; align-items:center; gap:12px}
+  .phrow .av{width:44px; height:44px; flex-basis:44px; font-size:15px}
+  .ph{width:44px; height:44px; flex:0 0 44px; border-radius:999px;
+    object-fit:cover; border:1px solid var(--line)}
+  .phrow .bd{flex:1; min-width:0}
+  .svcs{display:flex; flex-wrap:wrap; gap:6px}
+  .svc{display:inline-flex; align-items:center; font-size:13px;
+    background:var(--paper); border:1px solid var(--line); border-radius:999px;
+    padding:4px 11px 4px 7px}
+  .svc .mk{margin-right:6px; width:17px; height:17px; flex-basis:17px;
+    font-size:8.5px; vertical-align:0}
+  .task .n .mk{vertical-align:-4px}
+
   /* Initials, coloured off the name so the same person looks the same
      everywhere. A row of six people is scanned by shape before it is read. */
   .av{display:inline-flex; align-items:center; justify-content:center;
@@ -631,6 +655,7 @@ var SERVER_FNS = [
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'addManualCall', 'deleteRecentCall',
   'getClientTeam', 'addClientTeamMember', 'removeClientTeamMember',
+  'getContactPhoto', 'setContactPhoto', 'clearContactPhoto',
   'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
@@ -858,7 +883,7 @@ function factsCard(c){
     ['MRR', c.mrr ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr) : ''],
     ['Term', c.term],
     ['Owner', c.owner],
-    ['Services', c.services],
+    ['Services', serviceChips(c.services), true],
     ['Slack', c.slack]
   ].filter(function(r){ return r[1]; });
 
@@ -866,6 +891,95 @@ function factsCard(c){
     return '<div class="fact"><span class="k">' + esc(r[0]) + '</span>'
       + '<span class="v">' + (r[2] ? r[1] : esc(r[1])) + '</span></div>';
   }).join('') + '</div>';
+}
+
+/**
+ * A mark for a platform or a service.
+ *
+ * A checklist of twenty rows reads as twenty identical lines of text, and the
+ * one you are looking for — the Shopify row, the Merchant Center row — is found
+ * by reading every one of them. A coloured mark in front turns that into
+ * something you find by glancing.
+ *
+ * These are brand-coloured monograms, not the brands' actual logotypes. Two
+ * reasons, and the first is the one that decides it: an artboard-accurate
+ * Google G or Reddit alien is not something to draw from memory into a file
+ * nobody will ever check against the original, and a wrong logo is worse than
+ * no logo. The second is that nothing here can fetch an image — the app runs
+ * in a sandboxed iframe, and an <img> pointed at a CDN is a request that fails
+ * quietly on a slow morning and leaves a broken box. Microsoft is the one real
+ * mark, because four coloured squares is a thing you can draw exactly.
+ *
+ * Matching is by keyword against the task or service name, longest first, so
+ * "Google Merchant Center" does not take the Google colour before the Merchant
+ * Center one has been considered.
+ */
+var BRANDS = [
+  ['merchant center', '#4285F4', 'MC'],
+  ['google analytics', '#E8710A', 'GA'],
+  ['search console', '#458CF5', 'SC'],
+  ['tag manager', '#246FDB', 'TM'],
+  ['google ads', '#4285F4', 'G'],
+  ['google', '#4285F4', 'G'],
+  ['microsoft', '#00A4EF', 'ms'],
+  ['bing', '#00A4EF', 'ms'],
+  ['meta', '#0866FF', 'M'],
+  ['facebook', '#0866FF', 'f'],
+  ['instagram', '#C13584', 'ig'],
+  ['reddit', '#FF4500', 'R'],
+  ['linkedin', '#0A66C2', 'in'],
+  ['tiktok', '#111111', 'tt'],
+  ['pinterest', '#BD081C', 'P'],
+  ['youtube', '#FF0000', 'YT'],
+  ['shopify', '#5A863E', 'S'],
+  ['amazon', '#FF9900', 'a'],
+  ['klaviyo', '#232426', 'K'],
+  ['hubspot', '#FF7A59', 'H'],
+  ['wordpress', '#21759B', 'W'],
+  ['slack', '#4A154B', 'sl'],
+  ['seo', '#0D6528', 'SEO'],
+  ['organic', '#0D6528', 'og'],
+  ['landing page', '#6B4FBB', 'LP'],
+  ['email', '#8A5200', '@'],
+  ['billing', '#9B2020', '$'],
+  ['brand', '#6B4FBB', 'B'],
+  ['clickup', '#7B68EE', 'CU'],
+  ['drive', '#1A73E8', 'D']
+];
+
+function brandFor(name){
+  var s = String(name || '').toLowerCase();
+  for (var i = 0; i < BRANDS.length; i++){
+    if (s.indexOf(BRANDS[i][0]) !== -1) return BRANDS[i];
+  }
+  return null;
+}
+
+/** Microsoft's four squares, which is one of the few marks worth drawing. */
+function msMark(){
+  return '<span class="mk ms" aria-hidden="true">'
+    + '<svg viewBox="0 0 10 10"><rect x="0" y="0" width="4.4" height="4.4" fill="#F25022"/>'
+    + '<rect x="5.6" y="0" width="4.4" height="4.4" fill="#7FBA00"/>'
+    + '<rect x="0" y="5.6" width="4.4" height="4.4" fill="#00A4EF"/>'
+    + '<rect x="5.6" y="5.6" width="4.4" height="4.4" fill="#FFB900"/></svg></span>';
+}
+
+function brandMark(name){
+  var b = brandFor(name);
+  if (!b) return '<span class="mk none" aria-hidden="true"></span>';
+  if (b[2] === 'ms') return msMark();
+  return '<span class="mk" aria-hidden="true" style="background:' + b[1]
+    + '1F;color:' + b[1] + '">' + esc(b[2]) + '</span>';
+}
+
+/** The Services cell, which arrives as a comma string, as marked chips. */
+function serviceChips(services){
+  var list = String(services || '').split(',').map(function(s){ return s.trim(); })
+    .filter(Boolean);
+  if (!list.length) return '';
+  return '<span class="svcs">' + list.map(function(s){
+    return '<span class="svc">' + brandMark(s) + esc(s) + '</span>';
+  }).join('') + '</span>';
 }
 
 /**
@@ -986,6 +1100,111 @@ function wireClientTeam(clientId){
         wireClientTeam(clientId);
       }).catch(fail);
     });
+  });
+}
+
+/**
+ * The contact, with their face on it when there is one.
+ *
+ * LinkedIn cannot be read automatically — no API returns a profile you have not
+ * been personally authorised for, and reading the page is behind an auth wall
+ * and against their terms. The workable version is the one manual step:
+ * right-click the photo on their profile, copy the image address, paste it
+ * here. The server fetches it and keeps a copy, because those URLs expire.
+ */
+function photoCard(c, photo){
+  var name = c.contact || c.company || 'the contact';
+  return '<div class="phrow">'
+    + (photo
+        ? '<img class="ph" src="' + photo + '" alt="">'
+        : avatar(name))
+    + '<div class="bd"><div class="nm">' + esc(name) + '</div>'
+    + '<div class="meta">' + esc(c.email || 'no email on file') + '</div></div>'
+    + '<button class="btn sm" id="phEdit">' + (photo ? 'Change' : 'Add photo')
+    + '</button>'
+    + (photo ? '<button class="btn sm" id="phClear">Remove</button>' : '')
+    + '</div>'
+    + '<div id="phForm" style="display:none">'
+    + '<div class="hint">Open their LinkedIn profile, right-click the '
+    + 'photograph itself and choose <b>Copy image address</b> — it starts '
+    + 'media.licdn.com. The profile URL will not work: LinkedIn does not serve '
+    + 'profile pages to anything but a signed-in browser, and there is no API '
+    + 'that returns somebody else\'s photo. A copy is stored in the client\'s '
+    + 'Drive folder, because those image addresses expire.</div>'
+    + '<div class="fields"><div class="f wide"><label>Image address</label>'
+    + '<input id="phUrl" placeholder="https://media.licdn.com/…"></div>'
+    + '<div class="f wide"><label>…or upload a file</label>'
+    + '<input type="file" id="phFile" accept="image/*"></div></div>'
+    + '<div class="startrow"><button class="btn" id="phCancel">Cancel</button>'
+    + '<button class="btn pri" id="phSave">Save photo</button></div></div>';
+}
+
+function loadContactPhoto(clientId, c){
+  var wrap = el('photoWrap');
+  if (!wrap) return;
+  wrap.innerHTML = photoCard(c, '');
+  wireContactPhoto(clientId, c);
+
+  api('getContactPhoto', clientId).then(function(r){
+    if (!el('photoWrap') || !r || !r.photo) return;
+    el('photoWrap').innerHTML = photoCard(c, r.photo);
+    wireContactPhoto(clientId, c);
+  }).catch(function(){ /* no photo is not a failure worth a message */ });
+}
+
+function wireContactPhoto(clientId, c){
+  if (el('phEdit')){
+    el('phEdit').addEventListener('click', function(){
+      el('phForm').style.display = 'block';
+      el('phUrl').focus();
+    });
+  }
+  if (el('phCancel')){
+    el('phCancel').addEventListener('click', function(){
+      el('phForm').style.display = 'none';
+    });
+  }
+  if (el('phClear')){
+    el('phClear').addEventListener('click', function(){
+      api('clearContactPhoto', TOKEN, clientId).then(function(r){
+        if (!r.ok){ toast(r.message, true); return; }
+        el('photoWrap').innerHTML = photoCard(c, '');
+        wireContactPhoto(clientId, c);
+      }).catch(fail);
+    });
+  }
+  if (!el('phSave')) return;
+
+  el('phSave').addEventListener('click', function(){
+    var b = this;
+    var url = el('phUrl').value.trim();
+    var file = el('phFile').files && el('phFile').files[0];
+    if (!url && !file){ toast('Paste an image address or pick a file.', true); return; }
+
+    b.disabled = true; b.textContent = 'Saving…';
+    var send = function(raw){
+      api('setContactPhoto', TOKEN, clientId, raw).then(function(r){
+        b.disabled = false; b.textContent = 'Save photo';
+        if (!r.ok){ toast(r.message, true); return; }
+        el('photoWrap').innerHTML = photoCard(c, r.photo);
+        wireContactPhoto(clientId, c);
+        toast('Photo saved.');
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Save photo'; fail(e);
+      });
+    };
+
+    if (!file){ send(url); return; }
+    var fr = new FileReader();
+    fr.onload = function(){
+      send({ name: file.name, mimeType: file.type,
+             data: String(fr.result).split(',')[1] });
+    };
+    fr.onerror = function(){
+      b.disabled = false; b.textContent = 'Save photo';
+      toast('Could not read that file.', true);
+    };
+    fr.readAsDataURL(file);
   });
 }
 
@@ -1171,7 +1390,7 @@ function taskLibraryCard(r){
           if (t.offset !== '') bits.push('due +' + t.offset + 'd');
           if (t.owner) bits.push(t.owner);
           return '<div class="crow' + (t.active ? '' : ' off') + '">'
-            + '<div class="bd"><div class="nm">' + esc(t.task)
+            + '<div class="bd"><div class="nm">' + brandMark(t.task) + esc(t.task)
             + (t.active ? '' : ' <span class="pill">inactive</span>') + '</div>'
             + '<div class="meta">' + esc(bits.join(' · ')) + '</div></div>'
             + '<button class="btn sm" data-edit-task="' + t.row + '">Edit</button>'
@@ -3103,6 +3322,7 @@ function openClient(clientId){
     // across an Owner cell and twenty task rows, and somebody who sits on every
     // call but owns no checklist row appeared nowhere at all.
     h += '<div class="grp">Team</div><div class="card">'
+      + '<div class="sect" id="photoWrap"></div>'
       + '<div class="sect" id="teamWrap">' + loading() + '</div></div>';
 
     var ps = d.phaseState || {};
@@ -3183,7 +3403,8 @@ function openClient(clientId){
         + (shut ? ' style="display:none"' : '') + '>';
       h += byPhase[k].map(function(t){
         var open = t.status !== 'Complete' && t.status !== 'N/A';
-        return '<div class="task"><div class="n">' + esc(t.task)
+        return '<div class="task"><div class="n">' + brandMark(t.task)
+          + esc(t.task)
           + (t.gate ? ' <span class="pill">gate</span>' : '') + '</div>'
           + assignCell(t, d.assignees || [])
           + '<select data-task="' + esc(t.task) + '">'
@@ -3277,6 +3498,7 @@ function openClient(clientId){
     wireScope(clientId);
     wireSlack(clientId, c);
     wireCalls(clientId);
+    loadContactPhoto(clientId, c);
     loadClientTeam(clientId);
     loadRecent(clientId);
     loadActions(clientId);
