@@ -267,6 +267,15 @@ const FAKE = {
   deleteTask: { ok:true },
   getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
     today:'12 Aug 2026',
+    // Served by the server so the picker can never offer a kind it would
+    // quietly file as something else.
+    kinds:[
+      { key:'call', label:'Call transcript', hint:'Listed under recent calls.' },
+      { key:'audit', label:'Audit presentation',
+        hint:'The default document the action items are built from.' },
+      { key:'deck', label:'Pitch deck', hint:'' },
+      { key:'sow', label:'Scope of work', hint:'Replaces the stored contract.' }
+    ],
     calls:[
       // One filed by hand, one found by the scan. They render differently and
       // the daily scan must not evict the first.
@@ -307,7 +316,20 @@ const FAKE = {
   removeClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
   addRecentNote: { ok:true, notes:[] },
   addManualCall: { ok:true, key:'call_q3-planning-call-8-aug-2026',
-                   label:'Q3 planning call', chars:41200, words:7300, calls:[] },
+                   label:'Q3 planning call', kind:'call', replaced:false,
+                   chars:41200, words:7300, calls:[] },
+  // What the new call changes about what we believed, by profile section.
+  // A change with no `was` is new rather than revised, and the two read
+  // differently on screen.
+  reviewNewDocument: { ok:true, written:2, read:'Q3 planning call',
+    changes:[
+      { section:'Communication', was:'Extremely terse',
+        now:'Now wants a short written recap after every call, from 12 Aug',
+        quote:'just send me the three lines afterwards' },
+      { section:'What they care about', was:'',
+        now:'Blended CPA target moved from $100 to $85 for Q4',
+        quote:'we need to be at eighty-five by November' }
+    ] },
   deleteRecentCall: { ok:true, calls:[] },
   draftScopeEmail: { ok:true,
     read:['Scope of work','Pitch deck'],
@@ -935,13 +957,23 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // The contact's photo. It arrives after the page paints, so the card has to
   // render with initials first and swap — a card that only appears once the
   // photo lands is a card that never appears for the clients without one.
-  const photo = await page.evaluate(() => ({
-    img: document.querySelectorAll('#photoWrap .ph').length,
-    fallback: document.querySelectorAll('#photoWrap .av').length,
-    canEdit: !!document.getElementById('phEdit')
-  }));
+  const photo = await page.evaluate(() => {
+    const wrap = document.getElementById('photoWrap');
+    return {
+      img: document.querySelectorAll('#photoWrap .ph').length,
+      fallback: document.querySelectorAll('#photoWrap .av').length,
+      canEdit: !!document.getElementById('phEdit'),
+      // It belongs beside the profile — that is the card that spends four
+      // hundred words on how to talk to this person.
+      byProfile: !!(wrap && wrap.parentElement
+        && wrap.parentElement.querySelector('#profWrap'))
+    };
+  });
   if (photo.img !== 1 || photo.fallback !== 0 || !photo.canEdit) {
     throw new Error('The contact photo did not render: ' + JSON.stringify(photo));
+  }
+  if (!photo.byProfile) {
+    throw new Error('The contact photo is not beside the client profile');
   }
   // The form is the whole feature — LinkedIn cannot be read automatically, so
   // the one manual step has to be reachable and has to explain itself.
@@ -956,29 +988,34 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   }
   await page.click('#phCancel');
 
-  // Who is on the account, at the top. The Remove button is the assertion
-  // that matters: offering it against somebody who holds six tasks promises
-  // something the server refuses to do, and a button that reliably fails is
-  // worse than no button.
-  const teamCard = await page.evaluate(() => {
-    const wrap = document.getElementById('teamWrap');
+  // Who is on the account: one line inside the facts card, not a section of
+  // its own. The × is the assertion that matters — offering it against
+  // somebody who holds six tasks promises something the server refuses to do,
+  // and a button that reliably fails is worse than no button.
+  const teamStrip = await page.evaluate(() => {
+    const wrap = document.getElementById('teamStrip');
+    if (!wrap) return { missing: true };
     return {
-      people: [].map.call(wrap.querySelectorAll('.crow .nm'),
-        e => e.textContent.trim()),
+      people: wrap.querySelectorAll('.tm').length,
       avatars: wrap.querySelectorAll('.av').length,
       removable: [].map.call(wrap.querySelectorAll('[data-rmteam]'),
         e => e.getAttribute('data-rmteam')),
-      canAdd: !!document.getElementById('addTeam')
+      canAdd: !!document.getElementById('teamPick'),
+      // It has to live inside the facts card, or it is a section again.
+      inFacts: !!wrap.closest('.facts')
     };
   });
-  if (teamCard.people.length !== 3 || teamCard.avatars !== 3) {
-    throw new Error('The client team did not render: ' + JSON.stringify(teamCard));
+  if (teamStrip.missing || teamStrip.people !== 3 || teamStrip.avatars !== 3) {
+    throw new Error('The client team did not render: ' + JSON.stringify(teamStrip));
   }
-  if (teamCard.removable.join(',') !== 'Alexandra McCurdy') {
+  if (!teamStrip.inFacts) {
+    throw new Error('The team strip is not in the facts card');
+  }
+  if (teamStrip.removable.join(',') !== 'Alexandra McCurdy') {
     throw new Error('Remove is offered against derived membership: '
-      + JSON.stringify(teamCard.removable));
+      + JSON.stringify(teamStrip.removable));
   }
-  if (!teamCard.canAdd) throw new Error('No way to add somebody to the account');
+  if (!teamStrip.canAdd) throw new Error('No way to add somebody to the account');
 
   // Recent context: the calls are links, not imports.
   const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
@@ -994,13 +1031,23 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   const addCall = await page.evaluate(() => ({
     box: !!document.getElementById('mcText'),
     button: !!document.getElementById('addCall'),
+    // The intake form closes behind you. An audit presented in week three has
+    // to be fileable from here or it can never reach the action items.
+    kinds: [].map.call(document.querySelectorAll('#mcKind option'),
+      e => e.value),
+    upload: !!document.getElementById('mcFile'),
     // A call added by hand is the one the daily scan could silently replace,
     // so the list has to say which is which.
     handMarked: /added by hand/.test(document.getElementById('recentWrap').innerHTML),
     removable: document.querySelectorAll('[data-delcall]').length
   }));
-  if (!addCall.box || !addCall.button) {
-    throw new Error('No way to add a non-ClickUp call: ' + JSON.stringify(addCall));
+  if (!addCall.box || !addCall.button || !addCall.upload) {
+    throw new Error('No way to add a non-ClickUp document: '
+      + JSON.stringify(addCall));
+  }
+  if (addCall.kinds.indexOf('audit') === -1 || addCall.kinds.indexOf('call') === -1) {
+    throw new Error('The document kinds do not include the audit: '
+      + JSON.stringify(addCall.kinds));
   }
   if (!addCall.handMarked || addCall.removable !== 3) {
     throw new Error('Manual calls are not distinguishable or removable: '
@@ -1009,7 +1056,35 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.fill('#mcText', 'https://docs.google.com/document/d/1AbCdEf/edit');
   await page.fill('#mcName', 'Q3 planning call');
   await page.click('#addCall');
+  await page.waitForTimeout(300);
+
+  // Having filed something, the two questions it raises are offered rather
+  // than run — both cost a model call. "I added a transcript, now what?" was
+  // the gap: the document landed and the page said nothing more about it.
+  const offer = await page.evaluate(() => ({
+    shown: (document.getElementById('rrOffer') || {}).style
+      ? document.getElementById('rrOffer').style.display : 'missing',
+    what: !!document.getElementById('rrWhat'),
+    actions: !!document.getElementById('rrActions')
+  }));
+  if (offer.shown === 'none' || offer.shown === 'missing'
+      || !offer.what || !offer.actions) {
+    throw new Error('Nothing offered after filing a document: '
+      + JSON.stringify(offer));
+  }
+
+  // What it changes, reported against the profile section it belongs to and
+  // written as dated notes — the profile itself is never rewritten.
+  await page.click('#rrWhat');
   await page.waitForTimeout(250);
+  const reread = await page.$eval('#rrOut', e => e.textContent);
+  if (!/Communication/.test(reread) || !/was:/.test(reread)) {
+    throw new Error('The change report did not name the section or the old '
+      + 'belief: ' + reread.slice(0, 200));
+  }
+  const shotReread = `${OUT}/${name}-detail-reread.png`;
+  await page.screenshot({ path: shotReread, fullPage: name === 'desktop' });
+  shots.push(shotReread);
 
   // Deal documents fold away — a long list nobody opened the page to find.
   const docsShut = await page.$eval('#docsBody', e => e.style.display);

@@ -171,6 +171,10 @@ function buildActionItems(clientId, keys) {
     ok: true,
     written: kept.written,
     preserved: kept.preserved,
+    // Which of them had never been on this client before. After adding a
+    // document this is the answer to "so what did that give me" — and an empty
+    // list is a real answer too: the call restated what was already known.
+    fresh: kept.fresh,
     read: read,
     outOfScope: outOfScope,
     unassigned: items.filter(i => !i.owner).length,
@@ -304,6 +308,11 @@ function writeActions_(clientId, items) {
   const id = String(clientId).trim();
 
   const started = {};
+  // Every item that was on this client before, at any status. A rebuild
+  // deletes and rewrites the To-do rows, so without this "written: 6" cannot
+  // tell you whether the document you just added produced anything — which is
+  // the only question anybody asks after adding one.
+  const before = {};
   let preserved = 0;
 
   if (sh.getLastRow() > 1) {
@@ -312,6 +321,7 @@ function writeActions_(clientId, items) {
     for (let i = rows.length - 1; i >= 0; i--) {
       if (String(rows[i][ACT.CLIENT - 1]).trim() !== id) continue;
       const status = String(rows[i][ACT.STATUS - 1] || 'To do');
+      before[String(rows[i][ACT.ACTION - 1]).trim()] = true;
       if (status === 'To do') sh.deleteRow(i + 2);
       else { started[String(rows[i][ACT.ACTION - 1]).trim()] = true; preserved++; }
     }
@@ -338,7 +348,11 @@ function writeActions_(clientId, items) {
   if (rows.length) {
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, ACT.WIDTH).setValues(rows);
   }
-  return { written: rows.length, preserved: preserved };
+
+  const fresh = rows.map(v => String(v[ACT.ACTION - 1]))
+    .filter(a => !before[a.trim()]);
+
+  return { written: rows.length, preserved: preserved, fresh: fresh };
 }
 
 // ---------------------------------------------------------------- PROMPT

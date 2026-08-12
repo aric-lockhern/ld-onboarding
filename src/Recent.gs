@@ -34,6 +34,9 @@ function getRecentContext(clientId) {
     // For the date field on the add-a-call form: a blank box invites a format
     // guess, and every call filed under a different one makes the list unsortable.
     today: fmtDate_(new Date()),
+    // The picker is built from the server's own list, so it can never offer a
+    // kind the server would quietly file as something else.
+    kinds: CLIENT_DOC_KINDS,
     // Whether the daily scan is actually running, because "no calls" and "the
     // scan has never run" look identical and have different fixes.
     scanInstalled: hasCallScanTrigger_()
@@ -102,30 +105,68 @@ function deleteRecentNote(token, clientId, index) {
 // ---------------------------------------------------------------- CALLS
 
 /**
- * A call that did not come from ClickUp.
+ * What can be filed against a client after it exists.
  *
- * The notetaker covers most of them and the daily scan files those. The rest
- * are real and regular: a call someone recorded to a Google Doc, a transcript
- * mailed over by the client, a summary typed up from notes because nothing
- * recorded it at all. Before this they had nowhere to go — the scan only ever
- * writes what ClickUp knows about, so the only route in was to paste the whole
- * thing into a note, where the profile and the action items never read it.
+ * The intake form takes these when a client is created and then closes behind
+ * you. That is fine for a sales call and wrong for everything else: the audit
+ * is presented in week three, the contract gets amended in month four, and a
+ * client created before a source existed can never be given one. The named
+ * kinds write to the same keys the intake form uses, so a document added here
+ * is the same document to the profile, the scope confirmation and the action
+ * items — which is the whole point. Adding an audit in week three and finding
+ * it absent from the action-items picker would make this pointless.
+ */
+const CLIENT_DOC_KINDS = [
+  { key: 'call', label: 'Call transcript',
+    hint: 'Filed as its own call and listed under recent calls.' },
+  { key: 'audit', label: 'Audit presentation',
+    hint: 'The default document the action items are built from.' },
+  { key: 'deck', label: 'Pitch deck', hint: '' },
+  { key: 'sow', label: 'Scope of work',
+    hint: 'Replaces the stored contract — what the scope confirmation reads.' },
+  { key: 'sales', label: 'Sales call transcript', hint: '' },
+  { key: 'kickoff', label: 'Onboarding / kickoff call transcript', hint: '' }
+];
+
+/** Callable from the browser, so the picker lists exactly what the server takes. */
+function getClientDocKinds() {
+  return { ok: true, kinds: CLIENT_DOC_KINDS };
+}
+
+/**
+ * A document filed against a client after it was created.
  *
- * It is stored on the draft as a document like any other, for the reason in
- * ClickUpSync.gs: the draft is the deal's document record, and a call filed
- * anywhere else is a call nobody finds.
+ * A call that did not come from ClickUp is the common case — a call someone
+ * recorded to a Google Doc, a transcript mailed over by the client, a summary
+ * typed up because nothing recorded it. Before this they had nowhere to go: the
+ * scan only writes what ClickUp knows about, so the only route in was to paste
+ * the whole thing into a note, where the profile and the action items never
+ * read it.
+ *
+ * Everything is stored on the draft, for the reason in ClickUpSync.gs: the
+ * draft is the deal's document record, and a document filed anywhere else is a
+ * document nobody finds.
  *
  * `raw` takes whatever the intake form takes — pasted text, a Google Doc link,
  * a ClickUp link, an uploaded file — because resolveSource_ already knows how
  * to read all of them and a second, worse reader is not worth having.
+ *
+ * @param {string} kind  a CLIENT_DOC_KINDS key. Anything unknown is a call,
+ *                       because that is what the form was before and an old
+ *                       page in somebody's tab must not file a deck as an audit.
  */
-function addManualCall(token, clientId, label, raw, when) {
+function addManualCall(token, clientId, label, raw, when, kind) {
   checkToken_(token);
 
-  const name = String(label || '').trim() || 'Call';
+  const type = CLIENT_DOC_KINDS
+    .filter(k => k.key === String(kind || '').trim())[0]
+    || CLIENT_DOC_KINDS[0];
+  const isCall = type.key === 'call';
+
+  const name = String(label || '').trim() || type.label;
   if (!raw || (typeof raw === 'string' && !raw.trim())) {
-    return { ok: false, message: 'Nothing supplied — paste the transcript or '
-      + 'give a link to it.' };
+    return { ok: false, message: 'Nothing supplied — paste the '
+      + (isCall ? 'transcript' : 'document') + ' or give a link to it.' };
   }
 
   const draftId = draftIdForClient_(clientId);
@@ -150,11 +191,20 @@ function addManualCall(token, clientId, label, raw, when) {
   }
 
   const at = String(when || '').trim() || fmtDate_(new Date());
-  const key = manualCallKey_(name, at);
+
+  // A named kind takes the intake form's own key, which is what makes it the
+  // same document to everything downstream — and means re-uploading a corrected
+  // scope of work REPLACES the old one rather than leaving two contracts on
+  // file for the model to disagree with itself over. A call is keyed by its own
+  // name and date, because two calls are two documents.
+  const key = isCall ? manualCallKey_(name, at) : type.key;
+  const filedAs = isCall ? name : type.label;
+
+  const replacing = !isCall && storedSourceLabel_(draftId, key);
 
   let record;
   try {
-    record = storeSource_(draftId, key, name, text, {
+    record = storeSource_(draftId, key, filedAs, text, {
       via: sourceKindLabel_(raw),
       origin: (typeof raw === 'string') ? raw : '',
       words: text.split(/\s+/).length,
@@ -163,6 +213,17 @@ function addManualCall(token, clientId, label, raw, when) {
   } catch (e) {
     return { ok: false, message: 'Read ' + text.length + ' characters but could '
       + 'not save them: ' + ((e && e.message) || String(e)) };
+  }
+
+  const out = { ok: true, key: key, label: filedAs, kind: type.key,
+                chars: text.length, words: text.split(/\s+/).length,
+                // Said plainly, because replacing the contract silently is how
+                // somebody loses the version they meant to keep.
+                replaced: !!replacing };
+
+  if (!isCall) {
+    out.calls = (readRecent_(clientId).calls) || [];
+    return out;
   }
 
   const box = readRecent_(clientId);
@@ -183,8 +244,8 @@ function addManualCall(token, clientId, label, raw, when) {
   box.calls = mergeCalls_(box.calls, []);
   writeRecent_(clientId, box);
 
-  return { ok: true, key: key, label: name, chars: text.length,
-           words: text.split(/\s+/).length, calls: box.calls };
+  out.calls = box.calls;
+  return out;
 }
 
 /**
@@ -206,6 +267,14 @@ function deleteRecentCall(token, clientId, key) {
 
   writeRecent_(clientId, box);
   return { ok: true, calls: box.calls };
+}
+
+/** What is already filed under a key, so a replacement can be announced. */
+function storedSourceLabel_(draftId, key) {
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return '';
+  const hit = (d.sources || []).filter(s => s && s.key === key)[0];
+  return hit ? (hit.label || key) : '';
 }
 
 /**

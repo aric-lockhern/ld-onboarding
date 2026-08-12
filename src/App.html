@@ -461,6 +461,17 @@
   .ph{width:44px; height:44px; flex:0 0 44px; border-radius:999px;
     object-fit:cover; border:1px solid var(--line)}
   .phrow .bd{flex:1; min-width:0}
+  /* The team, as one wrapping line inside the facts card. */
+  .tstrip{display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center}
+  .tm{display:inline-flex; align-items:center; gap:6px; font-size:13px;
+    background:var(--paper); border:1px solid var(--line); border-radius:999px;
+    padding:3px 9px 3px 4px}
+  .tm .av{width:22px; height:22px; flex-basis:22px; font-size:9px}
+  .tm .x{border:0; background:none; cursor:pointer; color:var(--muted);
+    font-size:15px; line-height:1; padding:0 0 0 2px}
+  .tm .x:hover{color:var(--warning)}
+  .tadd select{margin-left:6px; font-size:13px; padding:4px 8px}
+  .fact.team .v{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
   .svcs{display:flex; flex-wrap:wrap; gap:6px}
   .svc{display:inline-flex; align-items:center; font-size:13px;
     background:var(--paper); border:1px solid var(--line); border-radius:999px;
@@ -653,7 +664,7 @@ var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
-  'addManualCall', 'deleteRecentCall',
+  'addManualCall', 'deleteRecentCall', 'reviewNewDocument',
   'getClientTeam', 'addClientTeamMember', 'removeClientTeamMember',
   'getContactPhoto', 'setContactPhoto', 'clearContactPhoto',
   'draftScopeEmail',
@@ -887,10 +898,15 @@ function factsCard(c){
     ['Slack', c.slack]
   ].filter(function(r){ return r[1]; });
 
+  // The team is a strip in here rather than a card of its own. Who is on the
+  // account is one line of answer — six names — and a full section for it
+  // pushed the phase rail and the profile below the fold on a laptop.
   return '<div class="card facts">' + rows.map(function(r){
     return '<div class="fact"><span class="k">' + esc(r[0]) + '</span>'
       + '<span class="v">' + (r[2] ? r[1] : esc(r[1])) + '</span></div>';
-  }).join('') + '</div>';
+  }).join('')
+  + '<div class="fact team"><span class="k">Team</span>'
+  + '<span class="v" id="teamStrip">…</span></div></div>';
 }
 
 /**
@@ -1007,88 +1023,81 @@ function avatar(name){
     + h + ',48%,32%)">' + esc(initials(name)) + '</span>';
 }
 
-function teamCard(r){
-  if (!r || !r.ok){
-    return '<h3>Team</h3><div class="hint">'
-      + esc((r && r.message) || 'Could not read it.') + '</div>';
-  }
+/**
+ * Who is on the account, as one line.
+ *
+ * A card of its own pushed the phase rail and the profile below the fold, for
+ * an answer that is six names long. Each name carries why it is there in its
+ * tooltip — owner, task count, added by hand — because the badge cannot say it
+ * in the space available and the difference decides whether it can be removed.
+ */
+function teamStrip(r){
+  if (!r || !r.ok) return '<span class="muted">could not read the team</span>';
 
   var members = r.members || [];
   var h = members.length
-    ? members.map(function(m){
-        // Why somebody is here decides whether they can be taken off, so it is
-        // on screen rather than only in the code that enforces it. Offering
-        // Remove against a person holding six tasks promises something the
-        // server refuses to do.
+    ? '<span class="tstrip">' + members.map(function(m){
         var pinned = m.why.indexOf('Added to the account') !== -1;
         var derived = m.why.filter(function(w){
           return w !== 'Added to the account'; }).join(' · ');
-        return '<div class="crow"><div class="bd" style="display:flex;gap:10px;'
-          + 'align-items:center">' + avatar(m.name)
-          + '<div><div class="nm">' + esc(m.name)
+        var why = [m.role, derived || 'Added to the account'].filter(Boolean).join(' · ')
+          + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') : '');
+        return '<span class="tm" title="' + esc(why) + '">'
+          + avatar(m.name) + esc(m.name)
           + (m.known ? '' : ' <span class="pill">not on the team</span>')
-          + '</div><div class="meta">'
-          + esc([m.role, derived].filter(Boolean).join(' · ')
-                || 'Added to the account')
-          + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') : '')
-          + '</div></div></div>'
+          // Only pinned membership can be removed here. Somebody on the account
+          // because they own six tasks comes off by reassigning them, and a ×
+          // that refused every time would be worse than none.
           + (pinned && !derived
-              ? '<button class="btn sm" data-rmteam="' + esc(m.name) + '">Remove</button>'
+              ? '<button class="x" data-rmteam="' + esc(m.name)
+                + '" title="Take off the account">×</button>'
               : '')
-          + '</div>';
-      }).join('')
-    : '<div class="hint">Nobody is on this account yet — no owner, and no task '
-      + 'has been assigned.</div>';
+          + '</span>';
+      }).join('') + '</span>'
+    : '<span class="muted">nobody yet</span>';
 
   if (r.teamEmpty){
-    h += '<div class="hint">The Team tab is empty, so there is nobody to add. '
-      + 'Build the directory on the Team page — it can import straight from '
-      + 'Slack.</div>';
-    return h;
+    return h + ' <span class="muted">· the Team tab is empty — build the '
+      + 'directory on the Team page</span>';
   }
-
   if ((r.available || []).length){
-    h += '<div class="startrow" style="margin-top:12px">'
-      + '<select id="teamPick"><option value="">Add somebody…</option>'
+    h += '<span class="tadd"><select id="teamPick">'
+      + '<option value="">＋ add…</option>'
       + r.available.map(function(p){
           return '<option value="' + esc(p.name) + '">' + esc(p.name)
             + (p.role ? ' — ' + esc(p.role) : '') + '</option>';
         }).join('')
-      + '</select>'
-      + '<button class="btn" id="addTeam">Add to account</button></div>';
-  } else {
-    h += '<div class="hint">Everybody on the Team tab is already on this '
-      + 'account.</div>';
+      + '</select></span>';
   }
-
   return h;
 }
 
 function loadClientTeam(clientId){
   api('getClientTeam', clientId).then(function(r){
-    if (!el('teamWrap')) return;
-    el('teamWrap').innerHTML = teamCard(r);
+    if (!el('teamStrip')) return;
+    el('teamStrip').innerHTML = teamStrip(r);
     wireClientTeam(clientId);
-  }).catch(function(e){
-    if (el('teamWrap')) el('teamWrap').innerHTML =
-      '<h3>Team</h3><div class="hint">Could not read it: '
-      + esc((e && e.message) || 'unknown error') + '.</div>';
+  }).catch(function(){
+    if (el('teamStrip')) el('teamStrip').innerHTML =
+      '<span class="muted">could not read the team</span>';
   });
 }
 
 function wireClientTeam(clientId){
-  if (el('addTeam')){
-    el('addTeam').addEventListener('click', function(){
-      var b = this, who = el('teamPick').value;
-      if (!who){ toast('Pick somebody first.', true); return; }
-      b.disabled = true;
+  // Picking IS adding — there is no second button, because a one-line strip
+  // has no room for one and "select then confirm" for a list of names is a
+  // step that exists only to be forgotten.
+  if (el('teamPick')){
+    el('teamPick').addEventListener('change', function(){
+      var who = this.value;
+      if (!who) return;
+      this.disabled = true;
       api('addClientTeamMember', TOKEN, clientId, who).then(function(r){
-        b.disabled = false;
-        if (!r.ok){ toast(r.message, true); return; }
-        el('teamWrap').innerHTML = teamCard(r);
+        if (!r.ok){ toast(r.message, true); loadClientTeam(clientId); return; }
+        el('teamStrip').innerHTML = teamStrip(r);
         wireClientTeam(clientId);
         toast(who + ' added.');
-      }).catch(function(e){ b.disabled = false; fail(e); });
+      }).catch(function(e){ loadClientTeam(clientId); fail(e); });
     });
   }
   [].forEach.call(document.querySelectorAll('[data-rmteam]'), function(b){
@@ -1096,7 +1105,7 @@ function wireClientTeam(clientId){
       var who = b.getAttribute('data-rmteam');
       api('removeClientTeamMember', TOKEN, clientId, who).then(function(r){
         if (!r.ok){ toast(r.message, true); return; }
-        el('teamWrap').innerHTML = teamCard(r);
+        el('teamStrip').innerHTML = teamStrip(r);
         wireClientTeam(clientId);
       }).catch(fail);
     });
@@ -1114,6 +1123,10 @@ function wireClientTeam(clientId){
  */
 function photoCard(c, photo){
   var name = c.contact || c.company || 'the contact';
+  // Sits in the corner of the profile, because the profile is about this
+  // person — it opens "Joey Bryja is the founder of…" and then spends four
+  // hundred words on how to talk to him. A face belongs beside that, not in a
+  // card of its own three sections up.
   return '<div class="phrow">'
     + (photo
         ? '<img class="ph" src="' + photo + '" alt="">'
@@ -2612,14 +2625,19 @@ function sourcePicker(r){
     + 'start ticked. Transcripts are long — add one at a time.</div>';
 }
 
+/** Whatever the document picker is currently set to. */
+function pickedSources(){
+  return [].filter.call(document.querySelectorAll('[data-src]'),
+    function(i){ return i.checked; })
+    .map(function(i){ return i.getAttribute('data-src'); });
+}
+
 function wireActions(clientId, r){
   if (el('mkActions')){
     el('mkActions').addEventListener('click', function(){
       var b = this;
       b.disabled = true; b.textContent = 'Reading the audit…';
-      var picked = [].filter.call(document.querySelectorAll('[data-src]'),
-        function(i){ return i.checked; })
-        .map(function(i){ return i.getAttribute('data-src'); });
+      var picked = pickedSources();
       if (!picked.length){ b.disabled = false; b.textContent = 'Build action items';
         toast('Tick at least one document to read.', true); return; }
       api('buildActionItems', clientId, picked).then(function(res){
@@ -2627,6 +2645,9 @@ function wireActions(clientId, r){
         if (!res.ok){ toast(res.message || 'Could not build them.', true); return; }
         if (res.nothing){ toast(res.message, true); return; }
         var bits = [res.written + ' written'];
+        // How many had never been on this client before. "6 written" after
+        // adding a document cannot tell you whether the document did anything.
+        if ((res.fresh || []).length) bits.unshift(res.fresh.length + ' new');
         if (res.preserved) bits.push(res.preserved + ' already started, kept');
         if (res.unassigned) bits.push(res.unassigned + ' unassigned');
         toast(bits.join(' · ') + '.');
@@ -2789,24 +2810,35 @@ function recentCard(r){
       + '</div>';
   }
 
-  // Not every call goes through the notetaker. A Google Doc someone typed up,
-  // a transcript the client mailed over, notes from a call nothing recorded —
-  // this is the way in for those, and it files them as documents so the
-  // profile and the action items read them like any other call.
-  h += '<div class="pri-h">Add a call</div>'
-    + '<div class="hint">A Google Doc or ClickUp link, or paste the transcript. '
-    + 'It is stored with the deal documents and read by the profile and the '
-    + 'action items. Calls added here are kept when the daily scan runs.</div>'
+  // The intake form takes these when a client is created and then closes
+  // behind you. The audit is presented in week three, the contract is amended
+  // in month four, and a client created before a source existed can never be
+  // given one — so the same documents have to be fileable from here, under the
+  // same keys, or an audit added later is invisible to the action items.
+  var kinds = r.kinds || [{ key:'call', label:'Call transcript', hint:'' }];
+  h += '<div class="pri-h">Add a document</div>'
+    + '<div class="hint">A Google Doc or ClickUp link, an upload, or paste the '
+    + 'text. It is stored with the deal documents and read by the profile, the '
+    + 'action items and the scope confirmation — the same as one added when the '
+    + 'client was created. Calls added here survive the daily scan.</div>'
     + '<div class="fields">'
-    + '<div class="f"><label>What it was</label>'
+    + '<div class="f"><label>What it is</label><select id="mcKind">'
+      + kinds.map(function(k){
+          return '<option value="' + esc(k.key) + '">' + esc(k.label) + '</option>';
+        }).join('') + '</select></div>'
+    + '<div class="f"><label>Name it</label>'
       + '<input id="mcName" placeholder="Q3 planning call"></div>'
     + '<div class="f"><label>Date</label>'
       + '<input id="mcDate" placeholder="' + esc(r.today || '') + '"></div>'
-    + '<div class="f wide"><label>Link, or paste the transcript</label>'
+    + '<div class="f wide"><label>Link, or paste the text</label>'
       + '<textarea id="mcText" style="min-height:90px" placeholder="'
       + 'https://docs.google.com/document/d/… — or the whole transcript"></textarea>'
-      + '</div></div>'
-    + '<div class="startrow"><button class="btn" id="addCall">Add call</button></div>';
+      + '</div>'
+    + '<div class="f wide"><label>…or upload the file</label>'
+      + '<input type="file" id="mcFile" accept=".pdf,.txt,.md,.docx,image/*"></div>'
+    + '</div>'
+    + '<div class="hint" id="mcHint">' + esc(kinds[0].hint || '') + '</div>'
+    + '<div class="startrow"><button class="btn" id="addCall">Add document</button></div>';
 
   var notes = r.notes || [];
   h += '<div class="pri-h">Notes' + (r.scanned
@@ -2849,9 +2881,105 @@ function loadDocs(clientId){
   });
 }
 
+var RECENT_KINDS = null;
+
+/**
+ * Offers the two questions a new document raises.
+ *
+ * Offered rather than run: both cost a model call, one of them costs the slow
+ * kind, and a document filed at five to six should not spend two minutes doing
+ * something nobody asked for. The buttons name what they will do.
+ */
+function offerReread(clientId, added){
+  var box = el('rrOffer');
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = '<b>Filed ' + esc(added.label) + '.</b> '
+    + '<div class="hint" style="margin:6px 0 0">Two things it might change, '
+    + 'neither of them automatic.</div>'
+    + '<div class="startrow">'
+    + '<button class="btn" id="rrWhat">What does it change about them?</button>'
+    + '<button class="btn" id="rrActions">Rebuild the action items</button>'
+    + '</div><div id="rrOut"></div>';
+
+  el('rrWhat').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Reading…';
+    api('reviewNewDocument', TOKEN, clientId, added.key).then(function(r){
+      b.disabled = false; b.textContent = 'What does it change about them?';
+      if (!r.ok){ toast(r.message, true); return; }
+      el('rrOut').innerHTML = rereadResult(r);
+      // The notes list below has grown, so it has to be redrawn.
+      if (r.written) loadRecent(clientId);
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'What does it change about them?';
+      fail(e);
+    });
+  });
+
+  el('rrActions').addEventListener('click', function(){
+    var b = this; b.disabled = true; b.textContent = 'Building…';
+    // Whatever the picker is currently set to, so the new document is included
+    // by ticking it there — this button does not silently change the selection.
+    var picked = pickedSources();
+    if (!picked.length){
+      b.disabled = false; b.textContent = 'Rebuild the action items';
+      toast('Tick the new document in the action items picker first.', true);
+      return;
+    }
+    api('buildActionItems', clientId, picked).then(function(r){
+      b.disabled = false; b.textContent = 'Rebuild the action items';
+      if (!r.ok){ toast(r.message, true); return; }
+      el('rrOut').innerHTML = freshActions(r);
+      loadActions(clientId);
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Rebuild the action items'; fail(e);
+    });
+  });
+}
+
+function rereadResult(r){
+  if (!r.changes.length){
+    return '<div class="okbox" style="margin-top:12px">'
+      + esc(r.message || 'Nothing in it changes what the profile says.')
+      + '</div>';
+  }
+  return '<div class="okbox" style="margin-top:12px"><b>' + r.written
+    + ' change' + (r.written === 1 ? '' : 's') + ' from ' + esc(r.read)
+    + '</b><div class="hint" style="margin:4px 0 8px">Added to the notes below, '
+    + 'dated. The profile itself is left alone — it is written once from the '
+    + 'deal documents on purpose, and a note beside it is what makes "this '
+    + 'changed again" visible.</div>'
+    + r.changes.map(function(c){
+        return '<div class="crow"><div class="bd">'
+          + '<div class="nm">' + esc(c.section || 'General') + '</div>'
+          + '<div class="meta">' + esc(c.now)
+          + (c.was ? ' <i>— was: ' + esc(c.was) + '</i>' : ' <i>— new</i>')
+          + '</div></div></div>';
+      }).join('') + '</div>';
+}
+
+function freshActions(r){
+  var fresh = r.fresh || [];
+  if (!fresh.length){
+    return '<div class="okbox" style="margin-top:12px">Rebuilt ' + r.written
+      + ' item' + (r.written === 1 ? '' : 's') + ' and none of them is new — '
+      + 'everything this document commits to was already on the list.</div>';
+  }
+  return '<div class="okbox" style="margin-top:12px"><b>' + fresh.length
+    + ' new item' + (fresh.length === 1 ? '' : 's') + '</b>'
+    + '<div class="hint" style="margin:4px 0 8px">Out of ' + r.written
+    + ' rebuilt. ' + r.preserved + ' already-started item'
+    + (r.preserved === 1 ? ' was' : 's were') + ' left alone.</div>'
+    + fresh.map(function(a){
+        return '<div class="crow"><div class="bd"><div class="meta">'
+          + esc(a) + '</div></div></div>';
+      }).join('') + '</div>';
+}
+
 function loadRecent(clientId){
   api('getRecentContext', clientId).then(function(r){
     if (!el('recentWrap')) return;
+    RECENT_KINDS = (r && r.kinds) || RECENT_KINDS;
     el('recentWrap').innerHTML = recentCard(r);
     wireRecent(clientId);
   }).catch(function(e){
@@ -2876,27 +3004,59 @@ function wireRecent(clientId){
       });
     });
   }
+  if (el('mcKind')){
+    el('mcKind').addEventListener('change', function(){
+      var k = (RECENT_KINDS || []).filter(function(x){
+        return x.key === el('mcKind').value; })[0];
+      el('mcHint').textContent = (k && k.hint) || '';
+    });
+  }
+
   if (el('addCall')){
     el('addCall').addEventListener('click', function(){
-      var b = this, v = el('mcText').value.trim();
-      if (!v){ toast('Paste the transcript or give a link to it.', true); return; }
+      var b = this;
+      var v = el('mcText').value.trim();
+      var file = el('mcFile') && el('mcFile').files && el('mcFile').files[0];
+      if (!v && !file){
+        toast('Paste the text, give a link, or pick a file.', true); return;
+      }
+
       // A long transcript is a real fetch or a real write, so the button says
       // so — a silent 20 seconds reads as nothing having happened, and the
       // second click files it twice under a second key.
       b.disabled = true; b.textContent = 'Reading…';
-      api('addManualCall', TOKEN, clientId, el('mcName').value.trim(), v,
-          el('mcDate').value.trim())
-        .then(function(r){
-          b.disabled = false; b.textContent = 'Add call';
-          if (!r.ok){ toast(r.message, true); return; }
-          toast('Filed ' + Math.round(r.chars / 1000) + 'k characters as '
-            + r.label + '.');
-          loadRecent(clientId);
-          // The document list and the action-item picker both change.
-          loadDocs(clientId);
-        }).catch(function(e){
-          b.disabled = false; b.textContent = 'Add call'; fail(e);
-        });
+
+      var done = function(r){
+        b.disabled = false; b.textContent = 'Add document';
+        if (!r.ok){ toast(r.message, true); return; }
+        toast('Filed ' + Math.round(r.chars / 1000) + 'k characters as '
+          + r.label + (r.replaced ? ' — replacing the previous one.' : '.'));
+        loadRecent(clientId);
+        // The document list and the action-item picker both change.
+        loadDocs(clientId);
+        loadActions(clientId);
+        // What a new document means for what we know is a separate question,
+        // and asking it costs a model call — so it is offered rather than run.
+        offerReread(clientId, r);
+      };
+      var boom = function(e){
+        b.disabled = false; b.textContent = 'Add document'; fail(e);
+      };
+
+      var send = function(raw){
+        api('addManualCall', TOKEN, clientId, el('mcName').value.trim(), raw,
+            el('mcDate').value.trim(), el('mcKind') ? el('mcKind').value : 'call')
+          .then(done).catch(boom);
+      };
+
+      if (!file){ send(v); return; }
+      var fr = new FileReader();
+      fr.onload = function(){
+        send({ name: file.name, mimeType: file.type,
+               data: String(fr.result).split(',')[1] });
+      };
+      fr.onerror = function(){ boom(new Error('Could not read that file.')); };
+      fr.readAsDataURL(file);
     });
   }
   [].forEach.call(document.querySelectorAll('[data-delcall]'), function(b){
@@ -3321,9 +3481,6 @@ function openClient(clientId){
     // Who is on it, before the work itself. The answer was previously spread
     // across an Owner cell and twenty task rows, and somebody who sits on every
     // call but owns no checklist row appeared nowhere at all.
-    h += '<div class="grp">Team</div><div class="card">'
-      + '<div class="sect" id="photoWrap"></div>'
-      + '<div class="sect" id="teamWrap">' + loading() + '</div></div>';
 
     var ps = d.phaseState || {};
     var s = d.summary || {done:0, total:0, pct:0};
@@ -3346,10 +3503,15 @@ function openClient(clientId){
     }
 
     h += '<div class="grp">Client profile</div><div class="card">'
+      + '<div class="sect" id="photoWrap"></div>'
       + '<div class="sect prof-half" id="profWrap">' + profileCard(c.profile) + '</div></div>';
 
+    // Outside recentWrap on purpose. Filing a document redraws the recent
+    // context, and an offer living inside it would be wiped by the very reload
+    // that filing triggers — visible for a second and then gone.
     h += '<div class="grp">Recent context</div><div class="card">'
-      + '<div class="sect" id="recentWrap">' + loading() + '</div></div>';
+      + '<div class="sect" id="recentWrap">' + loading() + '</div>'
+      + '<div class="sect" id="rrOffer" style="display:none"></div></div>';
 
     h += '<div class="grp"><button class="phtog" id="scopeTog">'
       + '<span class="tw">▶</span>Scope confirmation '
