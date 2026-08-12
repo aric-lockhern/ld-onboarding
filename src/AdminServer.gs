@@ -28,6 +28,32 @@ function promptForPin() {
   ui.alert('PIN set.');
 }
 
+/**
+ * Takes the PIN off.
+ *
+ * Deleting the property is what "no PIN" means everywhere else: verifyPin
+ * issues a token without checking, checkToken_ returns early, and the web app
+ * skips the gate. Reaching the URL still requires a signed-in account on the
+ * Workspace domain.
+ */
+function removePin() {
+  const ui = SpreadsheetApp.getUi();
+  if (!isPinSet()) { ui.alert('There is no PIN set.'); return; }
+
+  const res = ui.alert('Remove the dashboard PIN?',
+    'Anyone on your Workspace domain who has the web app URL will be able to '
+    + 'open the tool with no further prompt.\n\n'
+    + 'Worth knowing: the web app runs as the account that deployed it, so a '
+    + 'colleague who opens it and clicks Send sends client email from that '
+    + 'account. Switch executeAs to USER_ACCESSING in appsscript.json if you '
+    + 'would rather each person acted as themselves.',
+    ui.ButtonSet.YES_NO);
+  if (res !== ui.Button.YES) return;
+
+  PropertiesService.getScriptProperties().deleteProperty('DASH_PIN_HASH');
+  ui.alert('PIN removed. The web app will stop asking for it.');
+}
+
 function hashPin_(pin) {
   const salt = 'lockhern-onboarding-v1';
   return Utilities.base64Encode(

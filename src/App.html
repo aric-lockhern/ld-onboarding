@@ -693,19 +693,43 @@ function emptyState(title, body){
 
 // ---------------------------------------------------------------- gate
 
+function enterApp(token){
+  TOKEN = token;
+  el('gate').style.display = 'none';
+  el('app').classList.add('on');
+  go('overview');
+}
+
 el('pin').addEventListener('keydown', function(e){
   if (e.key !== 'Enter') return;
   var v = el('pin').value;
   el('gateMsg').textContent = 'Checking…';
   api('verifyPin', v).then(function(r){
     if (!r.ok){ el('gateMsg').textContent = r.message; el('pin').select(); return; }
-    TOKEN = r.token;
-    el('gate').style.display = 'none';
-    el('app').classList.add('on');
-    go('overview');
+    enterApp(r.token);
   }).catch(function(e){ el('gateMsg').textContent = (e && e.message) || 'Failed.'; });
 });
-el('pin').focus();
+
+/**
+ * No PIN set means no gate at all.
+ *
+ * verifyPin already issues a token when there is nothing to check, so the
+ * screen was a box you typed anything into and pressed Enter — a lock with no
+ * key in it, which is worse than no lock: it looks like security while being
+ * a keystroke. Reaching this URL at all requires a signed-in account on the
+ * Workspace domain, and that is the boundary that actually holds.
+ */
+el('gateMsg').textContent = 'Checking…';
+api('verifyPin', '').then(function(r){
+  if (r && r.ok && r.unset){ enterApp(r.token); return; }
+  el('gateMsg').textContent = '';
+  el('pin').focus();
+}).catch(function(){
+  // A failure here is not a reason to lock somebody out of a tool with no
+  // PIN on it — fall back to showing the box.
+  el('gateMsg').textContent = '';
+  el('pin').focus();
+});
 
 // ---------------------------------------------------------------- routing
 
@@ -1207,13 +1231,18 @@ function emailTemplatesCard(r){
       + '</span></div><div class="card"><div class="sect">'
       + (hint ? '<div class="hint">' + hint + '</div>' : '')
       + list.map(function(t){
+          // Three states, and they are not the same. Edited means somebody
+          // changed it; shipped means the wording in the code is what sends,
+          // and showing that as "no copy yet" is how the welcome email looked
+          // missing while it was going out perfectly well.
+          var tag = t.source === 'shipped' ? ' <span class="pill">shipped copy</span>'
+                  : t.source === 'none' ? ' <span class="pill">no copy yet</span>' : '';
           return '<div class="crow"><div class="bd">'
-            + '<div class="nm">' + esc(t.label)
-            + (t.subject ? '' : ' <span class="pill">no copy yet</span>') + '</div>'
+            + '<div class="nm">' + esc(t.label) + tag + '</div>'
             + '<div class="meta">' + esc(t.subject || t.when || 'Not written') + '</div>'
             + '</div>'
             + '<button class="btn sm" data-edit-mail="' + esc(t.key) + '">'
-            + (t.subject ? 'Edit' : 'Write') + '</button></div>';
+            + (t.source === 'none' ? 'Write' : 'Edit') + '</button></div>';
         }).join('')
       + '</div></div>';
   }
@@ -1237,8 +1266,16 @@ function emailTemplatesCard(r){
 }
 
 function mailForm(t, merge){
+  var origin = t.source === 'shipped'
+    ? 'This is the wording shipped in the code, which is what sends today. '
+      + 'Saving writes your version onto the Templates tab and that wins from '
+      + 'then on.'
+    : t.source === 'edited'
+    ? 'Edited copy, stored on the Templates tab. It overrides the code.'
+    : '';
   return '<h3>' + esc(t.label) + '</h3>'
     + (t.when ? '<div class="hint">' + esc(t.when) + '</div>' : '')
+    + (origin ? '<div class="hint">' + origin + '</div>' : '')
     + '<input type="hidden" id="mlKey" value="' + esc(t.key) + '">'
     + '<div class="fields">'
     + '<div class="f wide"><label>Subject</label>'
@@ -1251,7 +1288,8 @@ function mailForm(t, merge){
         return '<span class="tag" title="' + esc(m.means) + '">' + esc(m.tag) + '</span>';
       }).join('') + '</div>'
     + '<div class="startrow">'
-    + (t.row ? '<button class="btn" id="mlReset">Reset to the shipped copy</button>' : '')
+    + (t.source === 'edited' && t.row
+        ? '<button class="btn" id="mlReset">Reset to the shipped copy</button>' : '')
     + '<button class="btn" id="mlCancel">Cancel</button>'
     + '<button class="btn pri" id="mlSave">Save</button></div>';
 }
