@@ -167,9 +167,10 @@ function getActionItems(clientId) {
   // is trying to build them, and the button answered "tick at least one
   // document" with nothing to tick.
   if (!sh || sh.getLastRow() < 2) {
+    const empty = actionSources_(clientId);
     return { ok: true, items: [], statuses: ACTION_STATUSES,
              team: getTeam().map(t => t.name),
-             sources: actionSources_(clientId) };
+             sources: empty.rows, sourcesNote: empty.note };
   }
 
   const id = String(clientId).trim();
