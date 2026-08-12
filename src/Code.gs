@@ -172,12 +172,32 @@ const A = {
 const PLATFORM_HEADERS = [
   'Task', 'Category', 'Method', 'Client Info Needed', 'How Access Is Granted',
   'Typical Lead Time', 'Due Offset (days)', 'Default Owner', 'Phase', 'Gate',
-  'Always Include', 'Active', 'Business Type'
+  'Always Include', 'Active', 'Business Type', 'Requires'
 ];
+
+/**
+ * Work that only exists because access landed.
+ *
+ * A task is normally included because its name IS a platform the client
+ * bought. That cannot express "once we have Google Ads, label the account
+ * Active in the manager" — the work is real, it is ours rather than the
+ * client's, and it applies to exactly the clients who have Google Ads.
+ *
+ * Requires names another task. The row is included when that one is, and left
+ * out otherwise. Without it the only options were Always Include, which puts a
+ * Google Ads chore on a client who never bought Google Ads, or nothing, which
+ * is where these steps have lived until now: in somebody's head.
+ */
+function templateRequired_(row, platforms) {
+  const needs = String(row[P.REQUIRES - 1] || '').trim();
+  if (!needs) return false;
+  return platforms.indexOf(needs) !== -1;
+}
 
 const P = {
   TASK: 1, CATEGORY: 2, METHOD: 3, NEEDS: 4, HOW: 5, LEAD: 6, OFFSET: 7,
-  OWNER: 8, PHASE: 9, GATE: 10, ALWAYS: 11, ACTIVE: 12, BIZTYPE: 13, WIDTH: 13
+  OWNER: 8, PHASE: 9, GATE: 10, ALWAYS: 11, ACTIVE: 12, BIZTYPE: 13,
+  REQUIRES: 14, WIDTH: 14
 };
 
 /**
@@ -267,6 +287,7 @@ function setup() {
   mkTab_(ss, TABS.ACTIONS, ACTION_HEADERS);
 
   seedPlatforms_(ss);
+  repairTaskLibrary_(ss);
   repairConfig_(ss);
   repairTaskPhases_(ss);
   seedServices_(ss);
@@ -309,12 +330,16 @@ function mkTab_(ss, name, headers) {
  * `Default Owner` overrides the client's onboarding owner for that one task —
  * this is how the 30-day check-in lands on a partner rather than the pod.
  */
-function seedPlatforms_(ss) {
-  const sh = ss.getSheetByName(TABS.PLATFORMS);
-  if (sh.getLastRow() > 1) return;
-
-  const rows = [
-    // task, category, method, needs, how, lead, offset, owner, PHASE, GATE, always, active
+/**
+ * The task library as first written.
+ *
+ * Hoisted out of seedPlatforms_ for the same reason SERVICE_SEED was: seeds
+ * bail once the tab has rows, so a task added in code could never reach an
+ * installed sheet. repairTaskLibrary_ appends what is missing by name.
+ */
+const PLATFORM_SEED = [
+    // task, category, method, needs, how, lead, offset, owner, PHASE, GATE,
+    // always, active, bizType, requires
 
     // Phase 1 — internal setup. Alias and Drive gate everything client-facing.
     ['Lockhern email alias', 'Internal', 'INTERNAL', '—',
@@ -394,11 +419,31 @@ function seedPlatforms_(ss) {
       '1 day', 35, '', 5, false, true, true],
     ['30-day client check-in', 'Internal', 'INTERNAL', '—',
       'Partner-level call, separate from the pod. Are we delivering what was sold?',
-      '30 min', 30, 'Justin', 5, false, true, true]
-  ];
+      '30 min', 30, 'Justin', 5, false, true, true],
 
-  sh.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
-  sh.getRange(2, 1, rows.length, rows[0].length)
+  // Follow-on work, included only when the platform it depends on is.
+  // The label is what the manager account's saved views and reporting filter
+  // on, so an account without it is invisible to everything downstream — and
+  // nobody notices for a month, because the campaigns themselves run fine.
+  ['Label the Google Ads account Active', 'Paid', 'INTERNAL',
+    '—',
+    'In the manager account: Accounts → select the account → Labels → apply '
+    + '"Active". Account level, not campaign level.',
+    'Same day', 6, '', 2, false, false, true, '', 'Google Ads']
+];
+
+function seedPlatforms_(ss) {
+  const sh = ss.getSheetByName(TABS.PLATFORMS);
+  if (sh.getLastRow() > 1) return;
+
+  const rows = PLATFORM_SEED.map(r => {
+    const row = r.slice();
+    while (row.length < P.WIDTH) row.push('');
+    return row;
+  });
+
+  sh.getRange(2, 1, rows.length, P.WIDTH).setValues(rows);
+  sh.getRange(2, 1, rows.length, P.WIDTH)
     .setVerticalAlignment('top').setWrap(true).setFontSize(10);
   sh.setColumnWidths(1, 3, 150);
   sh.setColumnWidth(4, 200);
@@ -507,6 +552,35 @@ function repairConfig_(ss) {
     }
   });
   return filled;
+}
+
+/**
+ * Appends task templates the sheet does not have yet.
+ *
+ * Append-only and matched on name, so anything edited by hand survives and a
+ * task deliberately deleted stays deleted only until the next setup() — which
+ * is the same trade repairServices_ makes. Deactivate rather than delete if you
+ * want one gone for good.
+ */
+function repairTaskLibrary_(ss) {
+  const sh = ss.getSheetByName(TABS.PLATFORMS);
+  if (!sh || sh.getLastRow() < 2) return 0;
+
+  const have = {};
+  sh.getRange(2, P.TASK, sh.getLastRow() - 1, 1).getValues()
+    .forEach(r => { if (r[0]) have[String(r[0]).trim().toLowerCase()] = true; });
+
+  const missing = PLATFORM_SEED
+    .filter(r => !have[String(r[0]).trim().toLowerCase()])
+    .map(r => {
+      const row = r.slice();
+      while (row.length < P.WIDTH) row.push('');
+      return row;
+    });
+
+  if (!missing.length) return 0;
+  sh.getRange(sh.getLastRow() + 1, 1, missing.length, P.WIDTH).setValues(missing);
+  return missing.length;
 }
 
 function repairServices_(ss) {
@@ -1150,7 +1224,8 @@ function buildAccessRows_(clientId, company, platforms, skipWeeklyCall) {
   ref.forEach(r => {
     const name = r[P.TASK - 1];
     if (!name || r[P.ACTIVE - 1] === false) return;
-    if (r[P.ALWAYS - 1] !== true && platforms.indexOf(name) === -1) return;
+    if (r[P.ALWAYS - 1] !== true && platforms.indexOf(name) === -1
+        && !templateRequired_(r, platforms)) return;
     if (existing.indexOf(name) !== -1) return;
     // A template can be scoped to one kind of business — a Merchant Center
     // task on a lead-gen account is a request nobody can action.
