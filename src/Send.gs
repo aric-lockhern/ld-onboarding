@@ -84,6 +84,17 @@ function dashPreview(token, clientId, phaseNum) {
 
 function dashPreviewNudge(token, clientId) {
   checkToken_(token);
+  return buildNudgeEmail_(clientId);
+}
+
+/**
+ * The nudge, built without a token.
+ *
+ * Split out so the mail plan can include it. A read that needs a token cannot
+ * be reused by another read that does not have one, and passing an empty
+ * string through checkToken_ is a bug waiting for the day somebody sets a PIN.
+ */
+function buildNudgeEmail_(clientId) {
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, reasons: ['Client not found.'] };
 
