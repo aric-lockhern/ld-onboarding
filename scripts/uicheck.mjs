@@ -410,19 +410,25 @@ const FAKE = {
       { row:2, priority:'Now', status:'To do', owner:'Drake King', effort:'half a day',
         action:'Split the single Shopping campaign by margin tier so bidding can differ',
         why:'One campaign bids the same on 60%-margin boards and 8%-margin bags, so spend follows volume rather than profit.',
-        source:'Pitch deck — "Shopping structure" finding' },
+        source:'Audit presentation, Shopping structure', area:'Google Ads' },
       { row:3, priority:'Now', status:'In progress', owner:'Drake King', effort:'1 hour',
         action:'Add the 40 highest-spend zero-conversion search terms as negatives',
         why:'$3,100 of last month\'s spend went to terms that have never converted.',
-        source:'Pitch deck — wasted spend table' },
+        source:'Audit presentation, wasted spend', area:'Google Ads' },
       { row:4, priority:'Next', status:'To do', owner:'Alexandra McCurdy', effort:'2 days',
         action:'Draft the first month of Reddit posts against the content calendar',
         why:'The SOW commits to four organic posts a month starting at contract start.',
-        source:'Scope of work — Reddit Organic Social Management' },
+        source:'Audit presentation, Reddit plan', area:'Reddit Organic Social' },
       { row:5, priority:'Later', status:'To do', owner:'', effort:'half a day',
         action:'Add FAQ and Product schema to the top 20 landing pages',
         why:'AI answers cite structured pages; without schema the site is invisible to them.',
-        source:'Pitch deck — AI Search readiness' }
+        source:'Audit presentation, AI readiness', area:'AI Search SEO' },
+      // No area: built before the column existed. It must not be guessed into
+      // a channel, so it gets its own group at the bottom.
+      { row:6, priority:'Later', status:'To do', owner:'', effort:'1 hour',
+        action:'Confirm the conversion source of truth against the Shopify backend',
+        why:'Two numbers disagree and nobody knows which is reported.',
+        source:'Audit presentation, tracking' }
     ] },
   getClientDocs: { ok:true, folderUrl:'https://drive.google.com/drive/folders/fake',
     docs:[
@@ -1158,6 +1164,42 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // the reader a job to do.
   if (!/list may be short/.test(built)) {
     throw new Error('A cut-short list was reported as complete: ' + built);
+  }
+
+  // Grouped by channel, because that is how the people divide. A specialist
+  // reading thirty four rows to find their eight is why this exists.
+  const areas = await page.evaluate(() => ({
+    heads: [].map.call(document.querySelectorAll('#actWrap .areahead .an'),
+      e => e.textContent),
+    // Anything from before the column existed must not be guessed into a
+    // channel, and must sort to the bottom rather than leading the card.
+    lastIsUnsorted: (function(){
+      var h = document.querySelectorAll('#actWrap .areahead .an');
+      return h.length ? h[h.length - 1].textContent === 'Not sorted yet' : false;
+    })(),
+    marks: document.querySelectorAll('#actWrap .areahead .mk').length
+  }));
+  if (areas.heads.length < 3 || !areas.lastIsUnsorted) {
+    throw new Error('Action items are not grouped by channel: '
+      + JSON.stringify(areas));
+  }
+  if (areas.marks !== areas.heads.length) {
+    throw new Error('A channel heading is missing its mark: ' + JSON.stringify(areas));
+  }
+
+  // Every dropdown in the tool draws the same chevron. The native control
+  // renders differently on each platform, so a page of them never looked like
+  // one design.
+  const selects = await page.evaluate(() => {
+    const all = [].slice.call(document.querySelectorAll('select'));
+    return {
+      total: all.length,
+      native: all.filter(e => getComputedStyle(e).appearance !== 'none').length
+    };
+  });
+  if (!selects.total || selects.native) {
+    throw new Error('Dropdowns still using platform chrome: '
+      + JSON.stringify(selects));
   }
 
   // The run log. "It doesn't work" was the whole bug report four times over,

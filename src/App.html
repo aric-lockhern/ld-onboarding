@@ -164,6 +164,19 @@
   .f.wide{grid-column:1/-1}
   .f label{font-size:13.5px; font-weight:500; color:var(--muted); letter-spacing:0;
     text-transform:none}
+  /* Every dropdown in the tool, in one place.
+     The native control draws its own arrow in its own way on each platform —
+     a grey triangle on Windows, a blue one on macOS, something else on
+     Chrome OS — so a page full of them never looked like one design. This
+     removes the platform chrome and draws a chevron in the brand's own ink.
+     appearance:none means the arrow must be supplied here or there is none. */
+  select{appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%236B7A99' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 10px center;
+    padding-right:28px; cursor:pointer}
+  select:hover{border-color:var(--mid)}
+  select:disabled{cursor:default; opacity:.6}
+
   .f input,.f select,.f textarea{padding:10px 12px; border:1px solid var(--line);
     border-radius:8px; font:14.5px/1.5 "Inter",sans-serif; background:var(--surface);
     color:var(--ink); width:100%}
@@ -209,9 +222,9 @@
   .task{display:flex; align-items:flex-start; gap:10px; padding:7px 16px;
     border-top:1px solid var(--line)}
   .task .n{flex:1; min-width:0; font-size:13.5px; padding-top:6px}
-  .task select{padding:7px 9px; border:1px solid var(--line); border-radius:7px;
-    font:13.5px/1 "Inter",sans-serif; background:var(--surface); width:148px; flex:none;
-    color:var(--ink)}
+  .task select{padding:7px 26px 7px 10px; border:1px solid var(--line);
+    border-radius:8px; font:13px/1.3 "Inter",sans-serif; background-color:var(--surface);
+    width:148px; flex:none; color:var(--ink)}
   .task select:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
   /* The assignee sits left of the status with its age under it: who has it and
      how long they have had it are one question, and reading them apart is what
@@ -427,12 +440,9 @@
   .fin:hover{border-color:var(--line); background:var(--paper)}
   .fin:focus{outline:none; border-color:var(--blue); background:var(--surface);
     box-shadow:0 0 0 3px var(--blue-wash)}
-  select.fin{cursor:pointer; appearance:none;
-    background-image:linear-gradient(45deg,transparent 50%,var(--mid) 50%),
-      linear-gradient(135deg,var(--mid) 50%,transparent 50%);
-    background-position:calc(100% - 11px) 8px, calc(100% - 7px) 8px;
-    background-size:4px 4px, 4px 4px; background-repeat:no-repeat;
-    padding-right:22px}
+  /* Inherits the shared chevron; only the spacing differs, because this one
+     sits in a row of plain text rather than in a form. */
+  select.fin{background-position:right 4px center; padding-right:22px}
   textarea.fin{resize:vertical; min-height:34px}
   .fact .aft{flex:none; color:var(--faint)}
 
@@ -473,6 +483,13 @@
     font-size:15px; line-height:1; padding:0 2px}
   .line .x:hover{color:var(--critical)}
   .addline{display:flex; gap:7px; margin-top:9px}
+  .act select, .acts select{border:1px solid var(--line); border-radius:8px;
+    background-color:var(--surface); color:var(--ink); padding:6px 26px 6px 10px;
+    font:13px/1.3 "Inter",sans-serif}
+  .act select:focus, .acts select:focus, .task select:focus, .tadd select:focus{
+    outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
+  .tadd select{border:1px solid var(--line); border-radius:999px;
+    background-color:var(--surface); color:var(--ink); padding:4px 24px 4px 10px}
   .addline input{flex:1; padding:6px 9px; border:1px solid var(--line);
     border-radius:7px; font:13px/1.3 "Inter",sans-serif; background:var(--surface);
     color:var(--ink)}
@@ -537,6 +554,14 @@
     object-fit:cover; border:1px solid var(--line)}
   .phrow .bd{flex:1; min-width:0}
   /* The team, as one wrapping line inside the facts card. */
+  /* A channel heading inside the action items — the work divides by channel
+     because the people do, so a specialist can find their eight rows. */
+  .areahead{display:flex; align-items:center; gap:8px; margin:16px 0 2px;
+    padding-top:12px; border-top:1px solid var(--line)}
+  .areahead:first-child{border-top:0; padding-top:0; margin-top:2px}
+  .areahead .an{font-size:13.5px; font-weight:600; letter-spacing:-.01em}
+  .areahead .ac{margin-left:auto; font-size:12px; color:var(--faint);
+    font-variant-numeric:tabular-nums}
   .tstrip{display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center}
   .tm{display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
     background:var(--paper); border:1px solid var(--line); border-radius:999px;
@@ -2726,11 +2751,40 @@ function actionsCard(r){
           + '</div>');
   }
 
-  var byPri = { 'Now': [], 'Next': [], 'Later': [] };
-  items.forEach(function(i){ (byPri[i.priority] || byPri.Later).push(i); });
+  /**
+   * Grouped by channel, then by priority inside it.
+   *
+   * Thirty four items in one priority-ordered list is a list the paid-search
+   * person reads in full to find their eight, and "the audit follow-ups for
+   * Reddit" is a question it cannot answer at all. The work divides by channel
+   * because that is how the people divide, so the page divides the same way.
+   *
+   * Anything built before the Area column existed has no channel, and lands in
+   * its own group rather than being guessed into one.
+   */
+  var byArea = {}, areaOrder = [];
+  items.forEach(function(i){
+    var a = i.area || 'Not sorted yet';
+    if (!byArea[a]){ byArea[a] = []; areaOrder.push(a); }
+    byArea[a].push(i);
+  });
+  // The unsorted group last: it is a leftover, not a channel.
+  areaOrder.sort(function(a, b){
+    return (a === 'Not sorted yet' ? 1 : 0) - (b === 'Not sorted yet' ? 1 : 0);
+  });
 
   var h = '';
-  ['Now', 'Next', 'Later'].forEach(function(p){
+  areaOrder.forEach(function(areaName){
+    var list = byArea[areaName];
+    var open = list.filter(function(i){ return i.status !== 'Done'; }).length;
+    h += '<div class="areahead">' + brandMark(areaName)
+      + '<span class="an">' + esc(areaName) + '</span>'
+      + '<span class="ac">' + open + ' open · ' + list.length + '</span></div>';
+
+    var byPri = { 'Now': [], 'Next': [], 'Later': [] };
+    list.forEach(function(i){ (byPri[i.priority] || byPri.Later).push(i); });
+
+    ['Now', 'Next', 'Later'].forEach(function(p){
     if (!byPri[p].length) return;
     h += '<div class="pri-h">' + p + ' <span>' + byPri[p].length + '</span></div>';
     h += byPri[p].map(function(i){
@@ -2757,6 +2811,7 @@ function actionsCard(r){
             return '<option' + (s === i.status ? ' selected' : '') + '>' + esc(s) + '</option>';
           }).join('') + '</select></div></div>';
     }).join('');
+    });
   });
 
   return '<h3>' + items.length + ' action item' + (items.length === 1 ? '' : 's')
