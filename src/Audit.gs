@@ -20,31 +20,56 @@
  */
 
 /**
- * Enough for a page of items with reasons — and no more.
+ * WHY THIS KEPT TIMING OUT, AND WHAT ACTUALLY FIXES IT.
  *
- * This was raised to 16,000 to stop the model running out mid-JSON, which
- * traded one failure for a worse one: generating sixteen thousand tokens takes
- * minutes, and UrlFetchApp gives up first with "Address unavailable" — a
- * connection error for what is really a request that was asked to do too much.
+ * The obvious theory was the transcript. Cornhole's audit is 108,000
+ * characters — the full recording of the call, not a deck — so every attempt
+ * went at the input: trim it, budget it, split it. None of that was the
+ * problem, and one of them (trimming) quietly threw away the middle of the
+ * transcript, which is where half of what was agreed was said.
  *
- * The right fix is a smaller answer rather than a longer wait, so the prompt
- * now caps the list and this comes back down. Truncation is handled by asking
- * for less, not by allowing more.
+ * An API request costs reading time plus writing time, and they are not
+ * remotely equal. Reading is parallel: 27,000 tokens of transcript is a couple
+ * of seconds. Writing is one token after another: asking for up to 6,000
+ * tokens of JSON is a minute or two on its own, whatever it was given to read.
+ * UrlFetchApp gives up around a minute and throws "Address unavailable", which
+ * reads as the API being down.
+ *
+ * So the length of the answer was the whole problem, and the transcript was
+ * never the problem. Eight items with one short sentence per field is about
+ * 1,200 tokens, and that finishes comfortably — with the entire transcript
+ * read, untrimmed and unsplit.
+ *
+ * If it ever times out again, the fix is a shorter ANSWER (fewer items) or a
+ * faster model, never a longer wait and never less transcript.
  */
-const ACTIONS_MAX_TOKENS = 6000;
+const ACTIONS_MAX_TOKENS = 1600;
 
-/** A list nobody will read is the same as no list. */
-const ACTIONS_MAX_ITEMS = 12;
+/** A list nobody will read is the same as no list — and a long one is slow. */
+const ACTIONS_MAX_ITEMS = 8;
 
 /**
- * Characters of document text this task gets.
- *
- * Lower than PROMPT_CHAR_BUDGET on purpose. Commitments cluster in the deck and
- * in what was agreed on the calls; a 62,000-character transcript in full is
- * mostly rapport, and paying prefill time for it is what pushes an already slow
- * request past the fetch deadline.
+ * A ceiling on reading, set where prefill is still seconds rather than tens of
+ * them. Four hundred thousand characters is three audits and both calls; the
+ * documents that actually get picked are nowhere near it, and anything that is
+ * gets trimmed with the trimming reported rather than done quietly.
  */
-const ACTIONS_CHAR_BUDGET = 120000;
+const ACTIONS_CHAR_BUDGET = 400000;
+
+/**
+ * The model that writes the items.
+ *
+ * Its own setting, because this job is the one that runs closest to the fetch
+ * deadline and writing speed is what decides whether it finishes. The plan
+ * generator can stay on the most capable model; this reads a transcript and
+ * lists what was promised, which a faster model does well.
+ *
+ * Config first so it can be changed in the sheet, without a deploy, on the
+ * morning it matters.
+ */
+function actionsModel_() {
+  return cfg('Actions Model') || 'claude-sonnet-5';
+}
 
 /**
  * The documents a commitment is ever found in.
@@ -131,6 +156,12 @@ function buildActionItems(clientId, keys) {
 
   const team = getTeam();
   const chars = docs.reduce((n, d) => n + d.text.length, 0);
+
+  // Trimming is reported, never silent — the same rule the extraction follows.
+  // A commitment made forty minutes into a call is exactly what a dropped
+  // middle costs you, and a list that looks complete is worse than a warning.
+  const share = Math.floor(ACTIONS_CHAR_BUDGET / Math.max(docs.length, 1));
+  const trimmed = docs.filter(d => d.text.length > share).map(d => d.label);
   // Named on every outcome, good or bad. "It failed" with no list of what it
   // read is a bug report nobody can act on — including the deck being absent,
   // which is the single most common reason for a thin result.
@@ -139,14 +170,20 @@ function buildActionItems(clientId, keys) {
   let out;
   try {
     out = callAnthropic_(buildActionsPrompt_(client, docs, team),
-                         { maxTokens: ACTIONS_MAX_TOKENS });
+                         { maxTokens: ACTIONS_MAX_TOKENS,
+                           model: actionsModel_() });
   } catch (e) {
+    // Naming the real knob. Unticking documents was the old advice and it was
+    // wrong: reading is cheap and the length of the answer is what runs out of
+    // time. Nobody would guess that, so it says so.
     return { ok: false, read: read, chars: chars,
              message: ((e && e.message) || String(e))
                + ' — reading ' + read.join(', ') + ' ('
-               + Math.round(chars / 1000) + 'k characters). Untick the longest '
-               + 'documents and try again; the audit deck alone is usually '
-               + 'enough, and the pitch deck if there is no audit.' };
+               + Math.round(chars / 1000) + 'k characters) on '
+               + actionsModel_() + '. The length of the ANSWER is what runs '
+               + 'past the deadline, not the length of the documents: set '
+               + '"Actions Model" on the Config tab to claude-haiku-4-5, which '
+               + 'writes several times faster.' };
   }
 
   const items = (out && out.actions) || [];
@@ -178,7 +215,10 @@ function buildActionItems(clientId, keys) {
     read: read,
     outOfScope: outOfScope,
     unassigned: items.filter(i => !i.owner).length,
-    teamEmpty: !team.length
+    teamEmpty: !team.length,
+    trimmed: trimmed,
+    chars: chars,
+    model: actionsModel_()
   };
 }
 
@@ -391,7 +431,14 @@ function buildActionsPrompt_(client, docs, team) {
     '',
     'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost the',
     'most to miss. A longer list is not a better one, and the tail is where',
-    'padding hides. Keep every field to one sentence.',
+    'padding hides.',
+    '',
+    // Length is the whole constraint here. A generous answer is one that never
+    // arrives — see the note on ACTIONS_MAX_TOKENS.
+    'BREVITY IS A HARD REQUIREMENT, not a style note. Every field is ONE short',
+    'sentence. No preamble, no restating the question, no closing summary, no',
+    'markdown. A long answer takes so long to write that the request is',
+    'abandoned before it finishes and you produce nothing at all.',
     '',
     'The hard part is scope, and it is the part that matters most:',
     '- A deck written to win the deal proposes more than the contract bought.',
