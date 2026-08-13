@@ -79,7 +79,18 @@ function getClientTeam(clientId) {
   readClientTeam_(clientId).forEach(name => add(name, 'Added to the account',
     { pinned: true }));
 
-  const list = Object.keys(members).map(k => members[k]);
+  const all = Object.keys(members).map(k => members[k]);
+
+  // Somebody on a client row who matches nobody on the Team tab is not a team
+  // member — they are a stale cell. Showing them as one puts a person on the
+  // account who cannot be pinged, assigned to or emailed, and who leaves when
+  // the cell is corrected. They are reported separately instead, with what
+  // they are holding, because deleting the fact is worse than showing it in
+  // the wrong place: somebody owns those tasks and nobody can reach them.
+  const list = all.filter(m => m.known);
+  const unknown = all.filter(m => !m.known).map(m => ({
+    name: m.name, tasks: m.tasks, why: m.why
+  }));
   // Owner first, then whoever holds the most work. Alphabetical would put the
   // person with one task above the person running the account.
   list.sort((a, b) => {
@@ -95,6 +106,7 @@ function getClientTeam(clientId) {
   return {
     ok: true,
     members: list,
+    unknown: unknown,
     // Everyone else, for the picker.
     available: team.filter(t => !on[t.name.toLowerCase()])
       .map(t => ({ name: t.name, role: t.role, skills: t.skills })),
