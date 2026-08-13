@@ -243,15 +243,6 @@ function callAnthropic_(prompt, opts) {
 
   const data = JSON.parse(body);
 
-  // A response cut off at the token ceiling is truncated JSON, which fails in
-  // parseJson_ as "could not parse" — a parsing problem for what is really a
-  // budget problem. Name it here so the fix is obvious.
-  if (data.stop_reason === 'max_tokens') {
-    throw new Error('The model hit its output limit of ' + (opts.maxTokens || 8000)
-      + ' tokens, so the reply was cut off mid-JSON. Retry with fewer documents, '
-      + 'or raise the limit in the code.');
-  }
-
   // Models that think emit a thinking block before the text block; filtering by
   // type rather than taking content[0] keeps this working either way.
   const text = (data.content || [])
@@ -260,7 +251,71 @@ function callAnthropic_(prompt, opts) {
   if (!text) throw new Error('The model returned no text. Stop reason: '
     + (data.stop_reason || 'unknown') + '.');
 
+  // A reply cut off at the ceiling is truncated JSON, and it used to be thrown
+  // away whole. That is the wrong trade by a distance: eight items where the
+  // ninth was cut off mid-sentence is eight items, and discarding them to
+  // report a budget error gives somebody nothing at all for a request that
+  // very nearly worked. So the complete part is salvaged and the fact that it
+  // was cut short travels with it.
+  if (data.stop_reason === 'max_tokens') {
+    const partial = salvageJson_(text);
+    if (partial) {
+      partial._truncated = true;
+      return partial;
+    }
+    throw new Error('The model hit its output limit of '
+      + (opts.maxTokens || 8000) + ' tokens and was cut off before it had '
+      + 'written anything complete.');
+  }
+
   return parseJson_(text);
+}
+
+/**
+ * The complete part of a JSON reply that stops mid-way.
+ *
+ * Walks the text tracking nesting and string state, remembering the last point
+ * at which the document could legally be closed, then closes it there. A reply
+ * that stops in the middle of the ninth item comes back as eight whole ones.
+ *
+ * String state matters: a brace inside a quoted "why" is not nesting, and a
+ * naive bracket count truncates at the wrong place and loses good items.
+ *
+ * Returns null when nothing complete was written.
+ */
+function salvageJson_(text) {
+  const t = String(text).replace(/^```(?:json)?\s*/i, '').trim();
+  const stack = [];
+  let inStr = false, esc = false, safeAt = -1, safeStack = null;
+
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+    if (ch === '}' || ch === ']') {
+      stack.pop();
+      // Everything up to here is whole, so this is a point we could close at.
+      safeAt = i;
+      safeStack = stack.slice();
+    }
+  }
+
+  if (safeAt === -1 || !safeStack) return null;
+
+  const close = safeStack.slice().reverse()
+    .map(open => (open === '{' ? '}' : ']')).join('');
+
+  try {
+    return JSON.parse(t.slice(0, safeAt + 1) + close);
+  } catch (e) {
+    return null;
+  }
 }
 
 /** API failures the user can act on, separated from the ones they cannot. */

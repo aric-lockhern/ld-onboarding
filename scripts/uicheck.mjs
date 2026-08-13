@@ -196,7 +196,10 @@ const FAKE = {
     { name:'Alexandra McCurdy', email:'alex@lockherndigital.com', slackId:'U01ALEX',
       skills:['Reddit Organic','Content','Community'], role:'Social' }
   ],
+  // A reply that ran out of room is salvaged rather than thrown away — the
+  // items are real, the list is short, and the card has to say which.
   buildActionItems: { ok:true, written:6, preserved:1, unassigned:1, teamEmpty:false,
+    cutShort:true, trimmed:[],
     read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
     outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
       why:'The deck sold it; the signed SOW covers Reddit organic only.',
@@ -1123,6 +1126,15 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('The change report did not name the section or the old '
       + 'belief: ' + reread.slice(0, 200));
   }
+  // Building must report a short answer. A salvaged list presented as the
+  // whole answer is a quiet lie, and this one is only reachable by a toast.
+  await page.click('#mkActions');
+  await page.waitForTimeout(400);
+  const built = await page.$$eval('.toast', els => els.map(e => e.textContent).join(' || '));
+  if (!/ran out of room/.test(built)) {
+    throw new Error('A cut-short list was reported as complete: ' + built);
+  }
+
   const shotReread = `${OUT}/${name}-detail-reread.png`;
   await page.screenshot({ path: shotReread, fullPage: name === 'desktop' });
   shots.push(shotReread);
