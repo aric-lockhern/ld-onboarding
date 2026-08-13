@@ -242,7 +242,11 @@ function callAnthropic_(prompt, opts) {
    * rounds of guessing about this.
    */
   const trace = opts.trace || [];
-  const started = new Date().getTime();
+  // The caller's clock when it has one. Its own start time made the middle of
+  // a run log read as if time went backwards — "8.1s, 0.0s, 20.1s" — because
+  // these entries were counting from the request while the ones around them
+  // counted from the beginning of the run.
+  const started = opts.traceStart || new Date().getTime();
   const note = (step, detail) => {
     trace.push({ at: new Date().getTime() - started, step: step,
                  detail: detail || '' });
