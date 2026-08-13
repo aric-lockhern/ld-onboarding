@@ -191,7 +191,10 @@ function callAnthropic_(prompt, opts) {
   }
 
   const payload = JSON.stringify({
-    model: cfg('Model') || 'claude-opus-5',
+    // Per call, because the jobs are not alike. Writing an onboarding plan can
+    // take its time; listing what was promised on a call runs against the fetch
+    // deadline, and how fast the model writes is what decides whether it lands.
+    model: opts.model || cfg('Model') || 'claude-opus-5',
     max_tokens: opts.maxTokens || 8000,
     system: prompt.system,
     messages: [{ role: 'user', content: content }]

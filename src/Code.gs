@@ -528,13 +528,28 @@ function repairTaskPhases_(ss) {
  * and the phases. This writes only where the cell is EMPTY, so anything
  * anybody has typed is left exactly as it is.
  *
- * Deliberately narrow. These two are merged into copy that goes to clients,
- * and both read as broken when unset: "[access email]" and "[Business Manager
- * ID]" have both been sent to a client at least once.
+ * The first two are merged into copy that goes to clients and both read as
+ * broken when unset: "[access email]" and "[Business Manager ID]" have each
+ * been sent to a client at least once.
+ *
+ * A key the tab has never had is APPENDED rather than skipped. Filling blanks
+ * only was the same trap one level down: a setting added in code after
+ * installation existed on no sheet in use, so the fallback in the code was the
+ * only value anybody could ever have, and the Config tab quietly stopped being
+ * where the settings are.
  */
 const CONFIG_DEFAULTS = [
-  ['Agency Access Email', 'marketing@lockherndigital.com'],
-  ['Meta Business Manager ID', '1255155904831766']
+  ['Agency Access Email', 'marketing@lockherndigital.com',
+    'What clients grant access to. Blank uses the per-client alias instead'],
+  ['Meta Business Manager ID', '1255155904831766',
+    'Merged into the Meta instructions as the partner ID'],
+  // The one setting that decides whether building action items finishes at
+  // all. See the note on ACTIONS_MAX_TOKENS: how fast the model writes is the
+  // constraint, so this is worth being able to change from the sheet on the
+  // morning it matters rather than through a deploy.
+  ['Actions Model', 'claude-sonnet-5',
+    'Model for building action items. Writing speed is what decides whether '
+    + 'this finishes — claude-haiku-4-5 is the faster fallback.']
 ];
 
 function repairConfig_(ss) {
@@ -543,6 +558,7 @@ function repairConfig_(ss) {
 
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
   let filled = 0;
+  const missing = [];
 
   CONFIG_DEFAULTS.forEach(d => {
     for (let i = 0; i < rows.length; i++) {
@@ -552,7 +568,22 @@ function repairConfig_(ss) {
       filled++;
       return;
     }
+    // A key the sheet has never had. This used to be skipped, which is rule 3
+    // wearing a different hat: seedConfig_ bails on a populated tab, so a
+    // setting added in code could not reach a single installed sheet and the
+    // fallback in the code was the only value anybody ever got. Appending is
+    // safe — it adds rows, never touches one somebody has set.
+    missing.push(d);
   });
+
+  if (missing.length) {
+    // Padded to the tab's width: a two-element default written into a
+    // three-column range throws, and it would throw at the end of setup() when
+    // everything else had already been repaired.
+    const rowsOut = missing.map(d => [d[0], d[1], d[2] || '']);
+    sh.getRange(sh.getLastRow() + 1, 1, rowsOut.length, 3).setValues(rowsOut);
+    filled += rowsOut.length;
+  }
   return filled;
 }
 
@@ -655,6 +686,9 @@ function seedConfig_(ss) {
     ['Drive Root Folder ID', '', 'Parent folder for client folders. Blank = My Drive root.'],
     ['Digest Recipients', '', 'Comma-separated. Daily overdue digest goes here.'],
     ['Model', 'claude-opus-5', 'Anthropic model string'],
+    ['Actions Model', 'claude-sonnet-5',
+      'Model for building action items. Writing speed decides whether this one '
+      + 'finishes — claude-haiku-4-5 is the faster fallback.'],
     ['Google Ads MCC ID', '', 'Merged into the Google Ads instructions'],
     ['Meta Business Manager ID', '1255155904831766',
       'Merged into the Meta instructions as the partner ID'],

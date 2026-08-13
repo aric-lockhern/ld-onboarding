@@ -2813,7 +2813,10 @@ function wireActions(clientId, r){
   if (el('mkActions')){
     el('mkActions').addEventListener('click', function(){
       var b = this;
-      b.disabled = true; b.textContent = 'Reading the audit…';
+      // A transcript takes twenty or thirty seconds to read and answer on.
+      // A button that says nothing for that long reads as a button that did
+      // nothing, and the second click is how you get two of everything.
+      b.disabled = true; b.textContent = 'Reading the documents…';
       var picked = pickedSources();
       if (!picked.length){ b.disabled = false; b.textContent = 'Build action items';
         toast('Tick at least one document to read.', true); return; }
@@ -2831,6 +2834,11 @@ function wireActions(clientId, r){
         if (res.teamEmpty){
           toast('Nobody on the Team tab, so nothing could be assigned. '
             + 'Add people in the sheet and rebuild.', true);
+        }
+        if ((res.trimmed || []).length){
+          toast('Too long to read in full, so the middle was dropped from: '
+            + res.trimmed.join(', ') + '. Untick another document and rebuild '
+            + 'to read it whole.', true);
         }
         (res.outOfScope || []).forEach(function(o){
           toast('Out of scope: ' + o.item + ' — ' + o.why, true);
