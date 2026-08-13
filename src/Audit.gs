@@ -179,7 +179,10 @@ function buildActionItems(clientId, keys) {
   try {
     out = callAnthropic_(buildActionsPrompt_(client, docs, team),
                          { maxTokens: ACTIONS_MAX_TOKENS,
-                           model: actionsModel_() });
+                           model: actionsModel_(),
+                           // The whole budget goes to the answer. See the note
+                           // in callAnthropic_ — this is what was eating it.
+                           noThinking: true });
   } catch (e) {
     // Naming the real knob. Unticking documents was the old advice and it was
     // wrong: reading is cheap and the length of the answer is what runs out of
