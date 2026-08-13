@@ -227,6 +227,34 @@ function callAnthropic_(prompt, opts) {
 
   const payload = JSON.stringify(req);
 
+  /**
+   * A running account of what this call did, for whoever is looking at a
+   * failure.
+   *
+   * The caller passes an array in and it gets filled. Returning it instead
+   * would change the shape every existing caller reads, and the point of a log
+   * is that it survives the failure — a value returned from a function that
+   * threw is a value nobody has.
+   *
+   * usage is the entry that matters. output_tokens counts THINKING as well as
+   * the answer, and the gap between "the model wrote 3,900 tokens" and "the
+   * answer is four items long" is the single fact that would have ended three
+   * rounds of guessing about this.
+   */
+  const trace = opts.trace || [];
+  const started = new Date().getTime();
+  const note = (step, detail) => {
+    trace.push({ at: new Date().getTime() - started, step: step,
+                 detail: detail || '' });
+    // Also to the execution log, so it is there in the Apps Script editor for
+    // anyone who did not have the browser open when it happened.
+    try { console.log('[anthropic] ' + step + ' — ' + (detail || '')); } catch (e) {}
+  };
+
+  note('Request', req.model + ' · max ' + req.max_tokens + ' tokens · thinking '
+    + (req.thinking && req.thinking.type === 'disabled' ? 'off' : 'on')
+    + ' · ' + Math.round(payload.length / 1000) + 'k characters sent');
+
   // muteHttpExceptions catches HTTP statuses, not connection failures. A
   // request that runs past the fetch deadline THROWS, with "Address
   // unavailable" — which reads as the API being down when it is really this
@@ -248,7 +276,9 @@ function callAnthropic_(prompt, opts) {
       break;
     } catch (e) {
       const msg = (e && e.message) || String(e);
+      note('Fetch failed', msg);
       if (attempt === 0 && /address unavailable|timeout|timed out/i.test(msg)) {
+        note('Retrying once', 'after 2 seconds');
         Utilities.sleep(2000);
         continue;
       }
@@ -266,9 +296,16 @@ function callAnthropic_(prompt, opts) {
 
   const code = res.getResponseCode();
   const body = res.getContentText();
+  note('Replied', 'HTTP ' + code + ' · ' + Math.round(body.length / 1000)
+    + 'k characters');
   if (code !== 200) throw new Error(anthropicError_(code, body));
 
   const data = JSON.parse(body);
+
+  const usage = data.usage || {};
+  note('Tokens', (usage.input_tokens || '?') + ' in · '
+    + (usage.output_tokens || '?') + ' out of ' + req.max_tokens + ' allowed'
+    + ' · stopped because: ' + (data.stop_reason || 'unknown'));
 
   // Models that think emit a thinking block before the text block; filtering by
   // type rather than taking content[0] keeps this working either way.
@@ -284,18 +321,38 @@ function callAnthropic_(prompt, opts) {
   // report a budget error gives somebody nothing at all for a request that
   // very nearly worked. So the complete part is salvaged and the fact that it
   // was cut short travels with it.
-  if (data.stop_reason === 'max_tokens') {
+  /**
+   * PARSE FIRST, ASK WHY LATER.
+   *
+   * This used to salvage only when stop_reason was "max_tokens", which is a
+   * guess about the cause dressed up as a condition. A reply came back cut off
+   * mid-word inside a string, stop_reason said something else, the salvage
+   * never ran, and a perfectly good list of action items was thrown away with
+   * "Could not parse model response as JSON" — a parser error for a document
+   * that was three quarters complete.
+   *
+   * The only test that matters is whether the text parses. If it does, use it.
+   * If it does not, keep whatever part of it is whole. Why it stopped is
+   * information for the log, not a condition for keeping the answer.
+   */
+  try {
+    const parsed = parseJson_(text);
+    note('Parsed', 'the reply is valid JSON');
+    return parsed;
+  } catch (e) {
     const partial = salvageJson_(text);
     if (partial) {
+      note('Salvaged', 'the reply did not parse whole ('
+        + (data.stop_reason || 'unknown') + '); kept the complete part');
       partial._truncated = true;
       return partial;
     }
-    throw new Error('The model hit its output limit of '
-      + (opts.maxTokens || 8000) + ' tokens and was cut off before it had '
-      + 'written anything complete.');
+    note('Unparseable', 'nothing complete in ' + text.length + ' characters');
+    throw new Error('The model\'s reply could not be read as JSON and nothing '
+      + 'in it was complete enough to keep. It stopped because: '
+      + (data.stop_reason || 'unknown') + '. First 200 characters:\n'
+      + text.slice(0, 200));
   }
-
-  return parseJson_(text);
 }
 
 /**

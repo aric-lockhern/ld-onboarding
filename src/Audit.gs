@@ -126,10 +126,39 @@ function preferredActionSources_(keys) {
  *   everything that could hold a commitment.
  */
 function buildActionItems(clientId, keys) {
-  const client = getClientRecord_(clientId);
-  if (!client) return { ok: false, message: 'Client not found.' };
+  /**
+   * Every step, whether it worked or not.
+   *
+   * This has failed four different ways — a fetch deadline, a token ceiling
+   * twice, and a document that was never picked — and each time the only thing
+   * on screen was a sentence guessing at the cause. The log is what turns
+   * "it doesn't work" into a fact, and it is returned on the failure paths as
+   * well as the good one, which is the whole point of having it.
+   */
+  const log = [];
+  const t0 = new Date().getTime();
+  const step = (name, detail) => {
+    log.push({ at: new Date().getTime() - t0, step: name, detail: detail || '' });
+    try { console.log('[actions] ' + name + ' — ' + (detail || '')); } catch (e) {}
+  };
+  const fail = (message, extra) =>
+    Object.assign({ ok: false, message: message, log: log }, extra || {});
 
-  const all = profileSources_(draftIdForClient_(clientId));
+  const client = getClientRecord_(clientId);
+  if (!client) return fail('Client not found.');
+  step('Client', client.company);
+
+  const draftId = draftIdForClient_(clientId);
+  if (!draftId) {
+    return fail('This client has no draft, so there are no stored documents to '
+      + 'read. The draft it was created from may have been deleted.');
+  }
+
+  const all = profileSources_(draftId);
+  step('Documents on file', all.length
+    ? all.map(d => d.label + ' (' + Math.round((d.text || '').length / 1000)
+        + 'k)').join(', ')
+    : 'none');
 
   // Picking the documents is the difference between a request that finishes and
   // one that runs past the fetch deadline. Four transcripts is 120,000
@@ -141,8 +170,8 @@ function buildActionItems(clientId, keys) {
     keys.forEach(k => { want[k] = true; });
     docs = all.filter(d => want[d.key]);
     if (!docs.length) {
-      return { ok: false, message: 'None of the documents you picked are stored '
-        + 'against this client any more.' };
+      return fail('None of the documents you picked are stored against this '
+        + 'client any more.');
     }
   } else {
     // Imported calls carry a cu_ or call_ key rather than one of the fixed
@@ -153,13 +182,12 @@ function buildActionItems(clientId, keys) {
   }
 
   if (!docs.length) {
-    return { ok: false,
-             message: all.length
+    return fail(all.length
                ? 'The stored documents are ' + all.map(d => d.label).join(', ')
                  + ' — none of them is a deck, a call transcript or a scope of '
                  + 'work, so there is nothing to read commitments from.'
                : 'No stored documents. The draft they came from may have been '
-                 + 'deleted, or nothing was ever uploaded to it.' };
+                 + 'deleted, or nothing was ever uploaded to it.');
   }
 
   const team = getTeam();
@@ -175,6 +203,10 @@ function buildActionItems(clientId, keys) {
   // which is the single most common reason for a thin result.
   const read = docs.map(d => d.label);
 
+  step('Reading', read.join(', ') + ' — ' + Math.round(chars / 1000)
+    + 'k characters' + (trimmed.length ? ' (trimming ' + trimmed.join(', ') + ')' : ''));
+  step('Team available', team.length ? team.length + ' people' : 'nobody on the Team tab');
+
   let out;
   try {
     out = callAnthropic_(buildActionsPrompt_(client, docs, team),
@@ -182,33 +214,78 @@ function buildActionItems(clientId, keys) {
                            model: actionsModel_(),
                            // The whole budget goes to the answer. See the note
                            // in callAnthropic_ — this is what was eating it.
-                           noThinking: true });
+                           noThinking: true,
+                           trace: log });
   } catch (e) {
     // Naming the real knob. Unticking documents was the old advice and it was
     // wrong: reading is cheap and the length of the answer is what runs out of
     // time. Nobody would guess that, so it says so.
-    return { ok: false, read: read, chars: chars,
-             message: ((e && e.message) || String(e))
-               + ' — reading ' + read.join(', ') + ' ('
+    const why = (e && e.message) || String(e);
+    step('Failed', why);
+
+    // Advice only where it applies. The deadline note was being appended to
+    // every failure, including ones with nothing to do with a deadline, which
+    // sends somebody to change a model setting that was never the problem.
+    const slow = /deadline|address unavailable|timeout|timed out/i.test(why);
+    return { ok: false, read: read, chars: chars, log: log,
+             message: why + ' — reading ' + read.join(', ') + ' ('
                + Math.round(chars / 1000) + 'k characters) on '
-               + actionsModel_() + '. The length of the ANSWER is what runs '
-               + 'past the deadline, not the length of the documents: set '
-               + '"Actions Model" on the Config tab to claude-haiku-4-5, which '
-               + 'writes several times faster.' };
+               + actionsModel_() + '.'
+               + (slow ? ' The length of the ANSWER is what runs past the '
+                   + 'deadline, not the length of the documents: set "Actions '
+                   + 'Model" on the Config tab to claude-haiku-4-5, which '
+                   + 'writes several times faster.'
+                       : ' The run log below has each step and what it did.') };
   }
 
-  const items = (out && out.actions) || [];
-  const outOfScope = (out && out.outOfScope) || [];
-  // Salvaged from a reply that ran out of room. The items are real; the list
-  // is short for a reason that has nothing to do with the documents, and
-  // presenting it as the whole answer would be a quiet lie.
-  const cutShort = !!(out && out._truncated);
+  let items = (out && out.actions) || [];
+  let outOfScope = (out && out.outOfScope) || [];
+  let cutShort = !!(out && out._truncated);
+
+  /**
+   * A short answer fixes itself.
+   *
+   * Telling somebody "the answer ran out of room, rebuild to try again" is
+   * handing them my problem. They asked for a list; a second request is
+   * something the machine can make on its own, and it takes seconds.
+   *
+   * The retry asks for the same work in the plainest possible form — half the
+   * items, nothing but the essentials — because the first attempt ran long by
+   * being expansive, and asking for the same thing again would run long again.
+   * Whichever attempt produced more complete items wins.
+   */
+  if (cutShort) {
+    step('Retrying', 'the first answer was cut off after ' + items.length
+      + ' items — asking again, shorter');
+    try {
+      const terse = callAnthropic_(
+        buildActionsPrompt_(client, docs, team, true),
+        { maxTokens: ACTIONS_MAX_TOKENS, model: actionsModel_(),
+          noThinking: true, trace: log });
+      const retryItems = (terse && terse.actions) || [];
+      if (retryItems.length > items.length) {
+        step('Retry was better', retryItems.length + ' items against '
+          + items.length);
+        items = retryItems;
+        outOfScope = (terse && terse.outOfScope) || outOfScope;
+        cutShort = !!(terse && terse._truncated);
+      } else {
+        step('Kept the first answer', items.length + ' items against '
+          + retryItems.length);
+      }
+    } catch (e) {
+      // The first answer is still an answer. A failed retry must not lose it.
+      step('Retry failed', (e && e.message) || String(e));
+    }
+  }
+  step('Items returned', items.length + (cutShort ? ' (the reply was cut short)' : '')
+    + (outOfScope.length ? ' · ' + outOfScope.length + ' out of scope' : ''));
 
   // An empty result is an answer, not a failure. It used to come back as
   // ok:false, so "we did not promise anything specific" and "the API call
   // broke" arrived on screen as the same red toast.
   if (!items.length) {
-    return { ok: true, written: 0, preserved: 0, read: read,
+    return { ok: true, written: 0, preserved: 0, read: read, log: log,
              outOfScope: outOfScope, unassigned: 0, teamEmpty: !team.length,
              nothing: true,
              message: (out && out.note)
@@ -218,9 +295,12 @@ function buildActionItems(clientId, keys) {
   }
 
   const kept = writeActions_(clientId, items);
+  step('Written', kept.written + ' written · ' + kept.fresh.length + ' new · '
+    + kept.preserved + ' already started, left alone');
 
   return {
     ok: true,
+    log: log,
     written: kept.written,
     preserved: kept.preserved,
     // Which of them had never been on this client before. After adding a
@@ -413,7 +493,12 @@ function writeActions_(clientId, items) {
 
 // ---------------------------------------------------------------- PROMPT
 
-function buildActionsPrompt_(client, docs, team) {
+/**
+ * @param {boolean} [terse] second attempt after a reply ran out of room. The
+ *   first attempt ran long by being expansive, so this one is told to strip
+ *   the answer to its bones rather than being asked the same thing again.
+ */
+function buildActionsPrompt_(client, docs, team, terse) {
   const agency = cfg('Agency Name') || 'the agency';
 
   const system = [
@@ -445,9 +530,16 @@ function buildActionsPrompt_(client, docs, team) {
     'is a list nobody reads. If something was discussed but explicitly not',
     'agreed, leave it out of actions.',
     '',
-    'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost the',
-    'most to miss. A longer list is not a better one, and the tail is where',
-    'padding hides.',
+    terse
+      ? 'Return at most ' + Math.ceil(ACTIONS_MAX_ITEMS / 2) + ' actions — the '
+        + 'ones that cost the most to miss. THE LAST ATTEMPT RAN OUT OF ROOM '
+        + 'AND WAS CUT OFF. Keep every field to a handful of words: why is at '
+        + 'most eight words, source is the document name alone, and there are '
+        + 'no quotations anywhere. A complete short answer beats a long one '
+        + 'that never arrives.'
+      : 'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost '
+        + 'the most to miss. A longer list is not a better one, and the tail '
+        + 'is where padding hides.',
     '',
     // Length is the whole constraint here. A generous answer is one that never
     // arrives — see the note on ACTIONS_MAX_TOKENS.
@@ -456,9 +548,12 @@ function buildActionsPrompt_(client, docs, team) {
     'closing summary, no markdown. A long answer takes so long to write that',
     'the request is abandoned before it finishes and you produce nothing.',
     '',
-    'source is the DOCUMENT NAME and at most a handful of words identifying the',
-    'passage — "Audit presentation, impression share slide". Not a full quote:',
-    'quotes are the longest thing in the answer and the least load-bearing.',
+    'NO QUOTATIONS ANYWHERE IN THE ANSWER. Not in source, not in why, not in',
+    'action. source is the document name and at most four words locating the',
+    'passage: "Audit presentation, impression share slide". Nothing after a',
+    'dash, no quoted sentence from the transcript, no ellipsis. Quotes are the',
+    'longest thing in the answer and the least load-bearing, and an answer that',
+    'runs out of room loses whole items to make space for them.',
     '',
     'The hard part is scope, and it is the part that matters most:',
     '- A deck written to win the deal proposes more than the contract bought.',
