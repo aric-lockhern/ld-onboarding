@@ -263,7 +263,7 @@ function buildActionItems(clientId, keys) {
     step('Area read', area.label + ' — ' + got.length + ' actions'
       + (res && res._truncated ? ' (cut short)' : ''));
     if (res && res._truncated) cutShort = true;
-    got.forEach(a => found.push(a));
+    got.forEach(a => { a.area = area.label; found.push(a); });
     ((res && res.outOfScope) || []).forEach(o => { if (o && o.item) outOfScope.push(o); });
     if (!note && res && res.note) note = res.note;
   });
@@ -346,7 +346,10 @@ function getActionItems(clientId) {
       priority: safeStr_(x.r[ACT.PRIORITY - 1]) || 'Later',
       effort: safeStr_(x.r[ACT.EFFORT - 1]),
       owner: safeStr_(x.r[ACT.OWNER - 1]),
-      status: safeStr_(x.r[ACT.STATUS - 1]) || 'To do'
+      status: safeStr_(x.r[ACT.STATUS - 1]) || 'To do',
+      // Blank on anything built before the column existed. The card puts those
+      // under "Not sorted yet" rather than inventing an area for them.
+      area: safeStr_(x.r[ACT.AREA - 1])
     }));
 
   const order = { 'Now': 0, 'Next': 1, 'Later': 2 };
@@ -478,6 +481,7 @@ function writeActions_(clientId, items) {
       v[ACT.OWNER - 1] = String(it.owner || '');
       v[ACT.STATUS - 1] = 'To do';
       v[ACT.CREATED - 1] = now;
+      v[ACT.AREA - 1] = String(it.area || '');
       return v;
     });
 

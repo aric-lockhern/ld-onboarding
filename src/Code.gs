@@ -49,12 +49,21 @@ const TEAM_HEADERS = ['Name', 'Email', 'Slack Member ID', 'Skills', 'Role', 'Act
  */
 const ACTION_HEADERS = [
   'Client ID', 'Action', 'Why it matters', 'Source', 'Priority',
-  'Effort', 'Owner', 'Status', 'Created'
+  'Effort', 'Owner', 'Status', 'Created', 'Area'
 ];
 
+/**
+ * AREA is the channel the work belongs to — Google Ads, AI Search SEO, Reddit.
+ *
+ * The audit is read one area at a time, so every item already knows which one
+ * it came from; storing it is what lets the page group them the way the work is
+ * actually divided up. A flat list of thirty-four items ordered by priority is
+ * a list the paid-search person has to read in full to find their eight, and
+ * "the audit follow-ups for Reddit" is not a question it can answer at all.
+ */
 const ACT = {
   CLIENT: 1, ACTION: 2, WHY: 3, SOURCE: 4, PRIORITY: 5,
-  EFFORT: 6, OWNER: 7, STATUS: 8, CREATED: 9, WIDTH: 9
+  EFFORT: 6, OWNER: 7, STATUS: 8, CREATED: 9, AREA: 10, WIDTH: 10
 };
 
 const ACTION_STATUSES = ['To do', 'In progress', 'Done', 'Not doing'];
