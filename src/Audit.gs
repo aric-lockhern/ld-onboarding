@@ -54,20 +54,29 @@
 const ACTIONS_MAX_TOKENS = 4000;
 
 /**
- * How many items to ask for.
+ * THERE IS NO LIMIT ON THE LIST. THERE IS A LIMIT ON ONE REQUEST.
  *
- * This was 8, set while the answer length was still suspected of causing the
- * timeouts. It was not, and 8 turned out to be actively wrong: an audit
- * covering Google Ads, SEO and Reddit came back with five Google Ads items and
- * three SEO ones, and the entire Reddit workstream was gone. A model told "at
- * most 8" does not spread them evenly — it ranks everything and takes the top
- * of the list, and the top of the list is one or two areas.
+ * Every cap in this file has been mistaken for a cost control at some point,
+ * including by me. It never was. Apps Script abandons a UrlFetchApp request
+ * after about a minute, and a model writes its answer one token at a time — so
+ * a single request cannot return a forty-item list, however much anybody is
+ * willing to pay for one.
  *
- * A real run measured 1,599 output tokens for 8 items, so ~200 each. Twenty
- * five terse items is well inside the ceiling and covers every area an audit
- * actually raises. The fields carry hard word limits because THAT is what
- * makes the count affordable, not the count itself.
+ * That is a limit on ONE REQUEST, and the answer is therefore more requests.
+ * The audit is read once per area — paid search, then SEO, then organic
+ * social, then whatever else it raises — and each of those asks for EVERY
+ * concrete action in that area with no cap at all. Each answer is a dozen
+ * items and arrives in twenty seconds; the list they add up to has no ceiling.
+ *
+ * This is the opposite axis from an earlier attempt that split the DOCUMENT
+ * into parts. Reading was never the expensive half. Writing is, so writing is
+ * what gets split.
+ *
+ * The only cap left is a backstop against a runaway write to the sheet.
  */
+const ACTIONS_ITEM_BACKSTOP = 80;
+
+/** Kept for the retry, which asks for a deliberately smaller answer. */
 const ACTIONS_MAX_ITEMS = 25;
 
 /**
@@ -224,78 +233,50 @@ function buildActionItems(clientId, keys) {
     + 'k characters' + (trimmed.length ? ' (trimming ' + trimmed.join(', ') + ')' : ''));
   step('Team available', team.length ? team.length + ' people' : 'nobody on the Team tab');
 
-  let out;
-  try {
-    out = callAnthropic_(buildActionsPrompt_(client, docs, team),
-                         { maxTokens: ACTIONS_MAX_TOKENS,
-                           model: actionsModel_(),
-                           // The whole budget goes to the answer. See the note
-                           // in callAnthropic_ — this is what was eating it.
-                           noThinking: true,
-                           trace: log, traceStart: clock });
-  } catch (e) {
-    // Naming the real knob. Unticking documents was the old advice and it was
-    // wrong: reading is cheap and the length of the answer is what runs out of
-    // time. Nobody would guess that, so it says so.
-    const why = (e && e.message) || String(e);
-    step('Failed', why);
+  // One pass per area. See the note on ACTIONS_ITEM_BACKSTOP: the minute-long
+  // fetch deadline is a limit on a REQUEST, not on the list, so the list is
+  // assembled from several requests that each finish comfortably.
+  const areas = actionAreas_(client);
+  step('Areas to cover', areas.map(a => a.label).join(', '));
 
-    // Advice only where it applies. The deadline note was being appended to
-    // every failure, including ones with nothing to do with a deadline, which
-    // sends somebody to change a model setting that was never the problem.
-    const slow = /deadline|address unavailable|timeout|timed out/i.test(why);
-    return { ok: false, read: read, chars: chars, log: log,
-             message: why + ' — reading ' + read.join(', ') + ' ('
-               + Math.round(chars / 1000) + 'k characters) on '
-               + actionsModel_() + '.'
-               + (slow ? ' The length of the ANSWER is what runs past the '
-                   + 'deadline, not the length of the documents: set "Actions '
-                   + 'Model" on the Config tab to claude-haiku-4-5, which '
-                   + 'writes several times faster.'
-                       : ' The run log below has each step and what it did.') };
-  }
+  const found = [];
+  let outOfScope = [];
+  const failures = [];
+  let note = '';
+  let cutShort = false;
 
-  let items = (out && out.actions) || [];
-  let outOfScope = (out && out.outOfScope) || [];
-  let cutShort = !!(out && out._truncated);
-
-  /**
-   * A short answer fixes itself.
-   *
-   * Telling somebody "the answer ran out of room, rebuild to try again" is
-   * handing them my problem. They asked for a list; a second request is
-   * something the machine can make on its own, and it takes seconds.
-   *
-   * The retry asks for the same work in the plainest possible form — half the
-   * items, nothing but the essentials — because the first attempt ran long by
-   * being expansive, and asking for the same thing again would run long again.
-   * Whichever attempt produced more complete items wins.
-   */
-  if (cutShort) {
-    step('Retrying', 'the first answer was cut off after ' + items.length
-      + ' items — asking again, shorter');
+  areas.forEach(area => {
+    let res;
     try {
-      const terse = callAnthropic_(
-        buildActionsPrompt_(client, docs, team, true),
-        { maxTokens: ACTIONS_MAX_TOKENS, model: actionsModel_(),
+      res = callAnthropic_(
+        buildActionsPrompt_(client, docs, team, { area: area }),
+        { maxTokens: ACTIONS_MAX_TOKENS_AREA, model: actionsModel_(),
           noThinking: true, trace: log, traceStart: clock });
-      const retryItems = (terse && terse.actions) || [];
-      if (retryItems.length > items.length) {
-        step('Retry was better', retryItems.length + ' items against '
-          + items.length);
-        items = retryItems;
-        outOfScope = (terse && terse.outOfScope) || outOfScope;
-        cutShort = !!(terse && terse._truncated);
-      } else {
-        step('Kept the first answer', items.length + ' items against '
-          + retryItems.length);
-      }
     } catch (e) {
-      // The first answer is still an answer. A failed retry must not lose it.
-      step('Retry failed', (e && e.message) || String(e));
+      // One area failing is not the run failing. The rest of the audit is
+      // still worth having, and the log names which part is missing.
+      failures.push(area.label);
+      step('Area failed', area.label + ' — ' + ((e && e.message) || String(e)));
+      return;
     }
+    const got = ((res && res.actions) || []).filter(a => a && a.action);
+    step('Area read', area.label + ' — ' + got.length + ' actions'
+      + (res && res._truncated ? ' (cut short)' : ''));
+    if (res && res._truncated) cutShort = true;
+    got.forEach(a => found.push(a));
+    ((res && res.outOfScope) || []).forEach(o => { if (o && o.item) outOfScope.push(o); });
+    if (!note && res && res.note) note = res.note;
+  });
+
+  if (!found.length && failures.length === areas.length) {
+    return fail('Every area failed to read. ' + (failures.length ? '' : ''), 
+                { read: read, chars: chars });
   }
-  step('Items returned', items.length + (cutShort ? ' (the reply was cut short)' : '')
+
+  const items = mergeActions_(found);
+  outOfScope = dedupeActions_(outOfScope, o => o.item);
+  step('Items returned', found.length + ' found · ' + items.length
+    + ' after removing duplicates'
     + (outOfScope.length ? ' · ' + outOfScope.length + ' out of scope' : ''));
 
   // An empty result is an answer, not a failure. It used to come back as
@@ -305,7 +286,7 @@ function buildActionItems(clientId, keys) {
     return { ok: true, written: 0, preserved: 0, read: read, log: log,
              outOfScope: outOfScope, unassigned: 0, teamEmpty: !team.length,
              nothing: true,
-             message: (out && out.note)
+             message: note
                || 'Nothing in ' + read.join(', ') + ' reads as a specific '
                 + 'commitment. If the deck is missing from the draft, add it '
                 + 'and re-analyse first.' };
@@ -330,6 +311,8 @@ function buildActionItems(clientId, keys) {
     teamEmpty: !team.length,
     trimmed: trimmed,
     cutShort: cutShort,
+    areas: areas.length,
+    areasFailed: failures,
     chars: chars,
     model: actionsModel_()
   };
@@ -508,14 +491,137 @@ function writeActions_(clientId, items) {
   return { written: rows.length, preserved: preserved, fresh: fresh };
 }
 
+// ---------------------------------------------------------------- AREAS
+
+/**
+ * Room for one area's worth of actions, which is a dozen or so.
+ *
+ * Higher than the old whole-list ceiling because it no longer has to hold the
+ * whole list — and still small enough that the request finishes long before
+ * Apps Script gives up on it.
+ */
+const ACTIONS_MAX_TOKENS_AREA = 4000;
+
+/**
+ * The passes to make over the documents.
+ *
+ * Built from what the client actually bought, plus a sweep for anything the
+ * documents raise that no service covers. Asking once and hoping produced five
+ * Google Ads items, three SEO ones, and no Reddit at all from an audit that
+ * spent a third of its slides on Reddit — a model given one question ranks
+ * everything and answers from the top.
+ *
+ * Asking per area removes the competition. Nothing is ranked against anything
+ * in another area, so nothing gets crowded out.
+ */
+function actionAreas_(client) {
+  const services = String(client.servicesRaw || client.services || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  const areas = services.map(s => ({
+    key: s,
+    label: s,
+    scope: 'Everything the documents say will be done for ' + s + '.'
+  }));
+
+  // The catch-all. An audit routinely raises tracking, analytics, feed and
+  // site work that belongs to no single service line, and without this pass
+  // those actions have nowhere to be counted and are simply lost.
+  areas.push({
+    key: '_other',
+    label: 'Everything else',
+    scope: 'Anything concrete the documents commit to that does not belong to '
+      + (services.length ? services.join(', ') : 'a named service')
+      + ' — tracking, analytics, feeds, site changes, reporting, access.'
+  });
+
+  return areas;
+}
+
+/**
+ * One list from several passes.
+ *
+ * Areas overlap at the edges — a landing page fix is both SEO and paid search
+ * — so the same action arrives twice, worded differently. Comparing exact text
+ * would let both through, so they are compared on their significant words.
+ */
+function mergeActions_(items) {
+  const rank = { Now: 0, Next: 1, Later: 2 };
+  const kept = [];
+
+  items.forEach(item => {
+    const sig = actionSignature_(item.action);
+    if (!sig.length) return;
+
+    const twin = kept.filter(k => sameAction_(k.sig, sig))[0];
+    if (!twin) { kept.push({ sig: sig, item: item }); return; }
+
+    // The stronger of the pair: higher priority, then whichever explained
+    // itself. The duplicate that came with a reason is the better record.
+    const a = rank[twin.item.priority] === undefined ? 3 : rank[twin.item.priority];
+    const b = rank[item.priority] === undefined ? 3 : rank[item.priority];
+    if (b < a || (b === a
+        && String(item.why || '').length > String(twin.item.why || '').length)) {
+      twin.item = item;
+    }
+  });
+
+  return kept.map(k => k.item)
+    .sort((x, y) => (rank[x.priority] === undefined ? 3 : rank[x.priority])
+                  - (rank[y.priority] === undefined ? 3 : rank[y.priority]))
+    .slice(0, ACTIONS_ITEM_BACKSTOP);
+}
+
+/** The same, for any list of things with a text field. */
+function dedupeActions_(list, textOf) {
+  const kept = [];
+  list.forEach(o => {
+    const sig = actionSignature_(textOf(o));
+    if (!sig.length) return;
+    if (kept.some(k => sameAction_(k.sig, sig))) return;
+    kept.push({ sig: sig, o: o });
+  });
+  return kept.map(k => k.o).slice(0, ACTIONS_ITEM_BACKSTOP);
+}
+
+/** Words that carry the meaning of an action, lowercased and de-duplicated. */
+const ACTION_STOPWORDS = {
+  the: 1, a: 1, an: 1, and: 1, or: 1, to: 1, of: 1, for: 1, in: 1, on: 1,
+  by: 1, with: 1, so: 1, that: 1, it: 1, is: 1, be: 1, are: 1, at: 1, as: 1,
+  from: 1, this: 1, into: 1, can: 1, will: 1
+};
+
+function actionSignature_(text) {
+  const seen = {};
+  return String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !ACTION_STOPWORDS[w] && !seen[w] && (seen[w] = 1));
+}
+
+/** Two actions are the same when most of their significant words are. */
+function sameAction_(a, b) {
+  if (!a.length || !b.length) return false;
+  const set = {};
+  a.forEach(w => { set[w] = 1; });
+  const shared = b.filter(w => set[w]).length;
+  return shared / Math.min(a.length, b.length) >= 0.7;
+}
+
 // ---------------------------------------------------------------- PROMPT
 
 /**
- * @param {boolean} [terse] second attempt after a reply ran out of room. The
- *   first attempt ran long by being expansive, so this one is told to strip
- *   the answer to its bones rather than being asked the same thing again.
+ * @param {Object} [opts]
+ *   area  — the one workstream this pass is about. Each area is asked for
+ *           everything it has, with no cap, because nothing is competing with
+ *           anything in another area for a place on one list.
+ *   terse — a second attempt after a reply ran out of room. The first ran long
+ *           by being expansive, so this one strips the answer to its bones
+ *           rather than asking the same question again.
  */
-function buildActionsPrompt_(client, docs, team, terse) {
+function buildActionsPrompt_(client, docs, team, opts) {
+  opts = opts || {};
+  const area = opts.area;
+  const terse = opts.terse;
   const agency = cfg('Agency Name') || 'the agency';
 
   const system = [
@@ -548,32 +654,30 @@ function buildActionsPrompt_(client, docs, team, terse) {
     'agreed, leave it out of actions.',
     '',
     terse
-      ? 'Return at most ' + Math.ceil(ACTIONS_MAX_ITEMS / 2) + ' actions — the '
-        + 'ones that cost the most to miss, still spread across every area. '
-        + 'THE LAST ATTEMPT RAN OUT OF ROOM AND WAS CUT OFF. Keep every field '
-        + 'to a handful of words: why is at most eight words, source is the '
-        + 'slide or section name alone, no quotations anywhere. A complete '
-        + 'short answer beats a long one that never arrives.'
-      : 'Return up to ' + ACTIONS_MAX_ITEMS + ' actions.',
+      ? 'THE LAST ATTEMPT RAN OUT OF ROOM AND WAS CUT OFF. Return the ' 
+        + Math.ceil(ACTIONS_MAX_ITEMS / 2) + ' that cost the most to miss, '
+        + 'and keep every field to a handful of words. A complete short answer '
+        + 'beats a long one that never arrives.'
+      // No cap. This pass is about one area only, so nothing here is competing
+      // for a place on a shared list, and a short answer would simply mean
+      // work that was promised and then dropped.
+      : 'THIS PASS IS ABOUT ONE AREA ONLY: ' + area.label + '.\n'
+        + area.scope + '\n\n'
+        + 'List EVERY concrete action in that area. There is no limit and no '
+        + 'need to rank: if the documents commit to fourteen things there, '
+        + 'return fourteen. Ignore everything belonging to another area — it '
+        + 'is being read separately, and leaving it out here is correct rather '
+        + 'than a gap. If this area genuinely has nothing, return an empty '
+        + 'list and say why in note.',
     '',
-    // The failure this replaces: five Google Ads items, three SEO ones, and an
-    // entire Reddit workstream missing from an audit that spent a third of its
-    // slides on it.
-    'COVER EVERY AREA THE DOCUMENTS RAISE. An audit that goes through paid',
-    'search, SEO and organic social has commitments in all three, and a list',
-    'holding only the two you rank highest has silently dropped a service line',
-    'somebody is paying for. Work through the document area by area and take',
-    'the concrete actions from each. If one area only justifies two items, two',
-    'is right — but zero from an area the audit covered is a mistake.',
-    '',
-    'Length is what makes that affordable, so every field is HARD capped:',
+    'Length per item is what keeps this arriving, so every field is HARD capped:',
     '- action: at most 18 words. What to do, specific enough to finish.',
     '- why: at most 12 words. What not doing it costs, with the number if',
     '  there is one.',
     '- source: the slide or section name. Three or four words. No quotations.',
     '- effort: two or three words — "1 hour", "half a day".',
-    'A list of 25 short items is far more useful than 8 essays, and it is what',
-    'somebody can actually assign on a Monday morning.',
+    'Short items are what somebody can assign on a Monday morning. Long ones',
+    'are what nobody reads twice.',
     '',
     // Length is the whole constraint here. A generous answer is one that never
     // arrives — see the note on ACTIONS_MAX_TOKENS.
