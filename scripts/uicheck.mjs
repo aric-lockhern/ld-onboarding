@@ -242,6 +242,7 @@ const FAKE = {
       why:'The deck sold it; the signed SOW covers Reddit organic only.',
       needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
   updateActionItem: { ok:true },
+  bulkTaskAction: { ok:true, touched:3, action:'assign' },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
   addTask: { ok:true, task:'Chase the dev for the theme file', phase:2 },
   getTaskLibrary: { ok:true, methods:['INTERNAL','API','SEMI-API','EMAIL','MANUAL'],
@@ -765,6 +766,29 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
         throw new Error('The business-type scope did not load into the form: ' + biz);
       }
       await page.waitForTimeout(200);
+      // Edit has to open the form in place. It used to rebuild the whole view,
+      // which reset the scroll and left the editor off-screen at the bottom —
+      // indistinguishable from the page reloading and doing nothing.
+      const before = await page.evaluate(() =>
+        document.querySelectorAll('[data-edit-task]').length);
+      await page.click('[data-edit-task]');
+      await page.waitForTimeout(200);
+      const edit = await page.evaluate(() => ({
+        form: !!document.getElementById('tpTask'),
+        name: (document.getElementById('tpTask') || {}).value,
+        // The list is still there: a full re-render is what caused the bug.
+        list: document.querySelectorAll('[data-edit-task]').length,
+        // And the form is on screen rather than somewhere below the fold.
+        onScreen: (function(){
+          var r = document.getElementById('stEdit').getBoundingClientRect();
+          return r.top < window.innerHeight && r.bottom > 0;
+        })()
+      }));
+      if (!edit.form || !edit.name || edit.list !== before || !edit.onScreen) {
+        throw new Error('Edit did not open the task in place: '
+          + JSON.stringify(edit));
+      }
+
       const fSet = `${OUT}/${name}-settings-tasks.png`;
       await page.screenshot({ path: fSet, fullPage: name === 'desktop' });
       shots.push(fSet);
@@ -1134,6 +1158,48 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('The add-to-team menu did not open: ' + JSON.stringify(menu));
   }
   await page.click('#teamAdd');
+
+  // Ticking rows and acting on all of them. Assigning eleven tasks one
+  // dropdown at a time is eleven writes and eleven reloads, which is why half
+  // a checklist sits unassigned a fortnight in.
+  const bulkBefore = await page.evaluate(() =>
+    getComputedStyle(document.getElementById('bulkBar')).display);
+  if (bulkBefore !== 'none') {
+    throw new Error('The bulk bar is showing with nothing selected: ' + bulkBefore);
+  }
+  await page.click('.tsel');
+  await page.waitForTimeout(120);
+  const bulk = await page.evaluate(() => ({
+    shown: getComputedStyle(document.getElementById('bulkBar')).display,
+    count: document.getElementById('bulkCount').textContent,
+    // All three of the asks, in one bar: move, assign, delete.
+    canAssign: !!document.getElementById('bulkOwner'),
+    canMove: !!document.getElementById('bulkPhase'),
+    canDelete: !!document.getElementById('bulkDelete')
+  }));
+  if (bulk.shown === 'none' || !/1 selected/.test(bulk.count)) {
+    throw new Error('The bulk bar did not appear: ' + JSON.stringify(bulk));
+  }
+  if (!bulk.canAssign || !bulk.canMove || !bulk.canDelete) {
+    throw new Error('The bulk bar is missing an action: ' + JSON.stringify(bulk));
+  }
+  // A heading takes everything under it, which is the point — ticking eight
+  // Google Ads rows by hand to assign them to one person is the work this
+  // replaces.
+  await page.click('[data-selphase="2"]');
+  await page.waitForTimeout(120);
+  const many = await page.$eval('#bulkCount', e => e.textContent);
+  if (!/[2-9]\d* selected/.test(many)) {
+    throw new Error('Selecting a whole phase took only: ' + many);
+  }
+  // Delete arms before it fires: nine rows removed by a mis-click has no undo.
+  await page.click('#bulkDelete');
+  const armed = await page.$eval('#bulkDelete', e => e.textContent);
+  if (!/\?$/.test(armed.trim())) {
+    throw new Error('Bulk delete fired without arming: ' + armed);
+  }
+  await page.click('#bulkClear');
+  await page.waitForTimeout(120);
 
   // Recent context: the calls are links, not imports.
   const recentLinks = await page.$$eval('#recentWrap .line > a', els =>
