@@ -200,6 +200,22 @@ const FAKE = {
   // items are real, the list is short, and the card has to say which.
   buildActionItems: { ok:true, written:6, preserved:1, unassigned:1, teamEmpty:false,
     cutShort:true, trimmed:[],
+    // The account of what the run did. The token line is the one that matters:
+    // output_tokens counts thinking as well as the answer, and the gap between
+    // "wrote 3,900 tokens" and "returned four items" is the fact that would
+    // have ended three rounds of guessing.
+    log:[
+      { at:0,    step:'Client', detail:'Harbor & Sons' },
+      { at:180,  step:'Documents on file', detail:'Audit presentation (105k), Scope of work (17k)' },
+      { at:340,  step:'Reading', detail:'Audit presentation, Scope of work — 122k characters' },
+      { at:360,  step:'Team available', detail:'2 people' },
+      { at:380,  step:'Request', detail:'claude-sonnet-5 · max 4000 tokens · thinking off · 124k characters sent' },
+      { at:9100, step:'Replied', detail:'HTTP 200 · 3k characters' },
+      { at:9120, step:'Tokens', detail:'31204 in · 812 out of 4000 allowed · stopped because: end_turn' },
+      { at:9140, step:'Parsed', detail:'the reply is valid JSON' },
+      { at:9150, step:'Items returned', detail:'6 · 1 out of scope' },
+      { at:9600, step:'Written', detail:'6 written · 2 new · 1 already started, left alone' }
+    ],
     read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
     outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
       why:'The deck sold it; the signed SOW covers Reddit organic only.',
@@ -1133,6 +1149,22 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   const built = await page.$$eval('.toast', els => els.map(e => e.textContent).join(' || '));
   if (!/ran out of room/.test(built)) {
     throw new Error('A cut-short list was reported as complete: ' + built);
+  }
+
+  // The run log. "It doesn't work" was the whole bug report four times over,
+  // because what the run did was never on screen.
+  const runLog = await page.evaluate(() => {
+    const box = document.getElementById('actLog');
+    return {
+      steps: box ? box.querySelectorAll('.line').length : 0,
+      // The token line is the diagnostic. Without it, a ceiling eaten by
+      // thinking and a ceiling eaten by a long answer look identical.
+      tokens: box ? /\d+ in · \d+ out of \d+ allowed/.test(box.textContent) : false,
+      toggle: !!document.getElementById('logTog')
+    };
+  });
+  if (runLog.steps < 8 || !runLog.tokens || !runLog.toggle) {
+    throw new Error('The run log did not render: ' + JSON.stringify(runLog));
   }
 
   const shotReread = `${OUT}/${name}-detail-reread.png`;

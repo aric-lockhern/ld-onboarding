@@ -2803,6 +2803,47 @@ function sourcePicker(r){
 }
 
 /** Whatever the document picker is currently set to. */
+/**
+ * The last build's run log, and the card that shows it.
+ *
+ * Kept in a variable rather than re-fetched: it describes one run, and the
+ * run is over. It is drawn on failure as well as success — a log you can only
+ * see when things worked is a log for the wrong occasion.
+ */
+var ACTION_LOG = null;
+
+function runLogCard(log, failed){
+  if (!log || !log.length) return '';
+  return '<div class="grp" style="padding-top:12px">'
+    + '<button class="phtog" id="logTog"><span class="tw">'
+    + (failed ? '▼' : '▶') + '</span>Run log <span class="st">'
+    + log.length + ' steps · ' + (log[log.length - 1].at / 1000).toFixed(1)
+    + 's</span></button></div>'
+    + '<div class="card" id="logCard" style="display:'
+    + (failed ? 'block' : 'none') + '"><div class="sect"><div class="lines">'
+    + log.map(function(e){
+        return '<div class="line"><span class="tx"><b>' + esc(e.step) + '</b>'
+          + (e.detail ? ' — ' + esc(e.detail) : '') + '</span>'
+          + '<span class="sub">' + (e.at / 1000).toFixed(1) + 's</span></div>';
+      }).join('')
+    + '</div></div></div>';
+}
+
+function drawRunLog(){
+  var box = el('actLog');
+  if (!box) return;
+  box.innerHTML = ACTION_LOG
+    ? runLogCard(ACTION_LOG.log, ACTION_LOG.failed) : '';
+  if (el('logTog')){
+    el('logTog').addEventListener('click', function(){
+      var c = el('logCard');
+      var shut = c.style.display === 'none';
+      c.style.display = shut ? 'block' : 'none';
+      el('logTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+    });
+  }
+}
+
 function pickedSources(){
   return [].filter.call(document.querySelectorAll('[data-src]'),
     function(i){ return i.checked; })
@@ -2822,6 +2863,11 @@ function wireActions(clientId, r){
         toast('Tick at least one document to read.', true); return; }
       api('buildActionItems', clientId, picked).then(function(res){
         b.disabled = false; b.textContent = 'Build action items';
+        // Before anything else, including the failure paths. What the run did
+        // is the answer to "why did that not work", and it is the one thing
+        // that was never on screen.
+        ACTION_LOG = { log: res.log, failed: !res.ok };
+        drawRunLog();
         if (!res.ok){ toast(res.message || 'Could not build them.', true); return; }
         if (res.nothing){ toast(res.message, true); return; }
         var bits = [res.written + ' written'];
@@ -2850,7 +2896,14 @@ function wireActions(clientId, r){
         });
         loadActions(clientId);
       }).catch(function(e){
-        b.disabled = false; b.textContent = 'Build action items'; fail(e);
+        b.disabled = false; b.textContent = 'Build action items';
+        // A null reply is the one failure with no log at all — the server
+        // could not serialise its answer, so there is nothing to show but the
+        // fact itself.
+        ACTION_LOG = { log: [{ at: 0, step: 'No reply from the server',
+          detail: (e && e.message) || String(e) }], failed: true };
+        drawRunLog();
+        fail(e);
       });
     });
   }
@@ -3726,7 +3779,10 @@ function openClient(clientId){
       + '<div class="sect" id="slackWrap">' + slackCard(c) + '</div></div>';
 
     h += '<div class="grp">Action items</div><div class="card">'
-      + '<div class="sect" id="actWrap">' + loading() + '</div></div>';
+      + '<div class="sect" id="actWrap">' + loading() + '</div></div>'
+      // Outside actWrap: loadActions redraws that, and a log wiped by the
+      // reload that follows a failed build is a log nobody reads.
+      + '<div id="actLog"></div>';
 
     // Filled in after the page paints. The documents are a second read and
     // should not hold up everything else on the page.
