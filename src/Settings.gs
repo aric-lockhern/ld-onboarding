@@ -170,6 +170,75 @@ function deleteTaskTemplate(token, row) {
   return { ok: true, task: name };
 }
 
+// ---------------------------------------------------------------- PHASES
+
+/**
+ * The five phases, editable.
+ *
+ * The names and the meanings were seeded once and then unreachable — rule 3,
+ * seeds bail on a populated tab — so an agency that runs its onboarding in a
+ * different order had a tool describing somebody else's. Renaming a phase is
+ * the cheap half; the real question behind it is "the kickoff call happens
+ * first here, not fourth", and that is answered on the task library by moving
+ * the task's phase. Both are on this screen for that reason.
+ */
+function getPhases(token) {
+  checkToken_(token);
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.PHASES);
+  if (!sh) return { ok: false, message: 'No Phases tab yet — run setup().' };
+
+  const rows = sh.getLastRow() < 2 ? []
+    : sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
+        .map((r, i) => ({
+          row: i + 2,
+          phase: Number(r[0]) || (i + 1),
+          name: safeStr_(r[1]),
+          email: safeStr_(r[2]),
+          means: safeStr_(r[3])
+        }))
+        .filter(p => p.phase);
+
+  // How many tasks each phase would give the next client, because a phase is
+  // its tasks — renaming one while its checklist sits elsewhere is how the
+  // names stop describing the work.
+  const counts = {};
+  const pSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.PLATFORMS);
+  if (pSh && pSh.getLastRow() > 1) {
+    pSh.getRange(2, 1, pSh.getLastRow() - 1, P.WIDTH).getValues().forEach(r => {
+      if (r[P.ACTIVE - 1] === false) return;
+      const n = Number(r[P.PHASE - 1]) || 1;
+      counts[n] = (counts[n] || 0) + 1;
+    });
+  }
+  rows.forEach(p => { p.tasks = counts[p.phase] || 0; });
+
+  return { ok: true, phases: rows,
+           // Where audit follow-ups land, which is a phase like any other and
+           // worth saying on the screen that lists them.
+           auditPhase: auditPhase_() };
+}
+
+/** Renames one phase and rewrites what it means. The number never moves. */
+function savePhase(token, phase, name, means) {
+  checkToken_(token);
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.PHASES);
+  if (!sh || sh.getLastRow() < 2) {
+    return { ok: false, message: 'No Phases tab yet — run setup().' };
+  }
+
+  const want = Number(phase);
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < rows.length; i++) {
+    if (Number(rows[i][0]) !== want) continue;
+    sh.getRange(i + 2, 2).setValue(String(name || '').trim());
+    sh.getRange(i + 2, 4).setValue(String(means || '').trim());
+    return { ok: true };
+  }
+  return { ok: false, message: 'No phase ' + phase + ' on the Phases tab.' };
+}
+
 // ---------------------------------------------------------------- EMAILS
 
 /**

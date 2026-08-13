@@ -188,7 +188,11 @@ function getClientTasks_(clientId) {
         // Days since it changed hands, which is a different question from
         // whether it is overdue: work can be assigned for a fortnight and
         // untouched without its due date having passed.
-        assignedDays: assignedDays_(r[A.ASSIGNED - 1], open, today)
+        assignedDays: assignedDays_(r[A.ASSIGNED - 1], open, today),
+        // Blank for the seeded checklist, 'Audit' for work the audit asked
+        // for. The page groups the second kind by channel under its own
+        // heading inside the phase.
+        origin: safeStr_(r[A.ORIGIN - 1])
       };
     });
 }

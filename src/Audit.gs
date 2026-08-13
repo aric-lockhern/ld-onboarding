@@ -293,7 +293,8 @@ function buildActionItems(clientId, keys) {
   }
 
   const kept = writeActions_(clientId, items);
-  step('Written', kept.written + ' written · ' + kept.fresh.length + ' new · '
+  step('Written', kept.written + ' onto the phase ' + kept.phase
+    + ' checklist · ' + kept.fresh.length + ' new · '
     + kept.preserved + ' already started, left alone');
 
   return {
@@ -313,6 +314,7 @@ function buildActionItems(clientId, keys) {
     cutShort: cutShort,
     areas: areas.length,
     areasFailed: failures,
+    phase: kept.phase,
     chars: chars,
     model: actionsModel_()
   };
@@ -441,58 +443,115 @@ function updateActionItem(token, row, field, value) {
  * as new. That is the right way round: a duplicate is visible and deletable, a
  * silently reopened task that someone had marked Done is not.
  */
+/**
+ * The phase audit follow-ups land in.
+ *
+ * Three, because they come after access. Every item is "change something in
+ * the account", and you cannot change what you cannot log into — so filing
+ * them alongside the access requests in Phase 2 puts work on the board that
+ * nobody can start. Configurable, because that ordering is this agency's and
+ * not a law.
+ */
+function auditPhase_() {
+  const n = Number(cfg('Audit Follow-up Phase'));
+  return (n >= 1 && n <= 5) ? n : 3;
+}
+
+/**
+ * Writes the audit's follow-ups onto the checklist.
+ *
+ * THIS USED TO BE A TABLE OF ITS OWN, and the note in CLAUDE.md said it had to
+ * be: audit work has its own lifecycle and folding it in would gate onboarding
+ * on a negative-keyword sweep. The concern was right and the conclusion was
+ * wrong — the fix is that these rows are NEVER gates, not that they live
+ * somewhere else. Two lists meant two places to assign from, two places to
+ * mark something done, and one of them with no Slack ping on it.
+ *
+ * So they are checklist rows like any other: same format, same assignee
+ * dropdown, same status, same per-line ping. What keeps them distinct is the
+ * Origin column and the channel in Category, which is what the page groups by.
+ *
+ * Rebuilding replaces the audit rows nobody has touched and leaves everything
+ * else exactly as it is — the same rule the old table followed, for the same
+ * reason: a silently reopened task somebody had finished is invisible, and a
+ * duplicate is not.
+ */
 function writeActions_(clientId, items) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ss.getSheetByName(TABS.ACTIONS) || mkTab_(ss, TABS.ACTIONS, ACTION_HEADERS);
-  const id = String(clientId).trim();
+  const sh = ss.getSheetByName(TABS.ACCESS);
+  if (!sh) return { written: 0, preserved: 0, fresh: [] };
 
-  const started = {};
-  // Every item that was on this client before, at any status. A rebuild
-  // deletes and rewrites the To-do rows, so without this "written: 6" cannot
-  // tell you whether the document you just added produced anything — which is
-  // the only question anybody asks after adding one.
+  const client = getClientRecord_(clientId);
+  const id = String(clientId).trim();
+  const phase = auditPhase_();
+
+  const taken = {};      // every task name on this client, audit or not
+  const started = {};    // audit rows somebody has already moved on
   const before = {};
   let preserved = 0;
 
   if (sh.getLastRow() > 1) {
-    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, ACT.WIDTH).getValues();
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
     // Descending, so the indexes gathered here stay valid as rows are removed.
     for (let i = rows.length - 1; i >= 0; i--) {
-      if (String(rows[i][ACT.CLIENT - 1]).trim() !== id) continue;
-      const status = String(rows[i][ACT.STATUS - 1] || 'To do');
-      before[String(rows[i][ACT.ACTION - 1]).trim()] = true;
-      if (status === 'To do') sh.deleteRow(i + 2);
-      else { started[String(rows[i][ACT.ACTION - 1]).trim()] = true; preserved++; }
+      if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+      const name = String(rows[i][A.TASK - 1]).trim();
+      const isAudit = String(rows[i][A.ORIGIN - 1]).trim() === ORIGIN_AUDIT;
+      const status = String(rows[i][A.STATUS - 1] || 'Not started');
+
+      if (!isAudit) { taken[name.toLowerCase()] = true; continue; }
+
+      before[name] = true;
+      if (status === 'Not started') {
+        sh.deleteRow(i + 2);
+      } else {
+        started[name] = true;
+        taken[name.toLowerCase()] = true;
+        preserved++;
+      }
     }
   }
 
   const now = new Date();
-  const rows = items
-    .filter(it => it && it.action && !started[String(it.action).trim()])
-    .map(it => {
-      const v = new Array(ACT.WIDTH).fill('');
-      v[ACT.CLIENT - 1] = id;
-      v[ACT.ACTION - 1] = String(it.action || '');
-      v[ACT.WHY - 1] = String(it.why || '');
-      v[ACT.SOURCE - 1] = String(it.source || '');
-      v[ACT.PRIORITY - 1] = ACTION_PRIORITIES.indexOf(it.priority) === -1
-        ? 'Later' : it.priority;
-      v[ACT.EFFORT - 1] = String(it.effort || '');
-      v[ACT.OWNER - 1] = String(it.owner || '');
-      v[ACT.STATUS - 1] = 'To do';
-      v[ACT.CREATED - 1] = now;
-      v[ACT.AREA - 1] = String(it.area || '');
-      return v;
-    });
+  const rows = [];
+
+  items.forEach(it => {
+    const name = String(it.action || '').trim();
+    // Task names are how setTaskStatus_ and assignTask find their row, so a
+    // duplicate would make every status write on this client ambiguous.
+    if (!name || started[name] || taken[name.toLowerCase()]) return;
+    taken[name.toLowerCase()] = true;
+
+    const v = new Array(A.WIDTH).fill('');
+    v[A.ID - 1] = id;
+    v[A.COMPANY - 1] = client ? client.company : '';
+    v[A.TASK - 1] = name;
+    // The channel, which is what the page groups by.
+    v[A.CATEGORY - 1] = String(it.area || '');
+    v[A.METHOD - 1] = 'INTERNAL';
+    v[A.STATUS - 1] = 'Not started';
+    v[A.OWNER - 1] = String(it.owner || '');
+    if (it.owner) v[A.ASSIGNED - 1] = now;
+    // Why it matters, and where it came from, in the one free-text column
+    // there is. Both are worth keeping and neither earns a column.
+    v[A.NOTES - 1] = [String(it.why || ''), String(it.source || '')]
+      .filter(Boolean).join(' · ');
+    v[A.PHASE - 1] = phase;
+    // NEVER a gate. This is the whole reason the two lists could be merged:
+    // gating the client emails on a negative-keyword sweep would stall every
+    // account, which is exactly what the old separation was protecting.
+    v[A.GATE - 1] = false;
+    v[A.ORIGIN - 1] = ORIGIN_AUDIT;
+    rows.push(v);
+  });
 
   if (rows.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, rows.length, ACT.WIDTH).setValues(rows);
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, A.WIDTH).setValues(rows);
   }
 
-  const fresh = rows.map(v => String(v[ACT.ACTION - 1]))
-    .filter(a => !before[a.trim()]);
-
-  return { written: rows.length, preserved: preserved, fresh: fresh };
+  const fresh = rows.map(v => String(v[A.TASK - 1])).filter(a => !before[a]);
+  return { written: rows.length, preserved: preserved, fresh: fresh,
+           phase: phase };
 }
 
 // ---------------------------------------------------------------- AREAS
