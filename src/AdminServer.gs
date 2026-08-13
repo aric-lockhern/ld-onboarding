@@ -300,6 +300,96 @@ function addTask(token, clientId, task) {
 }
 
 /** Removes a task. Only ever one row, because names are unique per client. */
+/**
+ * One action across many tasks, in one round trip.
+ *
+ * Assigning eleven rows one at a time is eleven requests, eleven writes and
+ * eleven reloads — which is why nobody does it, and why half a checklist sits
+ * unassigned a fortnight in. The bar at the top of the client page ticks rows
+ * and acts on all of them at once.
+ *
+ * Moving a task between phases lives here too, because it is the same shape of
+ * edit: a column on some rows. What it is NOT is a change to the library — a
+ * phase moved here moves it for THIS client, and the next client still gets
+ * whatever the task library says. Both are true and people mean either one, so
+ * the screen says which this is.
+ *
+ * @param {string} action  'assign' | 'phase' | 'status' | 'delete'
+ */
+function bulkTaskAction(token, clientId, tasks, action, value) {
+  checkToken_(token);
+
+  const names = (tasks || []).map(t => String(t).trim()).filter(Boolean);
+  if (!names.length) return { ok: false, message: 'Nothing selected.' };
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, message: 'No tasks yet.' };
+
+  const id = String(clientId).trim();
+  const want = {};
+  names.forEach(n => { want[n.toLowerCase()] = true; });
+
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+  const now = new Date();
+  let touched = 0;
+
+  // Descending for the delete case, so the indexes stay valid as rows go. The
+  // other actions do not care, and one loop is easier to keep correct than two.
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+    const name = String(rows[i][A.TASK - 1]).trim();
+    if (!want[name.toLowerCase()]) continue;
+
+    const row = i + 2;
+
+    if (action === 'delete') {
+      sh.deleteRow(row);
+      touched++;
+      continue;
+    }
+
+    if (action === 'assign') {
+      const owner = String(value || '').trim();
+      const before = String(rows[i][A.OWNER - 1] || '').trim();
+      sh.getRange(row, A.OWNER).setValue(owner);
+      // The stamp moves only when the owner actually changes — re-picking the
+      // same name would otherwise destroy the one number worth having, which
+      // is how long this has sat with somebody. Unassigning clears it rather
+      // than leaving a date against nobody.
+      if (owner !== before) {
+        sh.getRange(row, A.ASSIGNED).setValue(owner ? now : '');
+      }
+      touched++;
+      continue;
+    }
+
+    if (action === 'phase') {
+      const phase = Math.min(5, Math.max(1, Number(value) || 1));
+      sh.getRange(row, A.PHASE).setValue(phase);
+      touched++;
+      continue;
+    }
+
+    if (action === 'status') {
+      const status = STATUSES.indexOf(value) === -1 ? 'Not started' : value;
+      sh.getRange(row, A.STATUS).setValue(status);
+      if (status === 'Complete' && !rows[i][A.COMPLETED - 1]) {
+        sh.getRange(row, A.COMPLETED).setValue(now);
+      }
+      touched++;
+      continue;
+    }
+
+    return { ok: false, message: 'Unknown action "' + action + '".' };
+  }
+
+  if (!touched) {
+    return { ok: false, message: 'None of those tasks are on this client any '
+      + 'more — the page may be out of date. Reload and try again.' };
+  }
+  return { ok: true, touched: touched, action: action };
+}
+
 function deleteTask(token, clientId, task) {
   checkToken_(token);
 

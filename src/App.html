@@ -564,6 +564,34 @@
     font-variant-numeric:tabular-nums}
   /* Audit follow-ups inside a phase: a quiet band, then a channel heading per
      group. Same rows underneath, so the eye reads one checklist. */
+  /* Only there while something is selected. A permanent toolbar of disabled
+     controls is furniture; this one appears because you asked for it. */
+  .bulkbar{display:none; position:sticky; top:12px; z-index:30;
+    align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0 0;
+    padding:9px 12px; border-radius:10px; background:var(--blue-ink);
+    box-shadow:0 6px 22px rgba(14,41,112,.22)}
+  .bulkbar.on{display:flex}
+  .bulkbar .cnt{color:#fff; font-size:13px; font-weight:600; margin-right:2px}
+  .bulkbar select{border:1px solid rgba(255,255,255,.24); border-radius:8px;
+    background-color:rgba(255,255,255,.10); color:#fff; padding:5px 26px 5px 10px;
+    font:13px/1.3 "Inter",sans-serif;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E")}
+  .bulkbar select:hover{border-color:rgba(255,255,255,.45)}
+  .bulkbar select option{color:var(--ink)}
+  .bulkbar .btn{background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.24);
+    color:#fff}
+  .bulkbar .btn:hover{background:rgba(255,255,255,.2)}
+  .bulkbar .btn.danger{background:rgba(255,120,120,.18); border-color:rgba(255,150,150,.4);
+    color:#FFD9D9}
+
+  /* The tick itself. Small and quiet until the row is hovered — a checklist is
+     read far more often than it is bulk-edited. */
+  .tsel{flex:none; width:15px; height:15px; margin-top:8px; accent-color:var(--blue);
+    opacity:.35; cursor:pointer}
+  .task:hover .tsel, .tsel:checked{opacity:1}
+  .tsel-all{width:14px; height:14px; accent-color:var(--blue); cursor:pointer;
+    opacity:.4; flex:none}
+  .grp:hover .tsel-all, .areahead:hover .tsel-all, .tsel-all:checked{opacity:1}
   .auditband{display:flex; align-items:center; gap:8px; padding:10px 16px 2px;
     margin-top:6px; border-top:1px solid var(--line);
     font:600 11px/1 "Inter",sans-serif; text-transform:uppercase;
@@ -789,7 +817,7 @@ var DETAIL = null;
 var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
-  'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
+  'addTask', 'deleteTask', 'bulkTaskAction', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'addManualCall', 'deleteRecentCall', 'reviewNewDocument',
   'getClientTeam', 'addClientTeamMember', 'removeClientTeamMember',
   'getContactPhoto', 'setContactPhoto', 'clearContactPhoto',
@@ -1801,7 +1829,15 @@ function wireTaskLibrary(){
       var row = Number(b.getAttribute('data-edit-task'));
       SETTINGS.editing = (SETTINGS.lib.tasks || [])
         .filter(function(t){ return t.row === row; })[0];
-      renderSettings();
+      if (!SETTINGS.editing) return;
+      // Draw the form where it lives and go to it. This used to call
+      // renderSettings(), which rebuilt the whole view and reset the scroll —
+      // so clicking Edit threw you back to the top of a long list with the
+      // editor now off-screen at the bottom, which reads exactly like the page
+      // reloading and doing nothing.
+      el('stEdit').innerHTML = taskTemplateForm(SETTINGS.editing, SETTINGS.lib);
+      wireTaskForm();
+      el('stEdit').scrollIntoView({ behavior:'smooth', block:'center' });
     });
   });
 
@@ -3894,6 +3930,29 @@ function openClient(clientId){
       + '<div class="sect" id="callsWrap">' + callsCard(null) + '</div></div>';
 
     var tasks = d.tasks || [];
+
+    // The bar that appears when rows are ticked. Assigning eleven tasks one
+    // dropdown at a time is eleven writes and eleven reloads, which is why
+    // half a checklist sits unassigned a fortnight in — so ticking is the
+    // interaction and the bar is where it lands.
+    h += '<div class="bulkbar" id="bulkBar"><span class="cnt" id="bulkCount">'
+      + '0 selected</span>'
+      + '<select id="bulkOwner"><option value="">Assign to…</option>'
+      + '<option value="__none">Unassign</option>'
+      + (d.assignees || []).map(function(p){
+          return '<option>' + esc(p.name) + '</option>'; }).join('')
+      + '</select>'
+      + '<select id="bulkPhase"><option value="">Move to phase…</option>'
+      + [1,2,3,4,5].map(function(n){
+          return '<option value="' + n + '">Phase ' + n + '</option>'; }).join('')
+      + '</select>'
+      + '<select id="bulkStatus"><option value="">Set status…</option>'
+      + (d.statuses || []).map(function(o){
+          return '<option>' + esc(o) + '</option>'; }).join('')
+      + '</select>'
+      + '<button class="btn sm danger" id="bulkDelete">Delete</button>'
+      + '<button class="btn sm" id="bulkClear">Clear</button></div>';
+
     var byPhase = {};
     tasks.forEach(function(t){ (byPhase[t.phase] = byPhase[t.phase] || []).push(t); });
     var canPing = !!(c.slack);
@@ -3913,7 +3972,10 @@ function openClient(clientId){
       var state = allDone ? 'all done'
         : (notStarted ? 'not started' : doneHere + ' of ' + byPhase[k].length + ' done');
 
-      h += '<div class="grp"><button class="phtog" data-ph="' + esc(k) + '">'
+      h += '<div class="grp">'
+        + '<input type="checkbox" class="tsel-all" data-selphase="' + esc(k)
+        + '" title="Select everything in this phase">'
+        + '<button class="phtog" data-ph="' + esc(k) + '">'
         + '<span class="tw">' + (shut ? '▶' : '▼') + '</span>Phase ' + esc(k)
         + ' <span class="n">' + byPhase[k].length + '</span>'
         + '<span class="st">' + state + '</span></button>'
@@ -3924,7 +3986,9 @@ function openClient(clientId){
         + (shut ? ' style="display:none"' : '') + '>';
       function taskRow(t, markOn){
         var open = t.status !== 'Complete' && t.status !== 'N/A';
-        return '<div class="task"><div class="n">'
+        return '<div class="task">'
+          + '<input type="checkbox" class="tsel" data-sel="' + esc(t.task) + '">'
+          + '<div class="n">'
           + (markOn ? brandMark(t.task) : '')
           + esc(t.task)
           + (t.gate ? ' <span class="pill">gate</span>' : '') + '</div>'
@@ -3962,7 +4026,11 @@ function openClient(clientId){
         chans.forEach(function(ch){
           var openHere2 = byChan[ch].filter(function(t){
             return t.status !== 'Complete' && t.status !== 'N/A'; }).length;
-          h += '<div class="areahead in-phase">' + brandMark(ch)
+          h += '<div class="areahead in-phase">'
+            + '<input type="checkbox" class="tsel-all" data-selchan="' + esc(ch)
+            + '" data-selchanphase="' + esc(k)
+            + '" title="Select everything in this channel">'
+            + brandMark(ch)
             + '<span class="an">' + esc(ch) + '</span>'
             + '<span class="ac">' + openHere2 + ' open · ' + byChan[ch].length
             + '</span>'
@@ -4181,6 +4249,117 @@ function openClient(clientId){
         pingTasks(b, names);
       });
     });
+
+    /**
+     * Ticking rows, and acting on all of them at once.
+     *
+     * The bar only exists while something is selected — a permanent toolbar of
+     * disabled controls is furniture. Everything it does goes through one
+     * server call, so eleven rows is one write and one reload rather than
+     * eleven of each.
+     */
+    function selected(){
+      return [].filter.call(document.querySelectorAll('.tsel'),
+        function(i){ return i.checked; })
+        .map(function(i){ return i.getAttribute('data-sel'); });
+    }
+
+    function syncBulk(){
+      var n = selected().length;
+      var bar = el('bulkBar');
+      if (!bar) return;
+      bar.classList.toggle('on', n > 0);
+      el('bulkCount').textContent = n + ' selected';
+    }
+
+    function bulk(action, value, label){
+      var names = selected();
+      if (!names.length) return;
+      api('bulkTaskAction', TOKEN, clientId, names, action, value)
+        .then(function(r){
+          if (!r.ok){ toast(r.message || 'Could not do that.', true); return; }
+          toast(label.replace('{n}', r.touched)
+            + (r.touched === 1 ? '' : ''));
+          CACHE.overview = null; CACHE.queue = null;
+          openClient(clientId);
+        }).catch(fail);
+    }
+
+    [].forEach.call(document.querySelectorAll('.tsel'), function(i){
+      i.addEventListener('change', syncBulk);
+    });
+
+    // A heading's checkbox takes everything under it. Ticking eight Google Ads
+    // rows by hand to assign them to one person is the work this replaces.
+    [].forEach.call(document.querySelectorAll('[data-selphase]'), function(b){
+      b.addEventListener('click', function(e){ e.stopPropagation(); });
+      b.addEventListener('change', function(){
+        var phase = b.getAttribute('data-selphase');
+        var names = (d.tasks || []).filter(function(t){
+          return String(t.phase) === phase; }).map(function(t){ return t.task; });
+        [].forEach.call(document.querySelectorAll('.tsel'), function(i){
+          if (names.indexOf(i.getAttribute('data-sel')) !== -1) i.checked = b.checked;
+        });
+        syncBulk();
+      });
+    });
+
+    [].forEach.call(document.querySelectorAll('[data-selchan]'), function(b){
+      b.addEventListener('click', function(e){ e.stopPropagation(); });
+      b.addEventListener('change', function(){
+        var chan = b.getAttribute('data-selchan');
+        var phase = b.getAttribute('data-selchanphase');
+        var names = (d.tasks || []).filter(function(t){
+          return t.origin === 'Audit' && String(t.phase) === phase
+            && (t.category || 'Everything else') === chan;
+        }).map(function(t){ return t.task; });
+        [].forEach.call(document.querySelectorAll('.tsel'), function(i){
+          if (names.indexOf(i.getAttribute('data-sel')) !== -1) i.checked = b.checked;
+        });
+        syncBulk();
+      });
+    });
+
+    if (el('bulkOwner')){
+      el('bulkOwner').addEventListener('change', function(){
+        if (!this.value) return;
+        var who = this.value === '__none' ? '' : this.value;
+        bulk('assign', who, who ? 'Assigned {n} to ' + who + '.'
+                                : 'Unassigned {n}.');
+      });
+      el('bulkPhase').addEventListener('change', function(){
+        if (!this.value) return;
+        bulk('phase', this.value, 'Moved {n} to phase ' + this.value
+          + '. This client only — the task library is unchanged.');
+      });
+      el('bulkStatus').addEventListener('change', function(){
+        if (!this.value) return;
+        bulk('status', this.value, 'Set {n} to ' + this.value + '.');
+      });
+      // Armed, like the client delete. A mis-click that removes nine rows is
+      // not something an undo exists for.
+      el('bulkDelete').addEventListener('click', function(){
+        var b = this;
+        if (b.getAttribute('data-armed') !== '1'){
+          b.setAttribute('data-armed', '1');
+          b.textContent = 'Delete ' + selected().length + '?';
+          setTimeout(function(){
+            b.removeAttribute('data-armed'); b.textContent = 'Delete';
+          }, 4000);
+          return;
+        }
+        bulk('delete', '', 'Deleted {n} tasks.');
+      });
+      el('bulkClear').addEventListener('click', function(){
+        [].forEach.call(document.querySelectorAll('.tsel'), function(i){
+          i.checked = false;
+        });
+        [].forEach.call(document.querySelectorAll('.tsel-all'), function(i){
+          i.checked = false;
+        });
+        syncBulk();
+      });
+    }
 
     // One channel's outstanding work, pinged together. The people divide by
     // channel, so "everything still open on Reddit" is the message somebody
