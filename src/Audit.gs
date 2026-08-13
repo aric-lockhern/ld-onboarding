@@ -238,12 +238,46 @@ function buildActionItems(clientId, keys) {
                        : ' The run log below has each step and what it did.') };
   }
 
-  const items = (out && out.actions) || [];
-  const outOfScope = (out && out.outOfScope) || [];
-  // Salvaged from a reply that ran out of room. The items are real; the list
-  // is short for a reason that has nothing to do with the documents, and
-  // presenting it as the whole answer would be a quiet lie.
-  const cutShort = !!(out && out._truncated);
+  let items = (out && out.actions) || [];
+  let outOfScope = (out && out.outOfScope) || [];
+  let cutShort = !!(out && out._truncated);
+
+  /**
+   * A short answer fixes itself.
+   *
+   * Telling somebody "the answer ran out of room, rebuild to try again" is
+   * handing them my problem. They asked for a list; a second request is
+   * something the machine can make on its own, and it takes seconds.
+   *
+   * The retry asks for the same work in the plainest possible form — half the
+   * items, nothing but the essentials — because the first attempt ran long by
+   * being expansive, and asking for the same thing again would run long again.
+   * Whichever attempt produced more complete items wins.
+   */
+  if (cutShort) {
+    step('Retrying', 'the first answer was cut off after ' + items.length
+      + ' items — asking again, shorter');
+    try {
+      const terse = callAnthropic_(
+        buildActionsPrompt_(client, docs, team, true),
+        { maxTokens: ACTIONS_MAX_TOKENS, model: actionsModel_(),
+          noThinking: true, trace: log });
+      const retryItems = (terse && terse.actions) || [];
+      if (retryItems.length > items.length) {
+        step('Retry was better', retryItems.length + ' items against '
+          + items.length);
+        items = retryItems;
+        outOfScope = (terse && terse.outOfScope) || outOfScope;
+        cutShort = !!(terse && terse._truncated);
+      } else {
+        step('Kept the first answer', items.length + ' items against '
+          + retryItems.length);
+      }
+    } catch (e) {
+      // The first answer is still an answer. A failed retry must not lose it.
+      step('Retry failed', (e && e.message) || String(e));
+    }
+  }
   step('Items returned', items.length + (cutShort ? ' (the reply was cut short)' : '')
     + (outOfScope.length ? ' · ' + outOfScope.length + ' out of scope' : ''));
 
@@ -459,7 +493,12 @@ function writeActions_(clientId, items) {
 
 // ---------------------------------------------------------------- PROMPT
 
-function buildActionsPrompt_(client, docs, team) {
+/**
+ * @param {boolean} [terse] second attempt after a reply ran out of room. The
+ *   first attempt ran long by being expansive, so this one is told to strip
+ *   the answer to its bones rather than being asked the same thing again.
+ */
+function buildActionsPrompt_(client, docs, team, terse) {
   const agency = cfg('Agency Name') || 'the agency';
 
   const system = [
@@ -491,9 +530,16 @@ function buildActionsPrompt_(client, docs, team) {
     'is a list nobody reads. If something was discussed but explicitly not',
     'agreed, leave it out of actions.',
     '',
-    'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost the',
-    'most to miss. A longer list is not a better one, and the tail is where',
-    'padding hides.',
+    terse
+      ? 'Return at most ' + Math.ceil(ACTIONS_MAX_ITEMS / 2) + ' actions — the '
+        + 'ones that cost the most to miss. THE LAST ATTEMPT RAN OUT OF ROOM '
+        + 'AND WAS CUT OFF. Keep every field to a handful of words: why is at '
+        + 'most eight words, source is the document name alone, and there are '
+        + 'no quotations anywhere. A complete short answer beats a long one '
+        + 'that never arrives.'
+      : 'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost '
+        + 'the most to miss. A longer list is not a better one, and the tail '
+        + 'is where padding hides.',
     '',
     // Length is the whole constraint here. A generous answer is one that never
     // arrives — see the note on ACTIONS_MAX_TOKENS.

@@ -2815,12 +2815,11 @@ var ACTION_LOG = null;
 function runLogCard(log, failed){
   if (!log || !log.length) return '';
   return '<div class="grp" style="padding-top:12px">'
-    + '<button class="phtog" id="logTog"><span class="tw">'
-    + (failed ? '▼' : '▶') + '</span>Run log <span class="st">'
-    + log.length + ' steps · ' + (log[log.length - 1].at / 1000).toFixed(1)
-    + 's</span></button></div>'
-    + '<div class="card" id="logCard" style="display:'
-    + (failed ? 'block' : 'none') + '"><div class="sect"><div class="lines">'
+    + '<button class="phtog" id="logTog"><span class="tw">▶</span>'
+    + (failed ? 'What went wrong' : 'What it did') + ' <span class="st">'
+    + (log[log.length - 1].at / 1000).toFixed(1) + 's</span></button></div>'
+    + '<div class="card" id="logCard" style="display:none">'
+    + '<div class="sect"><div class="lines">'
     + log.map(function(e){
         return '<div class="line"><span class="tx"><b>' + esc(e.step) + '</b>'
           + (e.detail ? ' — ' + esc(e.detail) : '') + '</span>'
@@ -2882,9 +2881,7 @@ function wireActions(clientId, r){
             + 'Add people in the sheet and rebuild.', true);
         }
         if (res.cutShort){
-          toast('The answer ran out of room, so this is the part that arrived '
-            + 'whole — there may be more in the documents. Rebuild to try '
-            + 'again.', true);
+          toast('The list may be short — the documents may hold more.', true);
         }
         if ((res.trimmed || []).length){
           toast('Too long to read in full, so the middle was dropped from: '

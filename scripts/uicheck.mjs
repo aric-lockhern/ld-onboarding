@@ -1147,12 +1147,18 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.click('#mkActions');
   await page.waitForTimeout(400);
   const built = await page.$$eval('.toast', els => els.map(e => e.textContent).join(' || '));
-  if (!/ran out of room/.test(built)) {
+  // The server retries a short answer on its own now, so this only appears
+  // when the retry also came up short. It still has to appear — a list
+  // presented as whole when it is not is a quiet lie — but it no longer hands
+  // the reader a job to do.
+  if (!/list may be short/.test(built)) {
     throw new Error('A cut-short list was reported as complete: ' + built);
   }
 
   // The run log. "It doesn't work" was the whole bug report four times over,
   // because what the run did was never on screen.
+  await page.click('#logTog');
+  await page.waitForTimeout(120);
   const runLog = await page.evaluate(() => {
     const box = document.getElementById('actLog');
     return {
