@@ -2874,11 +2874,18 @@ function wireActions(clientId, r){
         // adding a document cannot tell you whether the document did anything.
         if ((res.fresh || []).length) bits.unshift(res.fresh.length + ' new');
         if (res.preserved) bits.push(res.preserved + ' already started, kept');
+        if (res.areas > 1) bits.push('across ' + res.areas + ' areas');
         if (res.unassigned) bits.push(res.unassigned + ' unassigned');
         toast(bits.join(' · ') + '.');
         if (res.teamEmpty){
           toast('Nobody on the Team tab, so nothing could be assigned. '
             + 'Add people in the sheet and rebuild.', true);
+        }
+        // An area that did not come back is a hole in the list, and the list
+        // looks complete either way.
+        if ((res.areasFailed || []).length){
+          toast('Could not read ' + res.areasFailed.join(', ')
+            + ' — those actions are missing. Rebuild to try again.', true);
         }
         if (res.cutShort){
           toast('The list may be short — the documents may hold more.', true);

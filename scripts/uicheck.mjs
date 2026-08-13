@@ -198,8 +198,8 @@ const FAKE = {
   ],
   // A reply that ran out of room is salvaged rather than thrown away — the
   // items are real, the list is short, and the card has to say which.
-  buildActionItems: { ok:true, written:6, preserved:1, unassigned:1, teamEmpty:false,
-    cutShort:true, trimmed:[],
+  buildActionItems: { ok:true, written:34, preserved:1, unassigned:1, teamEmpty:false,
+    cutShort:true, trimmed:[], areas:4, areasFailed:[],
     // The account of what the run did. The token line is the one that matters:
     // output_tokens counts thinking as well as the answer, and the gap between
     // "wrote 3,900 tokens" and "returned four items" is the fact that would
@@ -213,8 +213,13 @@ const FAKE = {
       { at:20100, step:'Replied', detail:'HTTP 200 · 5k characters' },
       { at:20110, step:'Tokens', detail:'38584 in · 1599 out of 4000 allowed · stopped because: end_turn' },
       { at:20120, step:'Parsed', detail:'the reply is valid JSON' },
-      { at:28800, step:'Items returned', detail:'8 · 4 out of scope' },
-      { at:31100, step:'Written', detail:'8 written · 8 new · 0 already started, left alone' }
+      { at:20200, step:'Areas to cover', detail:'Google Ads, AI Search SEO, Reddit Organic Social, Everything else' },
+      { at:26000, step:'Area read', detail:'Google Ads — 14 actions' },
+      { at:31000, step:'Area read', detail:'AI Search SEO — 11 actions' },
+      { at:36000, step:'Area read', detail:'Reddit Organic Social — 9 actions' },
+      { at:40000, step:'Area read', detail:'Everything else — 4 actions' },
+      { at:41000, step:'Items returned', detail:'38 found · 34 after removing duplicates · 4 out of scope' },
+      { at:44000, step:'Written', detail:'34 written · 34 new · 0 already started, left alone' }
     ],
     read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
     outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
