@@ -320,6 +320,35 @@ const FAKE = {
   saveEmailTemplate: { ok:true, row:2, created:false },
   resetEmailTemplate: { ok:true },
   deleteTask: { ok:true },
+  // Every email this client is owed, with what has already gone. The Sent Log
+  // has recorded sends since the beginning and nothing ever read it back.
+  getMailPlan: { ok:true, to:'dana@harborandsons.com', ready:2,
+    from:'Lockhern Digital', replyTo:'hello@lockherndigital.com',
+    items:[
+      { key:'_welcome', label:'Welcome email', when:'Sent once, after the client record exists.',
+        can:true, why:[], to:'dana@harborandsons.com',
+        subject:'Welcome to Lockhern Digital!',
+        body:'Hi Dana,\n\nThank you for choosing Lockhern Digital.',
+        sentAt:'', sentCount:0 },
+      { key:'phase2', label:'Phase 2 — Client Requests', when:'6 things to ask them for',
+        can:true, why:[], to:'dana@harborandsons.com',
+        subject:'Access we need — Harbor & Sons',
+        body:'Hi Dana,\n\nTo get started we need access to the following…',
+        taskCount:6, sentAt:'', sentCount:0 },
+      { key:'phase4', label:'Phase 4 — Launch', when:'', can:false, gated:true,
+        why:['Phase 3 is not closed: Baseline performance snapshot is still open.'],
+        sentAt:'', sentCount:0 },
+      // Already gone. "Have we sent the welcome email?" was a question you
+      // answered by opening a tab and scrolling.
+      { key:'_nudge', label:'Nudge — outstanding requests',
+        when:'Only sendable while something is waiting on them.',
+        can:false, why:['Nothing is currently waiting on the client.'],
+        sentAt:'9 Aug 2026', sentCount:2 }
+    ] },
+  sendMailPlan: { ok:true, sent:2, results:[
+    { key:'_welcome', ok:true, to:'dana@harborandsons.com' },
+    { key:'phase2', ok:true, to:'dana@harborandsons.com', taskCount:6 }
+  ] },
   getRecentContext: { ok:true, scanned:'12 Aug 2026', scanInstalled:true,
     today:'12 Aug 2026',
     // Served by the server so the picker can never offer a kind it would
@@ -1158,6 +1187,50 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('The add-to-team menu did not open: ' + JSON.stringify(menu));
   }
   await page.click('#teamAdd');
+
+  // Every email in one place, with a sent status. They existed already and
+  // were scattered across three screens.
+  await page.click('#mailTog');
+  await page.waitForSelector('.mrow', { timeout: 5000 });
+  const mail = await page.evaluate(() => {
+    const wrap = document.getElementById('mailWrap');
+    return {
+      rows: wrap.querySelectorAll('.mrow').length,
+      // Ready ones are ticked; the rest cannot be, because the send would
+      // refuse them and a tick that does nothing is a lie.
+      ticked: wrap.querySelectorAll('.msel:checked').length,
+      disabled: wrap.querySelectorAll('.msel[disabled]').length,
+      // The status they asked for, read off the Sent Log.
+      saysSent: /sent 9 Aug 2026/.test(wrap.textContent),
+      saysNotSent: /not sent/.test(wrap.textContent),
+      // A blocked one says why rather than just being greyed out.
+      saysWhy: /Phase 3 is not closed/.test(wrap.textContent),
+      // And it says how it sends, because "can I connect Gmail" is the first
+      // question and the answer is that it already is.
+      saysHow: /through Gmail/.test(wrap.textContent),
+      button: (document.getElementById('sendAll') || {}).textContent
+    };
+  });
+  if (mail.rows !== 4 || mail.ticked !== 2 || mail.disabled !== 2) {
+    throw new Error('The mail plan did not render: ' + JSON.stringify(mail));
+  }
+  if (!mail.saysSent || !mail.saysNotSent || !mail.saysWhy || !mail.saysHow) {
+    throw new Error('The mail plan is missing its status or reasons: '
+      + JSON.stringify(mail));
+  }
+  if (!/Send 2 emails/.test(mail.button || '')) {
+    throw new Error('The send button does not say what it will do: ' + mail.button);
+  }
+  // Client email cannot be recalled, so the one button that reaches a person
+  // outside the company arms before it fires.
+  await page.click('#sendAll');
+  const armedMail = await page.$eval('#sendAll', e => e.textContent);
+  if (!/\?$/.test(armedMail.trim())) {
+    throw new Error('Send-all fired without arming: ' + armedMail);
+  }
+  const fMail2 = `${OUT}/${name}-detail-emails.png`;
+  await page.screenshot({ path: fMail2, fullPage: name === 'desktop' });
+  shots.push(fMail2);
 
   // Ticking rows and acting on all of them. Assigning eleven tasks one
   // dropdown at a time is eleven writes and eleven reloads, which is why half

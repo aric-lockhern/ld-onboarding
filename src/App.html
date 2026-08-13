@@ -592,6 +592,22 @@
   .tsel-all{width:14px; height:14px; accent-color:var(--blue); cursor:pointer;
     opacity:.4; flex:none}
   .grp:hover .tsel-all, .areahead:hover .tsel-all, .tsel-all:checked{opacity:1}
+  /* One email in the plan. The tick is the interaction; everything else is
+     there so the tick is an informed one. */
+  .mrow{display:flex; align-items:flex-start; gap:10px; padding:9px 0;
+    border-top:1px solid var(--line)}
+  .mrow:first-of-type{border-top:0}
+  .mrow.off{opacity:.62}
+  .mrow input{margin-top:3px; accent-color:var(--blue); flex:none}
+  .mrow .bd{flex:1; min-width:0}
+  .mrow .nm{font-size:13.5px; font-weight:500}
+  .mrow .meta{font-size:12.5px; color:var(--faint); margin-top:2px;
+    overflow-wrap:anywhere}
+  .pill.good{background:#E9F6EE; color:#0D6528; border-color:#CDE9D8}
+  .mprev{margin:0 0 10px 26px; padding:10px 12px; background:var(--paper);
+    border:1px solid var(--line); border-radius:8px; white-space:pre-wrap;
+    font:12.5px/1.55 "Inter",sans-serif; color:var(--ink); max-height:340px;
+    overflow:auto}
   .auditband{display:flex; align-items:center; gap:8px; padding:10px 16px 2px;
     margin-top:6px; border-top:1px solid var(--line);
     font:600 11px/1 "Inter",sans-serif; text-transform:uppercase;
@@ -819,6 +835,7 @@ var SERVER_FNS = [
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
   'addTask', 'deleteTask', 'bulkTaskAction', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'addManualCall', 'deleteRecentCall', 'reviewNewDocument',
+  'getMailPlan', 'sendMailPlan',
   'getClientTeam', 'addClientTeamMember', 'removeClientTeamMember',
   'getContactPhoto', 'setContactPhoto', 'clearContactPhoto',
   'draftScopeEmail',
@@ -3360,6 +3377,128 @@ function freshActions(r){
       }).join('') + '</div>';
 }
 
+/**
+ * The email card.
+ *
+ * Everything sendable, what each one says, and whether it has gone before.
+ * Ticked by default where it is ready — one button then sends the lot, which
+ * is as close to one click as an irrecoverable action should get.
+ */
+function mailCard(r){
+  if (!r || !r.ok){
+    return '<h3>Client emails</h3><div class="hint">'
+      + esc((r && r.message) || 'Could not read them.') + '</div>';
+  }
+
+  var items = r.items || [];
+  var h = '<div class="hint">Sent from ' + esc(r.from) + ' through Gmail as the '
+    + 'account this tool is deployed under'
+    + (r.replyTo ? ', with replies to ' + esc(r.replyTo) : '')
+    + '. Everything ready is ticked; untick anything you do not want to go.</div>';
+
+  h += items.map(function(m){
+    return '<div class="mrow' + (m.can ? '' : ' off') + '">'
+      + '<input type="checkbox" class="msel" data-mail="' + esc(m.key) + '"'
+      + (m.can ? ' checked' : ' disabled') + '>'
+      + '<div class="bd">'
+      + '<div class="nm">' + esc(m.label)
+      + (m.sentAt
+          ? ' <span class="pill good">sent ' + esc(m.sentAt)
+            + (m.sentCount > 1 ? ' · ' + m.sentCount + '×' : '') + '</span>'
+          : ' <span class="pill">not sent</span>')
+      + '</div>'
+      + '<div class="meta">'
+      + (m.can
+          ? esc(m.subject || m.when || '')
+          : '<b>' + (m.gated ? 'Gated' : 'Not ready') + ':</b> '
+            + esc((m.why || []).join(' '))) 
+      + '</div></div>'
+      + (m.can && m.body
+          ? '<button class="btn sm" data-mailprev="' + esc(m.key) + '">Read</button>'
+          : '')
+      + '</div>'
+      + (m.can && m.body
+          ? '<pre class="mprev" id="mprev_' + esc(m.key) + '" style="display:none">'
+            + esc(m.body) + '</pre>'
+          : '');
+  }).join('');
+
+  h += '<div class="startrow">'
+    + (r.ready
+      ? '<button class="btn pri" id="sendAll">Send ' + r.ready + ' email'
+        + (r.ready === 1 ? '' : 's') + '</button>'
+      : '<span class="hint" style="margin:0">Nothing is ready to send.</span>')
+    + '<span class="note">Client email cannot be recalled.</span></div>';
+  return h;
+}
+
+function loadMail(clientId){
+  api('getMailPlan', clientId).then(function(r){
+    if (!el('mailWrap')) return;
+    el('mailWrap').innerHTML = mailCard(r);
+    if (el('mailSum')){
+      el('mailSum').textContent = (r && r.ok)
+        ? (r.ready ? r.ready + ' ready to send' : 'nothing ready')
+        : 'could not read them';
+    }
+    wireMail(clientId);
+  }).catch(function(e){
+    if (el('mailWrap')) el('mailWrap').innerHTML =
+      '<h3>Client emails</h3><div class="hint">Could not read them: '
+      + esc((e && e.message) || 'unknown error') + '.</div>';
+  });
+}
+
+function wireMail(clientId){
+  [].forEach.call(document.querySelectorAll('[data-mailprev]'), function(b){
+    b.addEventListener('click', function(){
+      var box = el('mprev_' + b.getAttribute('data-mailprev'));
+      var shut = box.style.display === 'none';
+      box.style.display = shut ? 'block' : 'none';
+      b.textContent = shut ? 'Hide' : 'Read';
+    });
+  });
+
+  if (!el('sendAll')) return;
+  el('sendAll').addEventListener('click', function(){
+    var b = this;
+    var keys = [].filter.call(document.querySelectorAll('.msel'),
+      function(i){ return i.checked && !i.disabled; })
+      .map(function(i){ return i.getAttribute('data-mail'); });
+    if (!keys.length){ toast('Nothing ticked.', true); return; }
+
+    // Armed, because this is the only button in the tool that reaches a
+    // person outside the company and there is no version of undo for it.
+    if (b.getAttribute('data-armed') !== '1'){
+      b.setAttribute('data-armed', '1');
+      b.textContent = 'Send ' + keys.length + ' to the client?';
+      setTimeout(function(){
+        if (!el('sendAll')) return;
+        b.removeAttribute('data-armed');
+        b.textContent = 'Send ' + keys.length + ' email'
+          + (keys.length === 1 ? '' : 's');
+      }, 5000);
+      return;
+    }
+
+    b.disabled = true; b.textContent = 'Sending…';
+    api('sendMailPlan', TOKEN, clientId, keys).then(function(r){
+      b.disabled = false;
+      if (!r.ok && !r.sent){ toast(r.message || 'Nothing was sent.', true); }
+      else toast('Sent ' + r.sent + ' email' + (r.sent === 1 ? '' : 's') + '.');
+      // Each refusal named, because a batch that half-worked is the case where
+      // "sent 3" alone tells you nothing about the fourth.
+      (r.results || []).filter(function(x){ return !x.ok; }).forEach(function(x){
+        toast(x.key + ' did not send: ' + x.why, true);
+      });
+      loadMail(clientId);
+      openClient(clientId);
+    }).catch(function(e){
+      b.disabled = false; b.textContent = 'Send'; fail(e);
+    });
+  });
+}
+
 function loadRecent(clientId){
   api('getRecentContext', clientId).then(function(r){
     if (!el('recentWrap')) return;
@@ -3901,6 +4040,15 @@ function openClient(clientId){
     // Outside recentWrap on purpose. Filing a document redraws the recent
     // context, and an offer living inside it would be wiped by the very reload
     // that filing triggers — visible for a second and then gone.
+    // Every email this client is owed, in one place. They existed already and
+    // were scattered across three screens, so sending a new client everything
+    // meant knowing which screen each one lived on.
+    h += '<div class="grp"><button class="phtog" id="mailTog">'
+      + '<span class="tw">▶</span>Client emails '
+      + '<span class="st" id="mailSum">…</span></button></div>'
+      + '<div class="card" id="mailCard" style="display:none">'
+      + '<div class="sect" id="mailWrap">' + loading() + '</div></div>';
+
     h += '<div class="grp">Recent context</div><div class="card">'
       + '<div class="sect" id="recentWrap">' + loading() + '</div>'
       + '<div class="sect" id="rrOffer" style="display:none"></div></div>';
@@ -4109,6 +4257,15 @@ function openClient(clientId){
     wireScope(clientId);
     wireSlack(clientId, c);
     wireCalls(clientId);
+    loadMail(clientId);
+    if (el('mailTog')){
+      el('mailTog').addEventListener('click', function(){
+        var card = el('mailCard');
+        var shut = card.style.display === 'none';
+        card.style.display = shut ? '' : 'none';
+        el('mailTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+      });
+    }
     loadContactPhoto(clientId, c);
     loadClientTeam(clientId);
     loadRecent(clientId);
