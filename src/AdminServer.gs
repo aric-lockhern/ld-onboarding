@@ -10,6 +10,11 @@
 
 const PIN_TTL_SECONDS = 1800; // 30 minutes
 
+// A ceiling on one bulk assignment. Not a quota — a checklist is twenty rows,
+// so anything approaching this is a mis-click or a select-all across clients
+// rather than somebody deciding who does what.
+const BULK_ASSIGN_MAX = 50;
+
 // ---------------------------------------------------------------- PIN
 
 function promptForPin() {
@@ -267,6 +272,159 @@ function addTask(token, clientId, task) {
 
   sh.getRange(sh.getLastRow() + 1, 1, 1, A.WIDTH).setValues([row]);
   return { ok: true, task: name, phase: phase };
+}
+
+/**
+ * Assigns several tasks at once.
+ *
+ * The per-row dropdown is right for changing one owner and wrong for the first
+ * pass over a fresh checklist, which is twenty rows and four people. Twenty
+ * dropdowns is where assignment stops happening.
+ *
+ * Takes an explicit list of task names rather than a filter. "Assign everything
+ * in phase 2" computed on the server would act on rows the person never saw —
+ * a task added by someone else that morning, a row they had scrolled past. The
+ * UI picks, the server does exactly what it was handed, and the reviewed list is
+ * the thing that keeps a bulk action honest.
+ *
+ * Reads and writes the tab once. Twenty getRange().setValue() pairs is twenty
+ * round trips and the slow kind of correct.
+ */
+function assignTasksBulk(token, clientId, tasks, owner) {
+  checkToken_(token);
+
+  const want = (tasks || []).map(t => String(t).trim()).filter(Boolean);
+  if (!want.length) return { ok: false, message: 'Nothing selected.' };
+  if (want.length > BULK_ASSIGN_MAX) {
+    return { ok: false, message: 'Too many at once — ' + BULK_ASSIGN_MAX
+      + ' is the limit. Assignment is meant to be looked at.' };
+  }
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, message: 'No tasks yet.' };
+
+  const id = String(clientId).trim();
+  const next = String(owner || '').trim();
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+  const wanted = {};
+  want.forEach(t => { wanted[t] = true; });
+
+  const stamp = new Date();
+  const changed = [];
+  const unchanged = [];
+  const found = {};
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+    const name = String(rows[i][A.TASK - 1]).trim();
+    if (!wanted[name]) continue;
+    found[name] = true;
+
+    // Same rule as assignTask, per row: the stamp moves only on a real change.
+    // A bulk action that restamps everything it touches would wipe every
+    // "assigned 9 days ago" on the checklist in one click, which is the fastest
+    // possible way to destroy the only number that column exists to carry.
+    if (String(rows[i][A.OWNER - 1] || '').trim() === next) {
+      unchanged.push(name);
+      continue;
+    }
+    rows[i][A.OWNER - 1] = next;
+    rows[i][A.ASSIGNED - 1] = next ? stamp : '';
+    changed.push(name);
+  }
+
+  if (changed.length) {
+    sh.getRange(2, 1, rows.length, A.WIDTH).setValues(rows);
+  }
+
+  // Named, not counted. "18 of 20 assigned" leaves someone comparing two lists
+  // by eye to find the two that did not land.
+  const missing = want.filter(t => !found[t]);
+  return {
+    ok: true,
+    owner: next,
+    changed: changed,
+    unchanged: unchanged,
+    missing: missing,
+    assigned: next ? fmtDate_(stamp) : ''
+  };
+}
+
+/**
+ * Moves tasks into a different phase.
+ *
+ * A checklist built from the task library puts everything where the template
+ * said, and the template cannot know that this client's billing has to be
+ * sorted before anything else happens. Moving a row is the difference between
+ * the checklist describing the work and the work being reshaped to fit it.
+ *
+ * Takes a list for the same reason `assignTasksBulk` does, and because moving
+ * one is the same operation as moving four — a separate single-task path would
+ * be a second implementation of this to keep in step.
+ *
+ * Two things this deliberately does NOT do:
+ *
+ * The due date is left alone. Due comes off the contract start plus that task's
+ * own lead time — how long the client takes to grant access — and moving the row
+ * to a later phase does not make the request take longer. Recomputing here would
+ * silently push out a date somebody has already promised.
+ *
+ * The gate flag is left alone, and moving a gate is reported rather than
+ * refused. Gates are evaluated per phase, so moving one changes which phase is
+ * held and therefore which client email can send. That is occasionally exactly
+ * what is wanted and is never something to discover afterwards, so the names of
+ * any gates moved come back for the UI to say out loud.
+ */
+function moveTasks(token, clientId, tasks, phase) {
+  checkToken_(token);
+
+  const to = Number(phase);
+  if (!(to >= 1 && to <= 5)) {
+    return { ok: false, message: 'Phase must be between 1 and 5.' };
+  }
+
+  const want = (tasks || []).map(t => String(t).trim()).filter(Boolean);
+  if (!want.length) return { ok: false, message: 'Nothing selected.' };
+  if (want.length > BULK_ASSIGN_MAX) {
+    return { ok: false, message: 'Too many at once — ' + BULK_ASSIGN_MAX
+      + ' is the limit.' };
+  }
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return { ok: false, message: 'No tasks yet.' };
+
+  const id = String(clientId).trim();
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+  const wanted = {};
+  want.forEach(t => { wanted[t] = true; });
+
+  const moved = [];
+  const gates = [];
+  const found = {};
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][A.ID - 1]).trim() !== id) continue;
+    const name = String(rows[i][A.TASK - 1]).trim();
+    if (!wanted[name]) continue;
+    found[name] = true;
+
+    if ((Number(rows[i][A.PHASE - 1]) || 1) === to) continue;
+    rows[i][A.PHASE - 1] = to;
+    moved.push(name);
+    if (rows[i][A.GATE - 1] === true) gates.push(name);
+  }
+
+  if (moved.length) {
+    sh.getRange(2, 1, rows.length, A.WIDTH).setValues(rows);
+  }
+
+  return {
+    ok: true,
+    phase: to,
+    moved: moved,
+    gates: gates,
+    missing: want.filter(t => !found[t])
+  };
 }
 
 /** Removes a task. Only ever one row, because names are unique per client. */

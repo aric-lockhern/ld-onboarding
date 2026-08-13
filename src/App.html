@@ -208,6 +208,19 @@
   .task{display:flex; align-items:flex-start; gap:12px; padding:12px 18px;
     border-top:1px solid var(--line)}
   .task .n{flex:1; min-width:0; font-size:14.5px; padding-top:7px}
+  .task .tsel{flex:none; width:16px; height:16px; margin:9px 0 0; cursor:pointer;
+    accent-color:var(--blue)}
+  /* Sticky so it survives scrolling a twenty-row checklist — a bar you cannot
+     see while selecting the last row is a bar nobody uses. */
+  .bulkbar{position:sticky; top:0; z-index:5; display:flex; align-items:center;
+    gap:10px; flex-wrap:wrap; margin:18px 0 0; padding:11px 14px;
+    background:var(--blue-wash); border:1px solid var(--blue);
+    border-radius:9px; font:13.5px/1 "Inter",sans-serif}
+  .bulkbar .cnt{color:var(--ink); margin-right:2px}
+  .bulkbar select{padding:6px 8px; border:1px solid var(--line); border-radius:7px;
+    font:13.5px/1 "Inter",sans-serif; background:var(--surface); color:var(--ink)}
+  .bulkbar .sep{width:1px; align-self:stretch; background:var(--blue); opacity:.35}
+  .bulkbar .btn.ghost{background:transparent; margin-left:auto}
   .task select{padding:7px 9px; border:1px solid var(--line); border-radius:7px;
     font:13.5px/1 "Inter",sans-serif; background:var(--surface); width:148px; flex:none;
     color:var(--ink)}
@@ -538,8 +551,15 @@
     .task select{width:132px}
     /* Two selects plus a task name will not fit a phone in one row, so the
        task name takes the full width and the controls sit under it. */
+    /* The bar wraps to two rows here, which strands the divider at the end of
+       the first one looking like a stray mark. It separates nothing once the
+       groups are stacked. */
+    .bulkbar .sep{display:none}
     .task{flex-wrap:wrap; row-gap:9px}
-    .task .n{flex:1 0 100%}
+    /* The name wraps to its own row on mobile. Leave exactly the checkbox's
+       width and gap so the two still share the first line — a checkbox stranded
+       on a row of its own reads as belonging to nothing. */
+    .task .n{flex:1 0 calc(100% - 28px)}
     .asgw{flex:1; width:auto; min-width:0}
     .asgw select.asg{width:100%}
     /* The reading step's bar carries four items; on one row the status text
@@ -623,7 +643,8 @@ var DETAIL = null;
 var SERVER_FNS = [
   'verifyPin', 'getDashboardOverview', 'getSendQueue', 'getClientDetail',
   'updateTaskStatus', 'updateClientField', 'dashCreateDrive', 'assignTask',
-  'addTask', 'deleteTask', 'getRecentContext', 'addRecentNote', 'deleteRecentNote',
+  'addTask', 'deleteTask', 'assignTasksBulk', 'moveTasks',
+  'getRecentContext', 'addRecentNote', 'deleteRecentNote',
   'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
@@ -2900,6 +2921,37 @@ function openClient(clientId){
     tasks.forEach(function(t){ (byPhase[t.phase] = byPhase[t.phase] || []).push(t); });
     var canPing = !!(c.slack);
     var curPhase = (d.phaseState && d.phaseState.current) || 1;
+
+    // Sticky, because the bar is useless where it cannot be seen: a checklist is
+    // twenty rows, and selecting the last of them scrolls a bar pinned to the
+    // top of the list off the screen.
+    //
+    // Hidden until something is selected rather than permanently disabled — a
+    // row of greyed-out controls above every checklist is noise on the ninety
+    // per cent of visits that are not a bulk edit.
+    var teamOpts = (d.assignees || []).filter(function(p){ return p.kind !== 'client'; });
+    var clientOpts = (d.assignees || []).filter(function(p){ return p.kind === 'client'; });
+    function bulkOpts(list){
+      return list.map(function(p){ return '<option>' + esc(p.name) + '</option>'; }).join('');
+    }
+    h += '<div class="bulkbar" id="bulkBar" style="display:none">'
+      + '<span class="cnt"><b id="bulkN">0</b> selected</span>'
+      + '<select id="bulkOwner" aria-label="Assign selected to">'
+      + '<option value="">Unassigned</option>'
+      + (teamOpts.length ? '<optgroup label="Team">' + bulkOpts(teamOpts) + '</optgroup>' : '')
+      + (clientOpts.length ? '<optgroup label="Client">' + bulkOpts(clientOpts) + '</optgroup>' : '')
+      + '</select>'
+      + '<button class="btn sm" id="bulkAssign">Assign</button>'
+      + '<span class="sep"></span>'
+      + '<select id="bulkPhase" aria-label="Move selected to phase">'
+      + [1,2,3,4,5].map(function(n){
+          return '<option value="' + n + '"' + (n === curPhase ? ' selected' : '')
+            + '>Phase ' + n + '</option>';
+        }).join('') + '</select>'
+      + '<button class="btn sm" id="bulkMove">Move</button>'
+      + '<button class="btn sm ghost" id="bulkClear">Clear</button>'
+      + '</div>';
+
     Object.keys(byPhase).sort().forEach(function(k){
       // Only what is still open can be nudged, so a phase that is finished
       // offers nothing rather than a button that posts "nothing outstanding".
@@ -2919,6 +2971,9 @@ function openClient(clientId){
         + '<span class="tw">' + (shut ? '▶' : '▼') + '</span>Phase ' + esc(k)
         + ' <span class="n">' + byPhase[k].length + '</span>'
         + '<span class="st">' + state + '</span></button>'
+        + (openHere.length
+            ? '<button class="gact" data-selphase="' + esc(k) + '">Select '
+              + openHere.length + ' open</button>' : '')
         + (canPing && openHere.length
             ? '<button class="gact" data-pingphase="' + esc(k) + '">Ping '
               + openHere.length + ' outstanding</button>' : '')
@@ -2926,7 +2981,11 @@ function openClient(clientId){
         + (shut ? ' style="display:none"' : '') + '>';
       h += byPhase[k].map(function(t){
         var open = t.status !== 'Complete' && t.status !== 'N/A';
-        return '<div class="task"><div class="n">' + esc(t.task)
+        return '<div class="task">'
+          + '<input type="checkbox" class="tsel" data-sel="' + esc(t.task)
+          + '" data-open="' + (open ? '1' : '') + '"'
+          + ' aria-label="Select ' + esc(t.task) + '">'
+          + '<div class="n">' + esc(t.task)
           + (t.gate ? ' <span class="pill">gate</span>' : '') + '</div>'
           + assignCell(t, d.assignees || [])
           + '<select data-task="' + esc(t.task) + '">'
@@ -3144,6 +3203,134 @@ function openClient(clientId){
           openClient(clientId);
         }).catch(function(e){
           b.disabled = false; b.textContent = 'Add task'; fail(e);
+        });
+      });
+    }
+
+    // ---- bulk selection ------------------------------------------------
+    //
+    // The per-row dropdown stays: it is right for changing one owner. This is
+    // for the first pass over a fresh checklist, which is twenty rows and four
+    // people, and where twenty dropdowns is how assignment stops happening.
+
+    function selected(){
+      return [].slice.call(document.querySelectorAll('.tsel:checked'))
+        .map(function(cb){ return cb.getAttribute('data-sel'); });
+    }
+
+    function paintBulk(){
+      var n = selected().length;
+      var bar = el('bulkBar');
+      if (!bar) return;
+      bar.style.display = n ? '' : 'none';
+      if (n) el('bulkN').textContent = n;
+    }
+
+    [].forEach.call(document.querySelectorAll('.tsel'), function(cb){
+      cb.addEventListener('change', paintBulk);
+    });
+
+    // Selects what is still open, not everything. A finished task is not what
+    // anyone means by "select the phase", and reassigning completed work is a
+    // silent way to make the history wrong.
+    [].forEach.call(document.querySelectorAll('[data-selphase]'), function(b){
+      b.addEventListener('click', function(){
+        var body = document.querySelector('[data-phbody="'
+          + b.getAttribute('data-selphase') + '"]');
+        if (!body) return;
+        var boxes = [].slice.call(body.querySelectorAll('.tsel[data-open="1"]'));
+        var turnOn = boxes.some(function(cb){ return !cb.checked; });
+        boxes.forEach(function(cb){ cb.checked = turnOn; });
+        // Opening a folded phase to select it, then leaving it folded, hides
+        // what is about to be acted on.
+        if (turnOn && body.style.display === 'none'){
+          body.style.display = '';
+          var tog = document.querySelector('[data-ph="'
+            + b.getAttribute('data-selphase') + '"] .tw');
+          if (tog) tog.textContent = '▼';
+        }
+        paintBulk();
+      });
+    });
+
+    if (el('bulkClear')){
+      el('bulkClear').addEventListener('click', function(){
+        [].forEach.call(document.querySelectorAll('.tsel'), function(cb){
+          cb.checked = false;
+        });
+        paintBulk();
+      });
+    }
+
+    if (el('bulkAssign')){
+      el('bulkAssign').addEventListener('click', function(){
+        var b = this, tasks = selected();
+        if (!tasks.length) return;
+        var owner = el('bulkOwner').value;
+        b.disabled = true; b.textContent = '…';
+        api('assignTasksBulk', TOKEN, clientId, tasks, owner).then(function(r){
+          b.disabled = false; b.textContent = 'Assign';
+          if (!r.ok){ toast(r.message || 'Could not assign.', true); return; }
+
+          // Repaint in place rather than reloading: a full re-render throws away
+          // the scroll position, and the point of this control is that you are
+          // part-way down a long list.
+          r.changed.forEach(function(t){
+            var sel = document.querySelector('select[data-assign="'
+              + t.replace(/"/g, '\\"') + '"]');
+            if (sel) sel.value = owner;
+            var age = document.querySelector('[data-age="'
+              + t.replace(/"/g, '\\"') + '"]');
+            if (age) age.textContent = owner ? 'assigned today' : '';
+          });
+
+          var msg = owner
+            ? r.changed.length + ' assigned to ' + owner
+            : r.changed.length + ' unassigned';
+          // Named, not counted: "18 of 20" leaves someone comparing two lists by
+          // eye to find the two that did not land.
+          if (r.unchanged.length) msg += ', ' + r.unchanged.length + ' already were';
+          if (r.missing.length) msg += '. No longer on this client: '
+            + r.missing.join(', ');
+          toast(msg + '.', !!r.missing.length);
+          CACHE.overview = null;
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Assign'; fail(e);
+        });
+      });
+    }
+
+    if (el('bulkMove')){
+      el('bulkMove').addEventListener('click', function(){
+        var b = this, tasks = selected();
+        if (!tasks.length) return;
+        var phase = Number(el('bulkPhase').value);
+        b.disabled = true; b.textContent = '…';
+        api('moveTasks', TOKEN, clientId, tasks, phase).then(function(r){
+          b.disabled = false; b.textContent = 'Move';
+          if (!r.ok){ toast(r.message || 'Could not move.', true); return; }
+          if (!r.moved.length){
+            toast('Already in phase ' + r.phase + '.');
+            return;
+          }
+          // A moved gate changes which phase is held, and therefore which client
+          // email can send. Sometimes exactly what was wanted; never something
+          // to find out afterwards, so it is said out loud and marked as a
+          // warning rather than folded into the success line.
+          if (r.gates.length){
+            toast('Moved ' + r.moved.length + ' to phase ' + r.phase
+              + '. Gate' + (r.gates.length > 1 ? 's' : '') + ' moved: '
+              + r.gates.join(', ') + ' — this changes which phase is held.', true);
+          } else {
+            toast('Moved ' + r.moved.length + ' to phase ' + r.phase + '.');
+          }
+          // Re-rendered, not repainted: the rows have to physically move to
+          // another section, and phase state and gate blocking are recomputed
+          // server-side.
+          CACHE.overview = null;
+          openClient(clientId);
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Move'; fail(e);
         });
       });
     }

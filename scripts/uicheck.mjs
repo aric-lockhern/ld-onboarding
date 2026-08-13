@@ -1007,6 +1007,28 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.screenshot({ path: fPick, fullPage: name === 'desktop' });
   shots.push(fPick);
 
+  // Bulk selection. The bar is hidden until something is ticked, so without a
+  // step that ticks something it is the one piece of the checklist no run ever
+  // renders — and an unrendered control is one that can be broken for weeks.
+  const selBtn = await page.$('[data-selphase]');
+  if (!selBtn) throw new Error('No phase offers a "Select open" button');
+  const want = Number((await selBtn.textContent()).replace(/\D+/g, ''));
+  await selBtn.click();
+  await page.waitForSelector('#bulkBar', { state: 'visible', timeout: 5000 });
+  const got = Number(await page.$eval('#bulkN', n => n.textContent));
+  if (got !== want) {
+    throw new Error(`"Select ${want} open" selected ${got}`);
+  }
+  await page.waitForTimeout(150);
+  const fBulk = `${OUT}/${name}-detail-bulk.png`;
+  await page.screenshot({ path: fBulk, fullPage: name === 'desktop' });
+  shots.push(fBulk);
+
+  // Cleared again, both to prove Clear works and so the checklist in the final
+  // screenshot below is the ordinary one rather than a mid-selection state.
+  await page.click('#bulkClear');
+  await page.waitForSelector('#bulkBar', { state: 'hidden', timeout: 5000 });
+
   const f = `${OUT}/${name}-detail.png`;
   await page.screenshot({ path: f, fullPage: name === 'desktop' });
   shots.push(f);
