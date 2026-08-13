@@ -2835,6 +2835,11 @@ function wireActions(clientId, r){
           toast('Nobody on the Team tab, so nothing could be assigned. '
             + 'Add people in the sheet and rebuild.', true);
         }
+        if (res.cutShort){
+          toast('The answer ran out of room, so this is the part that arrived '
+            + 'whole — there may be more in the documents. Rebuild to try '
+            + 'again.', true);
+        }
         if ((res.trimmed || []).length){
           toast('Too long to read in full, so the middle was dropped from: '
             + res.trimmed.join(', ') + '. Untick another document and rebuild '

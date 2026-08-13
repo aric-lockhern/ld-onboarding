@@ -35,15 +35,23 @@
  * UrlFetchApp gives up around a minute and throws "Address unavailable", which
  * reads as the API being down.
  *
- * So the length of the answer was the whole problem, and the transcript was
- * never the problem. Eight items with one short sentence per field is about
- * 1,200 tokens, and that finishes comfortably — with the entire transcript
- * read, untrimmed and unsplit.
+ * So the length of the answer is the thing to control, and the transcript
+ * never was. The entire transcript goes in, untrimmed and unsplit.
  *
- * If it ever times out again, the fix is a shorter ANSWER (fewer items) or a
- * faster model, never a longer wait and never less transcript.
+ * THE CEILING IS NOT THE LEVER, THOUGH. Setting it to 1,600 cut the reply off
+ * inside the fourth item and threw the first three away, which is a worse
+ * failure than being slow: the request worked, cost money, and returned
+ * nothing. A ceiling is a safety net, and a net set below the floor is a trap.
+ *
+ * The lever is what each item COSTS to write. Eight items of one short
+ * sentence per field is about 800 tokens; the ceiling sits well above that so
+ * it is never reached in normal use, and callAnthropic_ salvages the complete
+ * items if it ever is.
+ *
+ * If this is ever slow again: fewer items, or a faster model in Config. Never
+ * a longer wait, and never less transcript.
  */
-const ACTIONS_MAX_TOKENS = 1600;
+const ACTIONS_MAX_TOKENS = 4000;
 
 /** A list nobody will read is the same as no list — and a long one is slow. */
 const ACTIONS_MAX_ITEMS = 8;
@@ -188,6 +196,10 @@ function buildActionItems(clientId, keys) {
 
   const items = (out && out.actions) || [];
   const outOfScope = (out && out.outOfScope) || [];
+  // Salvaged from a reply that ran out of room. The items are real; the list
+  // is short for a reason that has nothing to do with the documents, and
+  // presenting it as the whole answer would be a quiet lie.
+  const cutShort = !!(out && out._truncated);
 
   // An empty result is an answer, not a failure. It used to come back as
   // ok:false, so "we did not promise anything specific" and "the API call
@@ -217,6 +229,7 @@ function buildActionItems(clientId, keys) {
     unassigned: items.filter(i => !i.owner).length,
     teamEmpty: !team.length,
     trimmed: trimmed,
+    cutShort: cutShort,
     chars: chars,
     model: actionsModel_()
   };
@@ -436,9 +449,13 @@ function buildActionsPrompt_(client, docs, team) {
     // Length is the whole constraint here. A generous answer is one that never
     // arrives — see the note on ACTIONS_MAX_TOKENS.
     'BREVITY IS A HARD REQUIREMENT, not a style note. Every field is ONE short',
-    'sentence. No preamble, no restating the question, no closing summary, no',
-    'markdown. A long answer takes so long to write that the request is',
-    'abandoned before it finishes and you produce nothing at all.',
+    'sentence — under 20 words. No preamble, no restating the question, no',
+    'closing summary, no markdown. A long answer takes so long to write that',
+    'the request is abandoned before it finishes and you produce nothing.',
+    '',
+    'source is the DOCUMENT NAME and at most a handful of words identifying the',
+    'passage — "Audit presentation, impression share slide". Not a full quote:',
+    'quotes are the longest thing in the answer and the least load-bearing.',
     '',
     'The hard part is scope, and it is the part that matters most:',
     '- A deck written to win the deal proposes more than the contract bought.',
@@ -477,7 +494,7 @@ function buildActionsPrompt_(client, docs, team) {
     actions: [{
       action: 'string — the thing to do, specific enough to finish',
       why: 'string — what not doing it costs',
-      source: 'string — document, and the promise quoted where you can',
+      source: 'string — document name and a few identifying words, no long quote',
       priority: 'Now|Next|Later',
       effort: 'string — rough size',
       owner: 'string — a name from the team list, or empty'
