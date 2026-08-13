@@ -52,7 +52,7 @@ function reviewNewDocument(token, clientId, key) {
   let out;
   try {
     out = callAnthropic_(buildRereadPrompt_(client, doc, profile),
-                         { maxTokens: REREAD_MAX_TOKENS });
+                         { maxTokens: REREAD_MAX_TOKENS, noThinking: true });
   } catch (e) {
     return { ok: false, message: (e && e.message) || String(e) };
   }

@@ -190,7 +190,7 @@ function callAnthropic_(prompt, opts) {
     content.push({ type: 'text', text: prompt.user });
   }
 
-  const payload = JSON.stringify({
+  const req = {
     // Per call, because the jobs are not alike. Writing an onboarding plan can
     // take its time; listing what was promised on a call runs against the fetch
     // deadline, and how fast the model writes is what decides whether it lands.
@@ -198,7 +198,34 @@ function callAnthropic_(prompt, opts) {
     max_tokens: opts.maxTokens || 8000,
     system: prompt.system,
     messages: [{ role: 'user', content: content }]
-  });
+  };
+
+  /**
+   * THINKING TOKENS COME OUT OF max_tokens, AND THIS IS WHY THE CEILING KEPT
+   * BEING HIT.
+   *
+   * Sonnet 5 and Opus 5 think by DEFAULT — omitting the parameter runs adaptive
+   * thinking, which is not how the older models behaved. Those thinking tokens
+   * are charged against the same max_tokens budget as the answer, and a request
+   * that says "read 31,000 tokens of transcript and find every commitment" is
+   * exactly the shape that thinks at length before writing a word.
+   *
+   * So the ceiling was never reached by the ANSWER. It was reached before the
+   * answer started: 1,600 gone, then 4,000 gone, with a handful of items
+   * arriving each time and the rest cut off. Raising the ceiling would have
+   * bought more thinking, not more items, and would have run into the fetch
+   * deadline instead — which is precisely the loop this has been stuck in.
+   *
+   * Extracting commitments from a transcript is a reading task with a
+   * well-specified output, not a reasoning problem. It does not need to think
+   * first, so it is told not to, and the whole budget goes to the answer.
+   *
+   * Left ON for plan generation, which is a genuine reasoning task and is not
+   * racing a deadline.
+   */
+  if (opts.noThinking) req.thinking = { type: 'disabled' };
+
+  const payload = JSON.stringify(req);
 
   // muteHttpExceptions catches HTTP statuses, not connection failures. A
   // request that runs past the fetch deadline THROWS, with "Address
@@ -325,6 +352,15 @@ function anthropicError_(code, body) {
     const parsed = JSON.parse(body);
     detail = (parsed.error && parsed.error.message) || '';
   } catch (e) { /* fall through to the raw body */ }
+
+  // A model that will not take the parameter says so in a 400 that mentions
+  // it by name. Worth translating: the request looks identical to one that
+  // worked yesterday, and nothing else in the message would point at it.
+  if (code === 400 && /thinking/i.test(detail)) {
+    return 'This model will not accept thinking being switched off ('
+      + detail + '). Set "Actions Model" on the Config tab to '
+      + 'claude-sonnet-5 or claude-haiku-4-5.';
+  }
 
   if (code === 401) {
     return 'Anthropic rejected the API key (401). Onboarding → Set Anthropic API key.';

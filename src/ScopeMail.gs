@@ -51,7 +51,7 @@ function draftScopeEmail(token, clientId) {
   let out;
   try {
     out = callAnthropic_(buildScopePrompt_(client, docs),
-                         { maxTokens: SCOPE_MAX_TOKENS });
+                         { maxTokens: SCOPE_MAX_TOKENS, noThinking: true });
   } catch (e) {
     return { ok: false, message: (e && e.message) || String(e) };
   }
