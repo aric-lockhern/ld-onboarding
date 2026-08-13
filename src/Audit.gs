@@ -53,8 +53,22 @@
  */
 const ACTIONS_MAX_TOKENS = 4000;
 
-/** A list nobody will read is the same as no list — and a long one is slow. */
-const ACTIONS_MAX_ITEMS = 8;
+/**
+ * How many items to ask for.
+ *
+ * This was 8, set while the answer length was still suspected of causing the
+ * timeouts. It was not, and 8 turned out to be actively wrong: an audit
+ * covering Google Ads, SEO and Reddit came back with five Google Ads items and
+ * three SEO ones, and the entire Reddit workstream was gone. A model told "at
+ * most 8" does not spread them evenly — it ranks everything and takes the top
+ * of the list, and the top of the list is one or two areas.
+ *
+ * A real run measured 1,599 output tokens for 8 items, so ~200 each. Twenty
+ * five terse items is well inside the ceiling and covers every area an audit
+ * actually raises. The fields carry hard word limits because THAT is what
+ * makes the count affordable, not the count itself.
+ */
+const ACTIONS_MAX_ITEMS = 25;
 
 /**
  * A ceiling on reading, set where prefill is still seconds rather than tens of
@@ -535,21 +549,35 @@ function buildActionsPrompt_(client, docs, team, terse) {
     '',
     terse
       ? 'Return at most ' + Math.ceil(ACTIONS_MAX_ITEMS / 2) + ' actions — the '
-        + 'ones that cost the most to miss. THE LAST ATTEMPT RAN OUT OF ROOM '
-        + 'AND WAS CUT OFF. Keep every field to a handful of words: why is at '
-        + 'most eight words, source is the document name alone, and there are '
-        + 'no quotations anywhere. A complete short answer beats a long one '
-        + 'that never arrives.'
-      : 'Return at most ' + ACTIONS_MAX_ITEMS + ' actions: the ones that cost '
-        + 'the most to miss. A longer list is not a better one, and the tail '
-        + 'is where padding hides.',
+        + 'ones that cost the most to miss, still spread across every area. '
+        + 'THE LAST ATTEMPT RAN OUT OF ROOM AND WAS CUT OFF. Keep every field '
+        + 'to a handful of words: why is at most eight words, source is the '
+        + 'slide or section name alone, no quotations anywhere. A complete '
+        + 'short answer beats a long one that never arrives.'
+      : 'Return up to ' + ACTIONS_MAX_ITEMS + ' actions.',
+    '',
+    // The failure this replaces: five Google Ads items, three SEO ones, and an
+    // entire Reddit workstream missing from an audit that spent a third of its
+    // slides on it.
+    'COVER EVERY AREA THE DOCUMENTS RAISE. An audit that goes through paid',
+    'search, SEO and organic social has commitments in all three, and a list',
+    'holding only the two you rank highest has silently dropped a service line',
+    'somebody is paying for. Work through the document area by area and take',
+    'the concrete actions from each. If one area only justifies two items, two',
+    'is right — but zero from an area the audit covered is a mistake.',
+    '',
+    'Length is what makes that affordable, so every field is HARD capped:',
+    '- action: at most 18 words. What to do, specific enough to finish.',
+    '- why: at most 12 words. What not doing it costs, with the number if',
+    '  there is one.',
+    '- source: the slide or section name. Three or four words. No quotations.',
+    '- effort: two or three words — "1 hour", "half a day".',
+    'A list of 25 short items is far more useful than 8 essays, and it is what',
+    'somebody can actually assign on a Monday morning.',
     '',
     // Length is the whole constraint here. A generous answer is one that never
     // arrives — see the note on ACTIONS_MAX_TOKENS.
-    'BREVITY IS A HARD REQUIREMENT, not a style note. Every field is ONE short',
-    'sentence — under 20 words. No preamble, no restating the question, no',
-    'closing summary, no markdown. A long answer takes so long to write that',
-    'the request is abandoned before it finishes and you produce nothing.',
+    'No preamble, no restating the question, no closing summary, no markdown.',
     '',
     'NO QUOTATIONS ANYWHERE IN THE ANSWER. Not in source, not in why, not in',
     'action. source is the document name and at most four words locating the',
