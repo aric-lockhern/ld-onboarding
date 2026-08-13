@@ -311,6 +311,10 @@ const FAKE = {
         why:['Added to the account'], pinned:true }
     ],
     available:[{ name:'Sam Okafor', role:'Organic social', skills:['Reddit'] }],
+    // A name typed on a task row that matches nobody on the Team tab. It used
+    // to render as a chip reading "Justin · not on the team", which is a
+    // person on the account who cannot be pinged, assigned to or emailed.
+    unknown:[{ name:'Justin', tasks:2, why:['Owns tasks'] }],
     teamEmpty:false },
   addClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
   removeClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
@@ -997,10 +1001,16 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     if (!wrap) return { missing: true };
     return {
       people: wrap.querySelectorAll('.tm').length,
-      avatars: wrap.querySelectorAll('.av').length,
+      avatars: wrap.querySelectorAll('.tm .av').length,
+      names: [].map.call(wrap.querySelectorAll('.tm .nm'), e => e.textContent),
       removable: [].map.call(wrap.querySelectorAll('[data-rmteam]'),
         e => e.getAttribute('data-rmteam')),
-      canAdd: !!document.getElementById('teamPick'),
+      canAdd: !!document.getElementById('teamAdd'),
+      // Somebody named on a client row who is not on the Team tab is a stale
+      // cell, not a team member. They belong in the note, never as a chip —
+      // a chip says "on the account" about a person nothing can notify.
+      strays: /not on the Team tab/.test(wrap.innerHTML),
+      strayAsChip: /Justin/.test(wrap.querySelector('.tstrip').innerHTML),
       // It has to live inside the facts card, or it is a section again.
       inFacts: !!wrap.closest('.facts')
     };
@@ -1016,9 +1026,30 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       + JSON.stringify(teamStrip.removable));
   }
   if (!teamStrip.canAdd) throw new Error('No way to add somebody to the account');
+  if (!teamStrip.strays || teamStrip.strayAsChip) {
+    throw new Error('A name that is not on the Team tab is being shown as a '
+      + 'team member: ' + JSON.stringify(teamStrip));
+  }
+  // "Justin" wrapped to "Justi / n" inside its chip. A name is one word.
+  const chipWrap = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('#teamStrip .tm')).whiteSpace);
+  if (chipWrap !== 'nowrap') {
+    throw new Error('Team chips can break a name across lines: ' + chipWrap);
+  }
+
+  // The add menu opens on click, and its entries add directly.
+  await page.click('#teamAdd');
+  const menu = await page.evaluate(() => ({
+    open: document.getElementById('teamMenu').classList.contains('on'),
+    entries: document.querySelectorAll('[data-addteam]').length
+  }));
+  if (!menu.open || !menu.entries) {
+    throw new Error('The add-to-team menu did not open: ' + JSON.stringify(menu));
+  }
+  await page.click('#teamAdd');
 
   // Recent context: the calls are links, not imports.
-  const recentLinks = await page.$$eval('#recentWrap .crow a', els =>
+  const recentLinks = await page.$$eval('#recentWrap .line > a', els =>
     els.map(e => e.getAttribute('href')));
   if (recentLinks.length !== 3) {
     throw new Error('Recent calls did not render as links: '
@@ -1028,6 +1059,10 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   // Not every call comes from the notetaker. The way in for a Google Doc or a
   // pasted transcript has to be on this card, next to the calls it joins —
   // filing one through the intake form means creating a second draft.
+  // Folded by default — five fields for a fortnightly job should not be the
+  // tallest thing on the page. It still has to be one click away.
+  await page.click('#mcTog');
+  await page.waitForTimeout(120);
   const addCall = await page.evaluate(() => ({
     box: !!document.getElementById('mcText'),
     button: !!document.getElementById('addCall'),
@@ -1038,8 +1073,11 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     upload: !!document.getElementById('mcFile'),
     // A call added by hand is the one the daily scan could silently replace,
     // so the list has to say which is which.
-    handMarked: /added by hand/.test(document.getElementById('recentWrap').innerHTML),
-    removable: document.querySelectorAll('[data-delcall]').length
+    handMarked: /by hand/.test(document.getElementById('recentWrap').innerHTML),
+    removable: document.querySelectorAll('[data-delcall]').length,
+    // Compact lines, not two-line cards: this card ran taller than the profile
+    // it sits under, for what are one-line facts.
+    compact: !document.querySelectorAll('#recentWrap .crow').length
   }));
   if (!addCall.box || !addCall.button || !addCall.upload) {
     throw new Error('No way to add a non-ClickUp document: '
@@ -1048,6 +1086,9 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   if (addCall.kinds.indexOf('audit') === -1 || addCall.kinds.indexOf('call') === -1) {
     throw new Error('The document kinds do not include the audit: '
       + JSON.stringify(addCall.kinds));
+  }
+  if (!addCall.compact) {
+    throw new Error('Recent context is still rendering two-line cards');
   }
   if (!addCall.handMarked || addCall.removable !== 3) {
     throw new Error('Manual calls are not distinguishable or removable: '

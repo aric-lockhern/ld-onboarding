@@ -32,7 +32,7 @@
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0; background:var(--paper); color:var(--ink);
-    font:15px/1.55 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font:14px/1.5 "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     -webkit-font-smoothing:antialiased; font-feature-settings:"cv11","ss01"}
   .num,.stat .v,.frac{font-variant-numeric:tabular-nums}
   .eyebrow{font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:0;
@@ -98,31 +98,31 @@
   button.btn.sm{padding:6px 11px; font-size:13px}
   a.btn{display:inline-block; text-decoration:none}
 
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:12px;
-    box-shadow:var(--shadow)}
-  .grp{font-size:13.5px; font-weight:600; color:var(--muted); letter-spacing:0;
-    text-transform:none; padding:26px 2px 10px; display:flex; align-items:center; gap:8px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:10px}
+  .grp{font-size:12px; font-weight:600; color:var(--faint); letter-spacing:.02em;
+    text-transform:uppercase; padding:18px 2px 7px; display:flex; align-items:center;
+    gap:8px}
   .grp .n{color:var(--faint); font-weight:400}
 
   /* Stat tiles, not charts — each is a single headline number, so a plot
      would add nothing but ink. */
   .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:12px}
-  .stat{padding:16px 18px}
+  .stat{padding:12px 14px}
   .stat .k{display:flex; align-items:center; gap:7px; margin-bottom:9px}
-  .stat .v{font-size:32px; font-weight:600; line-height:1; letter-spacing:-.025em}
+  .stat .v{font-size:26px; font-weight:600; line-height:1; letter-spacing:-.025em}
   .stat .cap{font-size:13px; color:var(--faint); margin-top:6px}
   .dot{width:9px; height:9px; border-radius:50%; flex:none; display:inline-block}
   .dot.good{background:var(--good)} .dot.warning{background:var(--warning)}
   .dot.serious{background:var(--serious)} .dot.critical{background:var(--critical)}
   .dot.idle{background:var(--mid)}
 
-  .row{display:flex; align-items:center; gap:13px; padding:14px 18px;
+  .row{display:flex; align-items:center; gap:12px; padding:10px 16px;
     border-top:1px solid var(--line)}
   .row:first-child{border-top:0}
   .row .who{flex:1; min-width:0}
-  .row .co{font-weight:600; font-size:15px; letter-spacing:-.01em; overflow:hidden;
+  .row .co{font-weight:600; font-size:14px; letter-spacing:-.01em; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap}
-  .row .meta{color:var(--muted); font-size:13.5px; margin-top:2px}
+  .row .meta{color:var(--muted); font-size:12.5px; margin-top:1px}
   .row .act{display:flex; gap:8px; flex:none}
   .row.clickable{cursor:pointer}
   .row.clickable:hover{background:var(--paper)}
@@ -154,11 +154,12 @@
 
   /* --------------------------------------------------------------- forms */
   .form{max-width:760px}
-  .sect{padding:22px 24px; border-top:1px solid var(--line)}
+  .sect{padding:14px 16px; border-top:1px solid var(--line)}
   .sect:first-child{border-top:0}
-  .sect h3{font-size:16px; margin-bottom:3px}
-  .sect .hint{color:var(--faint); font-size:13.5px; margin-bottom:18px}
-  .fields{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  .sect h3{font-size:14.5px; margin-bottom:2px}
+  .sect .hint{color:var(--faint); font-size:12.5px; line-height:1.45;
+    margin-bottom:10px}
+  .fields{display:grid; grid-template-columns:1fr 1fr; gap:11px}
   .f{display:flex; flex-direction:column; gap:6px}
   .f.wide{grid-column:1/-1}
   .f label{font-size:13.5px; font-weight:500; color:var(--muted); letter-spacing:0;
@@ -205,9 +206,9 @@
   /* Top-aligned, not centred. The assignee carries a line of age text under it
      and the status does not, so centring split the difference and left the two
      selects on visibly different lines. */
-  .task{display:flex; align-items:flex-start; gap:12px; padding:12px 18px;
+  .task{display:flex; align-items:flex-start; gap:10px; padding:7px 16px;
     border-top:1px solid var(--line)}
-  .task .n{flex:1; min-width:0; font-size:14.5px; padding-top:7px}
+  .task .n{flex:1; min-width:0; font-size:13.5px; padding-top:6px}
   .task select{padding:7px 9px; border:1px solid var(--line); border-radius:7px;
     font:13.5px/1 "Inter",sans-serif; background:var(--surface); width:148px; flex:none;
     color:var(--ink)}
@@ -225,10 +226,10 @@
   /* Own class rather than reusing the reading checklist's row: these carry two
      buttons, and a flex row that stretches its children turns them into two
      tall columns on a phone. */
-  .crow{display:flex; align-items:flex-start; gap:10px; padding:13px 0;
+  .crow{display:flex; align-items:flex-start; gap:10px; padding:8px 0;
     border-top:1px solid var(--line); flex-wrap:wrap}
   .crow .bd{flex:1 1 240px; min-width:0}
-  .crow .nm{font-size:14px; font-weight:500}
+  .crow .nm{font-size:13.5px; font-weight:500}
   .crow .meta{font-size:12.5px; color:var(--faint); margin-top:2px;
     overflow-wrap:anywhere}
   .crow .btn{flex:none; align-self:center}
@@ -405,12 +406,86 @@
   /* Facts first: name, contact, website, what they pay. Two columns of
      label/value, no inputs — reading these is a hundred times more common than
      editing them, and the editable form is still down in Details. */
-  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-    padding:6px 4px}
-  .fact{display:flex; gap:12px; padding:9px 18px; min-width:0}
-  .fact .k{flex:none; width:104px; font-size:12.5px; color:var(--muted);
-    padding-top:1px}
-  .fact .v{flex:1; min-width:0; font-size:14px; overflow-wrap:anywhere}
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    padding:4px 2px}
+  .fact{display:flex; gap:10px; align-items:center; padding:2px 12px; min-width:0}
+  .fact.wide{grid-column:1/-1; align-items:flex-start}
+  .fact .k{flex:none; width:104px; font-size:12px; color:var(--faint);
+    padding-top:5px; align-self:flex-start}
+  .fact .v{flex:1; min-width:0; font-size:13.5px; overflow-wrap:anywhere;
+    display:flex; align-items:center; gap:6px; padding:3px 0}
+
+  /* The value IS the input. It has no border until you touch it, so the card
+     reads as a list of facts rather than a form — which is what it is nine
+     times out of ten. There used to be a read-only copy up here and an
+     editable copy in Details, and the one you were looking at was never the
+     one you could change. */
+  .fin{flex:1; min-width:0; font:13.5px/1.4 "Inter",sans-serif; color:var(--ink);
+    background:none; border:1px solid transparent; border-radius:6px;
+    padding:3px 6px; margin-left:-6px; width:100%}
+  .fin::placeholder{color:var(--mid)}
+  .fin:hover{border-color:var(--line); background:var(--paper)}
+  .fin:focus{outline:none; border-color:var(--blue); background:var(--surface);
+    box-shadow:0 0 0 3px var(--blue-wash)}
+  select.fin{cursor:pointer; appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--mid) 50%),
+      linear-gradient(135deg,var(--mid) 50%,transparent 50%);
+    background-position:calc(100% - 11px) 8px, calc(100% - 7px) 8px;
+    background-size:4px 4px, 4px 4px; background-repeat:no-repeat;
+    padding-right:22px}
+  textarea.fin{resize:vertical; min-height:34px}
+  .fact .aft{flex:none; color:var(--faint)}
+
+  /* Add-to-team: a menu, not a native select. A select shows its placeholder
+     as if it were a chosen value, so "＋ add…" sat in the line looking like a
+     member of the team. */
+  .chip-add{width:24px; height:24px; border-radius:999px; border:1px dashed var(--mid);
+    background:none; color:var(--muted); cursor:pointer; font-size:13px; line-height:1;
+    padding:0}
+  .chip-add:hover{border-color:var(--blue); color:var(--blue)}
+  .tadd{position:relative; display:inline-block}
+  .menu{display:none; position:absolute; z-index:40; top:28px; left:0; min-width:214px;
+    max-height:280px; overflow:auto; background:var(--surface);
+    border:1px solid var(--line); border-radius:9px;
+    box-shadow:0 6px 22px rgba(14,41,112,.13); padding:5px}
+  .menu.on{display:block}
+  .menu .mi{display:flex; align-items:center; gap:9px; width:100%; border:0;
+    background:none; cursor:pointer; padding:6px 8px; border-radius:6px;
+    text-align:left; font:13.5px/1.3 "Inter",sans-serif; color:var(--ink)}
+  .menu .mi:hover{background:var(--blue-wash)}
+  .menu .mi b{font-weight:500; display:block}
+  .menu .mi i{font-style:normal; font-size:12px; color:var(--faint); display:block}
+  .menu .mi .av{width:24px; height:24px; flex-basis:24px; font-size:9.5px}
+  /* Compact lists: one line per thing, with its detail to the right rather
+     than under it. The recent-context card was two-line cards for what are
+     one-line facts, and it ran taller than the profile it sits under. */
+  .lines{display:flex; flex-direction:column}
+  .line{display:flex; align-items:baseline; gap:9px; padding:5px 0;
+    border-top:1px solid var(--line); font-size:13.5px}
+  .line:first-child{border-top:0}
+  .line .tx{flex:1; min-width:0}
+  .line > a{flex:none; max-width:60%; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap}
+  .line .sub{flex:1; color:var(--faint); font-size:12px; text-align:right;
+    white-space:nowrap}
+  .line.note .sub{flex:none}
+  .line .x{flex:none; border:0; background:none; cursor:pointer; color:var(--mid);
+    font-size:15px; line-height:1; padding:0 2px}
+  .line .x:hover{color:var(--critical)}
+  .addline{display:flex; gap:7px; margin-top:9px}
+  .addline input{flex:1; padding:6px 9px; border:1px solid var(--line);
+    border-radius:7px; font:13px/1.3 "Inter",sans-serif; background:var(--surface);
+    color:var(--ink)}
+  .addline input:focus{outline:none; border-color:var(--blue);
+    box-shadow:0 0 0 3px var(--blue-wash)}
+  /* A fold that is a line of text, not a bar. */
+  .mini-tog{display:flex; align-items:center; gap:6px; border:0; background:none;
+    cursor:pointer; padding:9px 0 0; font:600 12px/1 "Inter",sans-serif;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.02em}
+  .mini-tog:hover{color:var(--blue)}
+  .mini-tog .tw{font-size:8px; color:var(--mid)}
+  .tnote{flex-basis:100%; font-size:12px; color:var(--warning); margin-top:5px;
+    line-height:1.45}
 
   /* The profile is 10,000 characters even collapsed-by-section. Capping it and
      letting it scroll keeps the rest of the page reachable without a fold. */
@@ -463,10 +538,11 @@
   .phrow .bd{flex:1; min-width:0}
   /* The team, as one wrapping line inside the facts card. */
   .tstrip{display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center}
-  .tm{display:inline-flex; align-items:center; gap:6px; font-size:13px;
+  .tm{display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
     background:var(--paper); border:1px solid var(--line); border-radius:999px;
-    padding:3px 9px 3px 4px}
-  .tm .av{width:22px; height:22px; flex-basis:22px; font-size:9px}
+    padding:2px 9px 2px 3px; white-space:nowrap; max-width:100%}
+  .tm .nm{overflow:hidden; text-overflow:ellipsis}
+  .tm .av{width:20px; height:20px; flex-basis:20px; font-size:8.5px}
   .tm .x{border:0; background:none; cursor:pointer; color:var(--muted);
     font-size:15px; line-height:1; padding:0 0 0 2px}
   .tm .x:hover{color:var(--warning)}
@@ -882,31 +958,93 @@ function clientRow(c){
  * READ one — answering "what is their URL" meant scrolling past ten thousand
  * characters of profile to reach a text input.
  */
-function factsCard(c){
-  var rows = [
-    ['Contact', c.contact],
-    ['Email', c.email ? '<a href="mailto:' + esc(c.email) + '">' + esc(c.email) + '</a>' : '', true],
-    ['Website', c.website
-      ? '<a href="' + esc(/^https?:/i.test(c.website) ? c.website : 'https://' + c.website)
-        + '" target="_blank">' + esc(c.website) + '</a>' : '', true],
-    ['Vertical', c.vertical],
-    ['Contract start', c.contractStart],
-    ['MRR', c.mrr ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr) : ''],
-    ['Term', c.term],
-    ['Owner', c.owner],
-    ['Services', serviceChips(c.services), true],
-    ['Slack', c.slack]
-  ].filter(function(r){ return r[1]; });
+/**
+ * One fact: a label, a value, and the field behind it.
+ *
+ * The value IS the input. There used to be two of everything — a read-only
+ * facts card at the top and an editable Details form at the bottom, listing
+ * status, owner, cadence, term, business type and the rest a second time. Two
+ * places showing the same value is two places that can disagree, and the one
+ * you were looking at was never the one you could change.
+ *
+ * `field` empty means there is nothing to edit — a computed value, or a link.
+ */
+function fact(label, field, value, opts){
+  opts = opts || {};
+  var v = value == null ? '' : value;
 
-  // The team is a strip in here rather than a card of its own. Who is on the
-  // account is one line of answer — six names — and a full section for it
-  // pushed the phase rail and the profile below the fold on a laptop.
-  return '<div class="card facts">' + rows.map(function(r){
-    return '<div class="fact"><span class="k">' + esc(r[0]) + '</span>'
-      + '<span class="v">' + (r[2] ? r[1] : esc(r[1])) + '</span></div>';
-  }).join('')
-  + '<div class="fact team"><span class="k">Team</span>'
-  + '<span class="v" id="teamStrip">…</span></div></div>';
+  if (!field){
+    return v || opts.always
+      ? '<div class="fact"><span class="k">' + esc(label) + '</span>'
+        + '<span class="v">' + (opts.html ? v : esc(v)) + '</span></div>'
+      : '';
+  }
+
+  var input;
+  if (opts.options){
+    var has = opts.options.indexOf(v) !== -1;
+    input = '<select class="fin" data-field="' + esc(field) + '">'
+      + (has ? '' : '<option value="' + esc(v) + '" selected>'
+                    + esc(v || '—') + '</option>')
+      + opts.options.map(function(o){
+          return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
+        }).join('') + '</select>';
+  } else if (opts.area){
+    input = '<textarea class="fin" data-field="' + esc(field) + '" rows="2" '
+      + 'placeholder="—">' + esc(v) + '</textarea>';
+  } else {
+    input = '<input class="fin" data-field="' + esc(field) + '" value="'
+      + esc(v) + '" placeholder="—">';
+  }
+
+  return '<div class="fact' + (opts.area ? ' wide' : '') + '">'
+    + '<span class="k">' + esc(label) + '</span>'
+    + '<span class="v">' + input
+    + (opts.after ? '<span class="aft">' + opts.after + '</span>' : '')
+    + '</span></div>';
+}
+
+function factsCard(c, d){
+  d = d || {};
+  var opts = CACHE.options || {};
+
+  var web = c.website
+    ? '<a href="' + esc(/^https?:/i.test(c.website) ? c.website : 'https://' + c.website)
+      + '" target="_blank">' + esc(c.website) + '</a>' : '';
+
+  var h = ''
+    + fact('Contact', 'contact', c.contact)
+    + fact('Email', 'email', c.email)
+    + fact('Website', 'website', c.website,
+           { after: web ? '<a href="' + esc(/^https?:/i.test(c.website)
+               ? c.website : 'https://' + c.website) + '" target="_blank">↗</a>' : '' })
+    + fact('Vertical', 'vertical', c.vertical)
+    + fact('Status', 'status', c.status, { options: CLIENT_STATUSES })
+    + fact('Owner', 'owner', c.owner)
+    + fact('Contract start', '', c.contractStart)
+    + fact('MRR', '', c.mrr
+        ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr) : '')
+    + fact('Term', 'term', c.term, { options: d.terms })
+    + fact('Business type', 'bizType', c.bizType, { options: d.bizTypes })
+    + fact('Cadence', 'cadence', c.cadence,
+           { options: d.cadences || opts.cadences })
+    // Completed belongs on this list. By the time anyone opens the client page
+    // the call has usually happened, and a state list that cannot say so leaves
+    // it reading "Scheduled" forever.
+    + fact('Onboarding call', 'call', c.call,
+           { options: CALL_STATES.concat(['Completed']) })
+    + fact('Slack', 'slack', c.slack)
+    + fact('Email alias', 'alias', c.alias)
+    + fact('Approvals', 'approvals', c.approvals)
+    + fact('Services', '', serviceChips(c.services), { html: true })
+    // The team is a strip in here rather than a card of its own. Who is on the
+    // account is one line of answer — six names — and a full section for it
+    // pushed the phase rail and the profile below the fold on a laptop.
+    + '<div class="fact team"><span class="k">Team</span>'
+    + '<span class="v" id="teamStrip">…</span></div>'
+    + fact('Scope', 'scope', c.scope, { area: true });
+
+  return '<div class="card facts">' + h + '</div>';
 }
 
 /**
@@ -953,7 +1091,10 @@ var BRANDS = [
   ['hubspot', '#FF7A59', 'H'],
   ['wordpress', '#21759B', 'W'],
   ['slack', '#4A154B', 'sl'],
-  ['seo', '#0D6528', 'SEO'],
+  // A three-letter monogram does not fit a 20px square — "SEO" wrapped to two
+  // lines and read as a mistake. Search is a magnifier everywhere else too.
+  ['seo', '#0D6528', 'glass'],
+  ['search console', '#458CF5', 'glass'],
   ['organic', '#0D6528', 'og'],
   ['landing page', '#6B4FBB', 'LP'],
   ['email', '#8A5200', '@'],
@@ -980,12 +1121,22 @@ function msMark(){
     + '<rect x="5.6" y="5.6" width="4.4" height="4.4" fill="#FFB900"/></svg></span>';
 }
 
+/** A magnifier, for the things that are about search rather than a brand. */
+function glassMark(colour){
+  return '<span class="mk" aria-hidden="true" style="background:' + colour
+    + '1F;color:' + colour + '">'
+    + '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">'
+    + '<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2L14 14" '
+    + 'stroke-linecap="round"/></svg></span>';
+}
+
 function brandMark(name){
   var b = brandFor(name);
   if (!b) return '<span class="mk none" aria-hidden="true"></span>';
   if (b[2] === 'ms') return msMark();
+  if (b[2] === 'glass') return glassMark(b[1]);
   return '<span class="mk" aria-hidden="true" style="background:' + b[1]
-    + '1F;color:' + b[1] + '">' + esc(b[2]) + '</span>';
+    + '1F;color:' + b[1] + '">' + esc(b[2].slice(0, 2)) + '</span>';
 }
 
 /** The Services cell, which arrives as a comma string, as marked chips. */
@@ -1043,8 +1194,7 @@ function teamStrip(r){
         var why = [m.role, derived || 'Added to the account'].filter(Boolean).join(' · ')
           + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') : '');
         return '<span class="tm" title="' + esc(why) + '">'
-          + avatar(m.name) + esc(m.name)
-          + (m.known ? '' : ' <span class="pill">not on the team</span>')
+          + avatar(m.name) + '<span class="nm">' + esc(m.name) + '</span>'
           // Only pinned membership can be removed here. Somebody on the account
           // because they own six tasks comes off by reassigning them, and a ×
           // that refused every time would be worse than none.
@@ -1060,14 +1210,33 @@ function teamStrip(r){
     return h + ' <span class="muted">· the Team tab is empty — build the '
       + 'directory on the Team page</span>';
   }
+
+  // A menu rather than a native select: a select renders its own placeholder
+  // as a selected value, so "＋ add…" sat in the line looking like a member.
   if ((r.available || []).length){
-    h += '<span class="tadd"><select id="teamPick">'
-      + '<option value="">＋ add…</option>'
+    h += '<span class="tadd">'
+      + '<button class="chip-add" id="teamAdd">＋</button>'
+      + '<span class="menu" id="teamMenu">'
       + r.available.map(function(p){
-          return '<option value="' + esc(p.name) + '">' + esc(p.name)
-            + (p.role ? ' — ' + esc(p.role) : '') + '</option>';
+          return '<button class="mi" data-addteam="' + esc(p.name) + '">'
+            + avatar(p.name) + '<span><b>' + esc(p.name) + '</b>'
+            + (p.role ? '<i>' + esc(p.role) + '</i>' : '') + '</span></button>';
         }).join('')
-      + '</select></span>';
+      + '</span></span>';
+  }
+
+  // Not a team member: a name typed into a client or task row that matches
+  // nobody on the Team tab. Worth saying once, quietly, with the fix — those
+  // tasks belong to somebody nothing can notify.
+  var unknown = r.unknown || [];
+  if (unknown.length){
+    h += '<div class="tnote">' + unknown.map(function(u){
+      return esc(u.name) + (u.tasks ? ' (' + u.tasks + ' task'
+        + (u.tasks === 1 ? '' : 's') + ')' : '');
+    }).join(', ') + ' ' + (unknown.length === 1 ? 'is' : 'are')
+      + ' named on this client but not on the Team tab, so nothing can '
+      + 'notify or assign to them. Add them on the Team page, or reassign.'
+      + '</div>';
   }
   return h;
 }
@@ -1084,14 +1253,22 @@ function loadClientTeam(clientId){
 }
 
 function wireClientTeam(clientId){
-  // Picking IS adding — there is no second button, because a one-line strip
-  // has no room for one and "select then confirm" for a list of names is a
-  // step that exists only to be forgotten.
-  if (el('teamPick')){
-    el('teamPick').addEventListener('change', function(){
-      var who = this.value;
-      if (!who) return;
-      this.disabled = true;
+  // Picking IS adding — there is no confirm step, because "select then
+  // confirm" for a list of names is a step that exists only to be forgotten.
+  if (el('teamAdd')){
+    el('teamAdd').addEventListener('click', function(e){
+      e.stopPropagation();
+      el('teamMenu').classList.toggle('on');
+    });
+    document.addEventListener('click', function(){
+      if (el('teamMenu')) el('teamMenu').classList.remove('on');
+    });
+    el('teamMenu').addEventListener('click', function(e){ e.stopPropagation(); });
+  }
+  [].forEach.call(document.querySelectorAll('[data-addteam]'), function(b){
+    b.addEventListener('click', function(){
+      var who = b.getAttribute('data-addteam');
+      el('teamMenu').classList.remove('on');
       api('addClientTeamMember', TOKEN, clientId, who).then(function(r){
         if (!r.ok){ toast(r.message, true); loadClientTeam(clientId); return; }
         el('teamStrip').innerHTML = teamStrip(r);
@@ -1099,7 +1276,7 @@ function wireClientTeam(clientId){
         toast(who + ' added.');
       }).catch(function(e){ loadClientTeam(clientId); fail(e); });
     });
-  }
+  });
   [].forEach.call(document.querySelectorAll('[data-rmteam]'), function(b){
     b.addEventListener('click', function(){
       var who = b.getAttribute('data-rmteam');
@@ -2788,19 +2965,17 @@ function recentCard(r){
   if (calls.length){
     h += '<div class="pri-h">Last ' + calls.length + ' call'
       + (calls.length === 1 ? '' : 's') + '</div>'
-      + calls.map(function(c){
+      + '<div class="lines">' + calls.map(function(c){
           var id = c.key || c.docId;
-          return '<div class="crow"><div class="bd">'
-            + '<div class="nm"><a href="' + esc(c.url) + '" target="_blank">'
+          return '<div class="line"><a href="' + esc(c.url) + '" target="_blank">'
             + esc(c.name) + '</a>'
-            + (c.source === 'manual' ? ' <span class="pill">added by hand</span>' : '')
-            + '</div>'
-            + '<div class="meta">' + esc(c.at)
-            + (c.chars ? ' · ' + Math.round(c.chars / 1000) + 'k chars' : '')
-            + '</div></div>'
-            + '<button class="btn sm" data-delcall="' + esc(id) + '">Remove</button>'
-            + '</div>';
-        }).join('');
+            + '<span class="sub">' + esc(c.at)
+            + (c.source === 'manual' ? ' · by hand' : '')
+            + (c.chars ? ' · ' + Math.round(c.chars / 1000) + 'k' : '')
+            + '</span>'
+            + '<button class="x" data-delcall="' + esc(id) + '" '
+            + 'title="Take off the list">×</button></div>';
+        }).join('') + '</div>';
   } else {
     h += '<div class="hint">' + (r.scanInstalled
       ? 'No ClickUp calls have matched this client yet. The scan runs each '
@@ -2816,11 +2991,15 @@ function recentCard(r){
   // given one — so the same documents have to be fileable from here, under the
   // same keys, or an audit added later is invisible to the action items.
   var kinds = r.kinds || [{ key:'call', label:'Call transcript', hint:'' }];
-  h += '<div class="pri-h">Add a document</div>'
+  // Folded. It is five fields and a file picker for something done once a
+  // fortnight, and open by default it was the tallest thing on the page.
+  h += '<button class="mini-tog" id="mcTog"><span class="tw">▶</span>'
+    + 'Add a document</button>'
+    + '<div id="mcForm" style="display:none">'
     + '<div class="hint">A Google Doc or ClickUp link, an upload, or paste the '
-    + 'text. It is stored with the deal documents and read by the profile, the '
-    + 'action items and the scope confirmation — the same as one added when the '
-    + 'client was created. Calls added here survive the daily scan.</div>'
+    + 'text. Stored with the deal documents and read by the profile, the action '
+    + 'items and the scope confirmation — the same as one added when the client '
+    + 'was created. Calls added here survive the daily scan.</div>'
     + '<div class="fields">'
     + '<div class="f"><label>What it is</label><select id="mcKind">'
       + kinds.map(function(k){
@@ -2838,28 +3017,28 @@ function recentCard(r){
       + '<input type="file" id="mcFile" accept=".pdf,.txt,.md,.docx,image/*"></div>'
     + '</div>'
     + '<div class="hint" id="mcHint">' + esc(kinds[0].hint || '') + '</div>'
-    + '<div class="startrow"><button class="btn" id="addCall">Add document</button></div>';
+    + '<div class="startrow"><button class="btn" id="addCall">Add document</button></div>'
+    + '</div>';
 
   var notes = r.notes || [];
   h += '<div class="pri-h">Notes' + (r.scanned
     ? ' <span>scanned ' + esc(r.scanned) + '</span>' : '') + '</div>';
 
   h += notes.length
-    ? notes.map(function(n, i){
-        return '<div class="crow"><div class="bd">'
-          + '<div class="nm" style="font-weight:400">' + esc(n.text) + '</div>'
-          + '<div class="meta">' + esc(n.at) + (n.by ? ' · ' + esc(n.by) : '')
-          + '</div></div>'
-          + '<button class="btn sm" data-delnote="' + i + '">Remove</button></div>';
-      }).join('')
+    ? '<div class="lines">' + notes.map(function(n, i){
+        return '<div class="line note"><span class="tx">' + esc(n.text) + '</span>'
+          + '<span class="sub">' + esc(n.at) + (n.by ? ' · ' + esc(n.by) : '')
+          + '</span>'
+          + '<button class="x" data-delnote="' + i + '" title="Remove">×</button>'
+          + '</div>';
+      }).join('') + '</div>'
     : '<div class="hint">Nothing yet. A changed promo, a new contact, a target '
       + 'revised on a call — anything true now that the deal documents do not '
       + 'say.</div>';
 
-  h += '<div class="fields" style="margin-top:14px">'
-    + '<div class="f wide"><label>Add a note</label>'
-    + '<input id="ntxNote" placeholder="What changed"></div></div>'
-    + '<div class="startrow"><button class="btn" id="addNote">Add note</button></div>';
+  h += '<div class="addline">'
+    + '<input id="ntxNote" placeholder="Add a note — what changed">'
+    + '<button class="btn sm" id="addNote">Add</button></div>';
 
   return h;
 }
@@ -3002,6 +3181,14 @@ function wireRecent(clientId){
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Add note'; fail(e);
       });
+    });
+  }
+  if (el('mcTog')){
+    el('mcTog').addEventListener('click', function(){
+      var f = el('mcForm');
+      var shut = f.style.display === 'none';
+      f.style.display = shut ? 'block' : 'none';
+      el('mcTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
     });
   }
   if (el('mcKind')){
@@ -3476,7 +3663,7 @@ function openClient(clientId){
     // Who they are and where they are, above everything else. This was
     // scattered down the page in an editable form, so answering "what is their
     // website" meant scrolling past ten thousand characters of profile.
-    h += factsCard(c);
+    h += factsCard(c, d);
 
     // Who is on it, before the work itself. The answer was previously spread
     // across an Owner cell and twenty task rows, and somebody who sits on every
@@ -3605,27 +3792,13 @@ function openClient(clientId){
 
     // Only the fields updateClientField accepts — anything else silently
     // returns { ok:false, message:'Unknown field.' }.
-    h += '<div class="grp">Details</div><div class="card"><div class="sect"><div class="fields">'
-      + pField('status', 'Status', c.status, CLIENT_STATUSES)
-      + pField('owner', 'Onboarding owner', c.owner)
-      + pField('cadence', 'Meeting cadence', c.cadence, d.cadences || CACHE.options.cadences)
-      + pField('term', 'Contract term', c.term, d.terms)
-      + pField('bizType', 'Business type', c.bizType, d.bizTypes)
-      // Completed belongs on this list. By the time anyone opens the client
-      // page the call has usually happened, and a state list that cannot say so
-      // leaves it reading "Scheduled" forever.
-      + pField('call', 'Onboarding call', c.call,
-               CALL_STATES.concat(['Completed']))
-      + pField('slack', 'Slack channel', c.slack)
-      + pField('alias', 'Email alias', c.alias)
-      + pField('approvals', 'Approvals contact', c.approvals)
-      + pField('scope', 'Scope', c.scope, null, true)
-      + '</div></div></div>';
-
-    h += '<div class="grp">Links</div><div class="card"><div class="row">'
+    // Details used to live down here as a second copy of everything above.
+    // What is left is the one thing that is an action rather than a value.
+    h += '<div class="grp">Drive</div><div class="card"><div class="row">'
       + '<div class="who"><div class="meta">'
-      + (c.alias ? 'Alias ' + esc(c.alias) : 'No alias yet') + '</div></div>'
-      + (c.drive ? '<a class="btn sm" href="' + esc(c.drive) + '" target="_blank">Drive</a>'
+      + (c.drive ? 'Documents and assets for this client'
+                 : 'No folder yet') + '</div></div>'
+      + (c.drive ? '<a class="btn sm" href="' + esc(c.drive) + '" target="_blank">Open</a>'
                  : '<button class="btn sm" id="mkDrive">Create Drive folder</button>')
       + '</div></div>';
 
