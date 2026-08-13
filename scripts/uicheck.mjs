@@ -107,6 +107,22 @@ const FAKE = {
        category:'Billing',owner:'Sasha Roe',assigned:'28 Jul 2026',assignedDays:14},
       {task:'Brand assets and constraints',phase:2,gate:false,status:'Not started',method:'EMAIL'},
       {task:'Baseline performance snapshot',phase:3,gate:true,status:'Not started',method:'INTERNAL'},
+      // Audit follow-ups live on the checklist now, inside the phase they
+      // belong to, grouped by channel. Same row, same assignee, same status,
+      // same ping — never a gate, which is what makes merging the two lists
+      // safe at all.
+      {task:'Switch tROAS to Maximize conversion value with ROAS target',phase:3,
+       gate:false,status:'Not started',method:'INTERNAL',origin:'Audit',
+       category:'Google Ads',owner:'Drake King'},
+      {task:'Move branded campaigns to exact match',phase:3,gate:false,
+       status:'Not started',method:'INTERNAL',origin:'Audit',
+       category:'Google Ads',owner:''},
+      {task:'Add H1 tags to the 47 product pages missing them',phase:3,
+       gate:false,status:'Not started',method:'INTERNAL',origin:'Audit',
+       category:'AI Search SEO',owner:'Craig Reynolds'},
+      {task:'Publish a fact-based response to the 2024 scam thread',phase:3,
+       gate:false,status:'Not started',method:'INTERNAL',origin:'Audit',
+       category:'Reddit Organic Social',owner:'Alexandra McCurdy'},
       {task:'Conversion tracking validated',phase:3,gate:true,status:'Not started',method:'INTERNAL'},
       {task:'Kickoff call',phase:4,gate:true,status:'Not started',method:'INTERNAL'},
       {task:'First report delivered',phase:5,gate:false,status:'Not started',method:'INTERNAL'},
@@ -256,6 +272,20 @@ const FAKE = {
     ] },
   saveTaskTemplate: { ok:true, row:15, created:true, task:'Shopify theme access' },
   deleteTaskTemplate: { ok:true, task:'Legacy Bing import' },
+  getPhases: { ok:true, auditPhase:3,
+    phases:[
+      { row:2, phase:1, name:'Internal Setup', email:'', tasks:4,
+        means:'Alias and Drive folder must exist before anything goes out.' },
+      { row:3, phase:2, name:'Client Requests', email:'_access', tasks:6,
+        means:'Access, billing, brand assets in one email.' },
+      { row:4, phase:3, name:'Data & Validation', email:'', tasks:2,
+        means:'Baseline captured before optimisation.' },
+      { row:5, phase:4, name:'Launch', email:'_kickoff', tasks:1,
+        means:'Kickoff booked, build begins.' },
+      { row:6, phase:5, name:'Steady State', email:'', tasks:2,
+        means:'Reporting rhythm and the 30-day check.' }
+    ] },
+  savePhase: { ok:true },
   getEmailTemplates: { ok:true,
     merge:[{ tag:'{{company}}', means:'Client company name' },
            { tag:'{{contact}}', means:'Primary contact name' },
@@ -739,6 +769,28 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
       await page.screenshot({ path: fSet, fullPage: name === 'desktop' });
       shots.push(fSet);
 
+      // Phases are editable now: the names were seeded once and then
+      // unreachable, so an agency running a different order had a tool
+      // describing somebody else's.
+      await page.click('#stPhases');
+      await page.waitForSelector('[data-savephase]', { timeout: 5000 });
+      const phases = await page.evaluate(() => ({
+        rows: document.querySelectorAll('.phrow-edit').length,
+        names: document.querySelectorAll('.pname').length,
+        // The real question behind renaming is "which tasks are in here", so
+        // each phase says what it holds rather than leaving somebody guessing
+        // where that setting lives.
+        saysTasks: /task/.test(document.querySelector('.phrow-edit .meta').textContent),
+        saysAudit: /audit follow-ups land here/.test(document.body.textContent)
+      }));
+      if (phases.rows !== 5 || phases.names !== 5 || !phases.saysTasks
+          || !phases.saysAudit) {
+        throw new Error('The phases editor is wrong: ' + JSON.stringify(phases));
+      }
+      const fPhases = `${OUT}/${name}-settings-phases.png`;
+      await page.screenshot({ path: fPhases, fullPage: name === 'desktop' });
+      shots.push(fPhases);
+
       await page.click('#stMail');
       await page.waitForSelector('[data-edit-mail]', { timeout: 5000 });
       // A template with no copy has to be offered to WRITE, not to edit — the
@@ -970,6 +1022,9 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   const marks = await page.evaluate(() => ({
     onTasks: document.querySelectorAll('.task .n .mk').length,
     tasks: document.querySelectorAll('.task').length,
+    // Audit rows sit under a marked channel heading instead.
+    seeded: document.querySelectorAll('.task').length
+      - document.querySelectorAll('[data-phbody="3"] .areahead ~ .task').length,
     merchant: (function(){
       var m = brandFor('Google Merchant Center');
       return m && m[2];
@@ -978,8 +1033,10 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     ga: (function(){ var m = brandFor('Google Analytics (GA4)'); return m && m[2]; })(),
     unknown: brandFor('Chase the dev for the theme file')
   }));
-  if (!marks.tasks || marks.onTasks !== marks.tasks) {
-    throw new Error('Task rows are missing marks: ' + JSON.stringify(marks));
+  // Seeded rows carry a mark; audit follow-ups do not, because their channel
+  // heading already carries one and a mark on every row under it is noise.
+  if (!marks.tasks || marks.onTasks !== marks.seeded) {
+    throw new Error('Seeded task rows are missing marks: ' + JSON.stringify(marks));
   }
   if (marks.merchant !== 'MC' || marks.ads !== 'G' || marks.ga !== 'GA') {
     throw new Error('Brand matching picked the wrong mark: ' + JSON.stringify(marks));
@@ -1166,25 +1223,47 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('A cut-short list was reported as complete: ' + built);
   }
 
-  // Grouped by channel, because that is how the people divide. A specialist
-  // reading thirty four rows to find their eight is why this exists.
-  const areas = await page.evaluate(() => ({
-    heads: [].map.call(document.querySelectorAll('#actWrap .areahead .an'),
-      e => e.textContent),
-    // Anything from before the column existed must not be guessed into a
-    // channel, and must sort to the bottom rather than leading the card.
-    lastIsUnsorted: (function(){
-      var h = document.querySelectorAll('#actWrap .areahead .an');
-      return h.length ? h[h.length - 1].textContent === 'Not sorted yet' : false;
-    })(),
-    marks: document.querySelectorAll('#actWrap .areahead .mk').length
-  }));
-  if (areas.heads.length < 3 || !areas.lastIsUnsorted) {
-    throw new Error('Action items are not grouped by channel: '
-      + JSON.stringify(areas));
+  // Audit follow-ups are ON the checklist now, inside their phase and grouped
+  // by channel — not in a table of their own. Two lists meant two places to
+  // assign from and two places to mark something done.
+  const audit = await page.evaluate(() => {
+    const body = document.querySelector('[data-phbody="3"]');
+    if (!body) return { missing: true };
+    return {
+      band: !!body.querySelector('.auditband'),
+      channels: [].map.call(body.querySelectorAll('.areahead .an'),
+        e => e.textContent),
+      marks: body.querySelectorAll('.areahead .mk').length,
+      // Every row in the phase is the same shape, audit or not: an assignee,
+      // a status, and a ping.
+      rows: body.querySelectorAll('.task').length,
+      assigns: body.querySelectorAll('.task select.asg').length,
+      statuses: body.querySelectorAll('.task select[data-task]').length,
+      chanPings: body.querySelectorAll('[data-pingchan]').length,
+      // A follow-up that gated the phase would stall the client emails, which
+      // is exactly what keeping them apart used to protect against.
+      gates: [].filter.call(body.querySelectorAll('.task'),
+        t => /gate/.test(t.textContent)
+          && /tROAS|H1 tags|scam thread|exact match/.test(t.textContent)).length
+    };
+  });
+  if (audit.missing || !audit.band || audit.channels.length < 3) {
+    throw new Error('Audit follow-ups are not grouped by channel inside the '
+      + 'phase: ' + JSON.stringify(audit));
   }
-  if (areas.marks !== areas.heads.length) {
-    throw new Error('A channel heading is missing its mark: ' + JSON.stringify(areas));
+  if (audit.marks !== audit.channels.length) {
+    throw new Error('A channel heading is missing its mark: ' + JSON.stringify(audit));
+  }
+  if (audit.assigns !== audit.rows || audit.statuses !== audit.rows) {
+    throw new Error('Audit rows are not in the same format as the rest: '
+      + JSON.stringify(audit));
+  }
+  if (!audit.chanPings) {
+    throw new Error('No per-channel ping on the audit groups');
+  }
+  if (audit.gates) {
+    throw new Error('An audit follow-up is gating the phase: '
+      + JSON.stringify(audit));
   }
 
   // Every dropdown in the tool draws the same chevron. The native control

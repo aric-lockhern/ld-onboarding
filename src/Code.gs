@@ -166,8 +166,21 @@ const C = {
 const A = {
   ID: 1, COMPANY: 2, TASK: 3, CATEGORY: 4, METHOD: 5, NEEDS: 6, ACCOUNT: 7,
   STATUS: 8, DUE: 9, REQUESTED: 10, COMPLETED: 11, OWNER: 12, NOTES: 13,
-  PHASE: 14, GATE: 15, ASSIGNED: 16, WIDTH: 16
+  PHASE: 14, GATE: 15, ASSIGNED: 16, ORIGIN: 17, WIDTH: 17
 };
+
+/**
+ * Where a checklist row came from.
+ *
+ * Blank is the seeded library. 'Audit' is work the audit said to do, which now
+ * lives on this tab beside everything else rather than in a table of its own —
+ * one list, one place to assign from, one place to mark done.
+ *
+ * It is a column rather than a guess because rebuilding the audit items has to
+ * find its own previous rows and leave the seeded checklist alone, and because
+ * the page groups them by channel under their own heading.
+ */
+const ORIGIN_AUDIT = 'Audit';
 
 /**
  * The task library — one row per thing that can end up on a checklist.
@@ -274,7 +287,7 @@ function setup() {
   mkTab_(ss, TABS.ACCESS, [
     'Client ID', 'Company', 'Task', 'Category', 'Method', 'Client Info Needed',
     'Account ID', 'Status', 'Due', 'Requested', 'Completed', 'Owner', 'Notes',
-    'Phase', 'Gate', 'Assigned'
+    'Phase', 'Gate', 'Assigned', 'Origin'
   ]);
 
   mkTab_(ss, TABS.PLANS, [
@@ -558,7 +571,12 @@ const CONFIG_DEFAULTS = [
   // morning it matters rather than through a deploy.
   ['Actions Model', 'claude-sonnet-5',
     'Model for building action items. Writing speed is what decides whether '
-    + 'this finishes — claude-haiku-4-5 is the faster fallback.']
+    + 'this finishes — claude-haiku-4-5 is the faster fallback.'],
+  // Where audit follow-ups land on the checklist. Three by default: every one
+  // of them is "change something in the account", and you cannot change what
+  // you cannot log into.
+  ['Audit Follow-up Phase', '3',
+    'Which phase audit follow-ups are added to. 3 = after access.']
 ];
 
 function repairConfig_(ss) {

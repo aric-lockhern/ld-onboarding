@@ -562,6 +562,31 @@
   .areahead .an{font-size:13.5px; font-weight:600; letter-spacing:-.01em}
   .areahead .ac{margin-left:auto; font-size:12px; color:var(--faint);
     font-variant-numeric:tabular-nums}
+  /* Audit follow-ups inside a phase: a quiet band, then a channel heading per
+     group. Same rows underneath, so the eye reads one checklist. */
+  .auditband{display:flex; align-items:center; gap:8px; padding:10px 16px 2px;
+    margin-top:6px; border-top:1px solid var(--line);
+    font:600 11px/1 "Inter",sans-serif; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--faint)}
+  .auditband span{color:var(--mid); font-weight:500}
+  .areahead.in-phase{margin:8px 0 0; padding:6px 16px 2px; border-top:0}
+  .areahead.in-phase .ping{margin-left:8px}
+  /* One phase, editable. The number is fixed — five phases is the shape of the
+     process — so it reads as a label rather than a field. */
+  .phrow-edit{display:flex; gap:12px; align-items:flex-start; padding:12px 0;
+    border-top:1px solid var(--line)}
+  .phrow-edit:first-of-type{border-top:0}
+  .phrow-edit .pnum{flex:none; width:26px; height:26px; border-radius:7px;
+    background:var(--blue-wash); color:var(--blue-ink); display:grid;
+    place-items:center; font:600 12px/1 "Inter",sans-serif}
+  .phrow-edit .pbody{flex:1; min-width:0; display:flex; flex-direction:column; gap:6px}
+  .phrow-edit input,.phrow-edit textarea{width:100%; padding:7px 10px;
+    border:1px solid var(--line); border-radius:8px; background:var(--surface);
+    font:13.5px/1.4 "Inter",sans-serif; color:var(--ink); resize:vertical}
+  .phrow-edit input:focus,.phrow-edit textarea:focus{outline:none;
+    border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-wash)}
+  .phrow-edit .meta{font-size:12px; color:var(--faint)}
+  .phrow-edit .btn{flex:none; align-self:flex-start}
   .tstrip{display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center}
   .tm{display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
     background:var(--paper); border:1px solid var(--line); border-radius:999px;
@@ -770,6 +795,7 @@ var SERVER_FNS = [
   'getContactPhoto', 'setContactPhoto', 'clearContactPhoto',
   'draftScopeEmail',
   'getTaskLibrary', 'saveTaskTemplate', 'deleteTaskTemplate',
+  'getPhases', 'savePhase',
   'getEmailTemplates', 'saveEmailTemplate', 'resetEmailTemplate',
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
@@ -777,7 +803,7 @@ var SERVER_FNS = [
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
   'buildClientProfile', 'getClientProfile', 'deleteClient',
   'getClientDocs', 'getTeam',
-  'buildActionItems', 'getActionItems', 'updateActionItem',
+  'buildActionItems', 'getActionItems',
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'slackPingTasks', 'slackJoinChannel',
@@ -1545,6 +1571,8 @@ function renderSettings(){
     + '<div class="startrow" style="margin:0">'
     + '<button class="btn' + (SETTINGS.tab === 'tasks' ? ' pri' : '') + '" '
     + 'id="stTasks">Onboarding tasks</button>'
+    + '<button class="btn' + (SETTINGS.tab === 'phases' ? ' pri' : '') + '" '
+    + 'id="stPhases">Phases</button>'
     + '<button class="btn' + (SETTINGS.tab === 'mail' ? ' pri' : '') + '" '
     + 'id="stMail">Email templates</button>'
     + '<span class="note">Editing a template changes what the NEXT client gets. '
@@ -1555,12 +1583,87 @@ function renderSettings(){
   el('stTasks').addEventListener('click', function(){
     SETTINGS.tab = 'tasks'; SETTINGS.editing = null; renderSettings();
   });
+  el('stPhases').addEventListener('click', function(){
+    SETTINGS.tab = 'phases'; SETTINGS.editing = null; renderSettings();
+  });
   el('stMail').addEventListener('click', function(){
     SETTINGS.tab = 'mail'; SETTINGS.editing = null; renderSettings();
   });
 
   if (SETTINGS.tab === 'tasks') loadTaskLibrary();
+  else if (SETTINGS.tab === 'phases') loadPhases();
   else loadEmailTemplates();
+}
+
+/**
+ * The five phases, and what is in each.
+ *
+ * Renaming a phase is the cheap half. The question behind it is usually "the
+ * kickoff call happens first here, not fourth" — which is answered by moving
+ * the TASK, not the phase, so each phase lists the tasks it currently holds
+ * with a link into the library rather than leaving somebody to guess where
+ * that setting lives.
+ */
+function loadPhases(){
+  api('getPhases', TOKEN).then(function(r){
+    if (!el('stBody')) return;
+    SETTINGS.phases = r;
+    el('stBody').innerHTML = (r && r.ok) ? phasesCard(r)
+      : emptyState('Could not load', (r && r.message) || 'No response.');
+    if (r && r.ok) wirePhases();
+  }).catch(function(e){
+    if (el('stBody')) el('stBody').innerHTML =
+      emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+function phasesCard(r){
+  var lib = (SETTINGS.lib && SETTINGS.lib.tasks) || [];
+  return '<div class="grp">Phases</div><div class="card"><div class="sect">'
+    + '<div class="hint">The order the work happens in. Renaming one changes '
+    + 'every screen that says it. To move a task between phases — the kickoff '
+    + 'call into phase 1, say — edit the task on Onboarding tasks and change '
+    + 'its Phase; that is where a task\'s phase lives, and it changes what the '
+    + 'NEXT client gets.</div>'
+    + (r.phases || []).map(function(p){
+        var mine = lib.filter(function(t){ return t.phase === p.phase; });
+        return '<div class="phrow-edit">'
+          + '<div class="pnum">' + p.phase + '</div>'
+          + '<div class="pbody">'
+          + '<input class="pname" data-phase="' + p.phase + '" value="'
+            + esc(p.name) + '" placeholder="Phase name">'
+          + '<textarea class="pmeans" data-phase="' + p.phase + '" rows="2" '
+            + 'placeholder="What this phase is for">' + esc(p.means) + '</textarea>'
+          + '<div class="meta">' + p.tasks + ' task'
+          + (p.tasks === 1 ? '' : 's') + ' in the library'
+          + (mine.length ? ' — ' + esc(mine.slice(0, 6).map(function(t){
+              return t.task; }).join(', '))
+            + (mine.length > 6 ? ' and ' + (mine.length - 6) + ' more' : '') : '')
+          + (p.phase === r.auditPhase ? ' · audit follow-ups land here' : '')
+          + '</div></div>'
+          + '<button class="btn sm" data-savephase="' + p.phase + '">Save</button>'
+          + '</div>';
+      }).join('')
+    + '</div></div>';
+}
+
+function wirePhases(){
+  [].forEach.call(document.querySelectorAll('[data-savephase]'), function(b){
+    b.addEventListener('click', function(){
+      var n = b.getAttribute('data-savephase');
+      var name = document.querySelector('.pname[data-phase="' + n + '"]').value;
+      var means = document.querySelector('.pmeans[data-phase="' + n + '"]').value;
+      b.disabled = true; b.textContent = 'Saving…';
+      api('savePhase', TOKEN, Number(n), name, means).then(function(r){
+        b.disabled = false; b.textContent = 'Save';
+        toast(r.ok ? 'Saved.' : (r.message || 'Could not save.'), !r.ok);
+        // Every screen that names a phase now says something different.
+        CACHE.overview = null; CACHE.queue = null;
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Save'; fail(e);
+      });
+    });
+  });
 }
 
 function loadTaskLibrary(){
@@ -2731,14 +2834,22 @@ function loadActions(clientId){
   });
 }
 
+/**
+ * The builder, not the list.
+ *
+ * The items themselves live on the checklist now, inside the phase they
+ * belong to and grouped by channel. What is left here is the act of building
+ * them: which documents to read, the button, and what came back that is NOT
+ * work — the out-of-scope proposals, which are sales leads rather than tasks
+ * and would be wrong on a checklist.
+ */
 function actionsCard(r){
-  var items = (r && r.items) || [];
-  if (!items.length){
-    return '<h3>None yet</h3>'
-      + '<div class="hint">Reads the documents you pick, finds everything '
-      + 'specific that was said would be done, and writes it as work with an '
-      + 'owner chosen by skill. Anything promised that sits outside the '
-      + 'contract comes back flagged rather than queued.</div>'
+  return '<h3>Audit follow-ups</h3>'
+      + '<div class="hint">Reads the documents you pick and writes what was '
+      + 'promised onto the checklist, in phase ' + ((r && r.phase) || 3)
+      + ', grouped by channel with an owner chosen by skill. They are never '
+      + 'gates, so they cannot stall the client emails. Anything promised that '
+      + 'sits outside the contract comes back flagged rather than queued.</div>'
       + sourcePicker(r)
       // No pickable documents means the button can only ever answer "tick at
       // least one" against a list with nothing in it. Say why instead, and do
@@ -2749,84 +2860,28 @@ function actionsCard(r){
         : '<div class="hint" style="margin-top:10px"><strong>Nothing to read.</strong> '
           + esc((r && r.sourcesNote) || 'No documents are available on the draft.')
           + '</div>');
-  }
-
-  /**
-   * Grouped by channel, then by priority inside it.
-   *
-   * Thirty four items in one priority-ordered list is a list the paid-search
-   * person reads in full to find their eight, and "the audit follow-ups for
-   * Reddit" is a question it cannot answer at all. The work divides by channel
-   * because that is how the people divide, so the page divides the same way.
-   *
-   * Anything built before the Area column existed has no channel, and lands in
-   * its own group rather than being guessed into one.
-   */
-  var byArea = {}, areaOrder = [];
-  items.forEach(function(i){
-    var a = i.area || 'Not sorted yet';
-    if (!byArea[a]){ byArea[a] = []; areaOrder.push(a); }
-    byArea[a].push(i);
-  });
-  // The unsorted group last: it is a leftover, not a channel.
-  areaOrder.sort(function(a, b){
-    return (a === 'Not sorted yet' ? 1 : 0) - (b === 'Not sorted yet' ? 1 : 0);
-  });
-
-  var h = '';
-  areaOrder.forEach(function(areaName){
-    var list = byArea[areaName];
-    var open = list.filter(function(i){ return i.status !== 'Done'; }).length;
-    h += '<div class="areahead">' + brandMark(areaName)
-      + '<span class="an">' + esc(areaName) + '</span>'
-      + '<span class="ac">' + open + ' open · ' + list.length + '</span></div>';
-
-    var byPri = { 'Now': [], 'Next': [], 'Later': [] };
-    list.forEach(function(i){ (byPri[i.priority] || byPri.Later).push(i); });
-
-    ['Now', 'Next', 'Later'].forEach(function(p){
-    if (!byPri[p].length) return;
-    h += '<div class="pri-h">' + p + ' <span>' + byPri[p].length + '</span></div>';
-    h += byPri[p].map(function(i){
-      return '<div class="act' + (i.status === 'Done' ? ' done' : '') + '">'
-        + '<div class="bd"><div class="nm">' + esc(i.action) + '</div>'
-        + (i.why ? '<div class="mt">' + esc(i.why) + '</div>' : '')
-        + '<div class="meta">' + esc(i.source || '')
-        + (i.effort ? ' · ' + esc(i.effort) : '')
-        + (i.owner ? '' : ' · <b>unassigned</b>') + '</div></div>'
-        // Owner is a dropdown off the Team page rather than the name the model
-        // guessed. Skill matching gets it right often enough to be worth doing
-        // and wrong often enough that reassigning has to take one click.
-        + '<div class="acts">'
-        + '<select data-act-row="' + i.row + '" data-act-field="owner">'
-        + '<option value="">Unassigned</option>'
-        + (r.team || []).map(function(n){
-            return '<option' + (n === i.owner ? ' selected' : '') + '>' + esc(n) + '</option>';
-          }).join('')
-        + (i.owner && (r.team || []).indexOf(i.owner) === -1
-            ? '<option selected>' + esc(i.owner) + '</option>' : '')
-        + '</select>'
-        + '<select data-act-row="' + i.row + '" data-act-field="status">'
-        + (r.statuses || []).map(function(s){
-            return '<option' + (s === i.status ? ' selected' : '') + '>' + esc(s) + '</option>';
-          }).join('') + '</select></div></div>';
-    }).join('');
-    });
-  });
-
-  return '<h3>' + items.length + ' action item' + (items.length === 1 ? '' : 's')
-    + '</h3><div class="hint">What we said we would do, in the context of what '
-    + 'was sold.</div>'
-    + h
-    + sourcePicker(r)
-    + '<div class="startrow">'
-    + (((r && r.sources) || []).length
-      ? '<button class="btn" id="mkActions">Rebuild</button>'
-      : '<span class="hint">'
-        + esc((r && r.sourcesNote) || 'No documents available to rebuild from.')
-        + '</span>')
-    + '<span class="note">Anything already started is kept.</span></div>';
 }
+
+function loadActions(clientId){
+  api('getActionItems', clientId).then(function(r){
+    if (!el('actWrap')) return;
+    el('actWrap').innerHTML = actionsCard(r);
+    wireActions(clientId, r);
+  }).catch(function(){
+    if (el('actWrap')) el('actWrap').innerHTML =
+      '<h3>Action items</h3><div class="hint">Could not read them.</div>';
+  });
+}
+
+/**
+ * The builder, not the list.
+ *
+ * The items themselves live on the checklist now, inside the phase they
+ * belong to and grouped by channel. What is left here is the act of building
+ * them: which documents to read, the button, and what came back that is NOT
+ * work — the out-of-scope proposals, which are sales leads rather than tasks
+ * and would be wrong on a checklist.
+ */
 
 /**
  * Which documents to read.
@@ -2972,17 +3027,6 @@ function wireActions(clientId, r){
         function(x){ return x.checked; })
         .reduce(function(t, x){ return t + Number(x.getAttribute('data-chars')); }, 0);
       if (el('srcSum')) el('srcSum').textContent = Math.round(n / 1000) + 'k characters';
-    });
-  });
-
-  [].forEach.call(document.querySelectorAll('[data-act-row]'), function(sel){
-    sel.addEventListener('change', function(){
-      api('updateActionItem', TOKEN, Number(sel.getAttribute('data-act-row')),
-          sel.getAttribute('data-act-field'), sel.value)
-        .then(function(res){
-          toast(res.ok ? 'Saved.' : (res.message || 'Could not save.'), !res.ok);
-          if (res.ok) loadActions(clientId);
-        }).catch(fail);
     });
   });
 }
@@ -3878,9 +3922,10 @@ function openClient(clientId){
               + openHere.length + ' outstanding</button>' : '')
         + '</div><div class="card phbody" data-phbody="' + esc(k) + '"'
         + (shut ? ' style="display:none"' : '') + '>';
-      h += byPhase[k].map(function(t){
+      function taskRow(t, markOn){
         var open = t.status !== 'Complete' && t.status !== 'N/A';
-        return '<div class="task"><div class="n">' + brandMark(t.task)
+        return '<div class="task"><div class="n">'
+          + (markOn ? brandMark(t.task) : '')
           + esc(t.task)
           + (t.gate ? ' <span class="pill">gate</span>' : '') + '</div>'
           + assignCell(t, d.assignees || [])
@@ -3893,7 +3938,42 @@ function openClient(clientId){
                 + '" title="Ping this in ' + esc(c.slack) + '">◎</button>'
               : '<span class="ping" style="visibility:hidden"></span>')
           + '</div>';
-      }).join('');
+      }
+
+      // Audit follow-ups sit inside the phase with everything else — same row,
+      // same assignee, same status, same ping — but grouped under their channel
+      // rather than mixed into the access list. A negative-keyword sweep and a
+      // Google Ads access request are both work, and they are not the same
+      // KIND of work; the heading is what keeps that legible.
+      var plain = byPhase[k].filter(function(t){ return t.origin !== 'Audit'; });
+      var audit = byPhase[k].filter(function(t){ return t.origin === 'Audit'; });
+
+      h += plain.map(function(t){ return taskRow(t, true); }).join('');
+
+      if (audit.length){
+        var byChan = {}, chans = [];
+        audit.forEach(function(t){
+          var ch = t.category || 'Everything else';
+          if (!byChan[ch]){ byChan[ch] = []; chans.push(ch); }
+          byChan[ch].push(t);
+        });
+        h += '<div class="auditband">Audit follow-ups <span>' + audit.length
+          + '</span></div>';
+        chans.forEach(function(ch){
+          var openHere2 = byChan[ch].filter(function(t){
+            return t.status !== 'Complete' && t.status !== 'N/A'; }).length;
+          h += '<div class="areahead in-phase">' + brandMark(ch)
+            + '<span class="an">' + esc(ch) + '</span>'
+            + '<span class="ac">' + openHere2 + ' open · ' + byChan[ch].length
+            + '</span>'
+            + (canPing && openHere2
+                ? '<button class="ping" data-pingchan="' + esc(ch)
+                  + '" data-chanphase="' + esc(k)
+                  + '" title="Ping everything outstanding here">◎</button>' : '')
+            + '</div>';
+          h += byChan[ch].map(function(t){ return taskRow(t, false); }).join('');
+        });
+      }
       h += '</div>';
     });
 
@@ -4096,6 +4176,23 @@ function openClient(clientId){
         var phase = b.getAttribute('data-pingphase');
         var names = (d.tasks || []).filter(function(t){
           return String(t.phase) === phase
+            && t.status !== 'Complete' && t.status !== 'N/A';
+        }).map(function(t){ return t.task; });
+        pingTasks(b, names);
+      });
+    });
+
+    // One channel's outstanding work, pinged together. The people divide by
+    // channel, so "everything still open on Reddit" is the message somebody
+    // actually wants to send.
+    [].forEach.call(document.querySelectorAll('[data-pingchan]'), function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        var chan = b.getAttribute('data-pingchan');
+        var phase = b.getAttribute('data-chanphase');
+        var names = (d.tasks || []).filter(function(t){
+          return t.origin === 'Audit' && String(t.phase) === phase
+            && (t.category || 'Everything else') === chan
             && t.status !== 'Complete' && t.status !== 'N/A';
         }).map(function(t){ return t.task; });
         pingTasks(b, names);
