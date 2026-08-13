@@ -209,12 +209,12 @@ const FAKE = {
       { at:180,  step:'Documents on file', detail:'Audit presentation (105k), Scope of work (17k)' },
       { at:340,  step:'Reading', detail:'Audit presentation, Scope of work — 122k characters' },
       { at:360,  step:'Team available', detail:'2 people' },
-      { at:380,  step:'Request', detail:'claude-sonnet-5 · max 4000 tokens · thinking off · 124k characters sent' },
-      { at:9100, step:'Replied', detail:'HTTP 200 · 3k characters' },
-      { at:9120, step:'Tokens', detail:'31204 in · 812 out of 4000 allowed · stopped because: end_turn' },
-      { at:9140, step:'Parsed', detail:'the reply is valid JSON' },
-      { at:9150, step:'Items returned', detail:'6 · 1 out of scope' },
-      { at:9600, step:'Written', detail:'6 written · 2 new · 1 already started, left alone' }
+      { at:8100, step:'Request', detail:'claude-sonnet-5 · max 4000 tokens · thinking off · 112k characters sent' },
+      { at:20100, step:'Replied', detail:'HTTP 200 · 5k characters' },
+      { at:20110, step:'Tokens', detail:'38584 in · 1599 out of 4000 allowed · stopped because: end_turn' },
+      { at:20120, step:'Parsed', detail:'the reply is valid JSON' },
+      { at:28800, step:'Items returned', detail:'8 · 4 out of scope' },
+      { at:31100, step:'Written', detail:'8 written · 8 new · 0 already started, left alone' }
     ],
     read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
     outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
@@ -1171,6 +1171,14 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   });
   if (runLog.steps < 8 || !runLog.tokens || !runLog.toggle) {
     throw new Error('The run log did not render: ' + JSON.stringify(runLog));
+  }
+  // Every line counts from the same moment. Mixed clocks made the middle of
+  // the list read as if time went backwards — 8.1s, then 0.0s, then 20.1s.
+  const times = await page.$$eval('#actLog .line .sub',
+    els => els.map(e => parseFloat(e.textContent)));
+  const backwards = times.filter((t, i) => i && t < times[i - 1]);
+  if (backwards.length) {
+    throw new Error('The run log goes backwards in time: ' + JSON.stringify(times));
   }
 
   const shotReread = `${OUT}/${name}-detail-reread.png`;

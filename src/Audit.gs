@@ -137,6 +137,9 @@ function buildActionItems(clientId, keys) {
    */
   const log = [];
   const t0 = new Date().getTime();
+  // Shared with callAnthropic_ so every line in the log counts from the same
+  // moment. See the note there.
+  const clock = t0;
   const step = (name, detail) => {
     log.push({ at: new Date().getTime() - t0, step: name, detail: detail || '' });
     try { console.log('[actions] ' + name + ' — ' + (detail || '')); } catch (e) {}
@@ -215,7 +218,7 @@ function buildActionItems(clientId, keys) {
                            // The whole budget goes to the answer. See the note
                            // in callAnthropic_ — this is what was eating it.
                            noThinking: true,
-                           trace: log });
+                           trace: log, traceStart: clock });
   } catch (e) {
     // Naming the real knob. Unticking documents was the old advice and it was
     // wrong: reading is cheap and the length of the answer is what runs out of
@@ -261,7 +264,7 @@ function buildActionItems(clientId, keys) {
       const terse = callAnthropic_(
         buildActionsPrompt_(client, docs, team, true),
         { maxTokens: ACTIONS_MAX_TOKENS, model: actionsModel_(),
-          noThinking: true, trace: log });
+          noThinking: true, trace: log, traceStart: clock });
       const retryItems = (terse && terse.actions) || [];
       if (retryItems.length > items.length) {
         step('Retry was better', retryItems.length + ' items against '
