@@ -497,8 +497,14 @@ function getClientDetail(token, clientId) {
   const counted = tasks.filter(t => t.status !== 'N/A');
   const done = counted.filter(t => t.status === 'Complete').length;
 
+  // The one place the client record crosses into a browser. Redacting here
+  // rather than in getClientRecord_ keeps the number available to the mailer,
+  // the plan generator and the scope drafter, which all need it server-side.
+  const viewer = whoAmI();
+
   return {
-    client: client,
+    client: redactFinance_(client, viewer.finance),
+    viewer: viewer,
     tasks: tasks,
     statuses: STATUSES,
     terms: TERMS,
@@ -581,6 +587,14 @@ function updateClientField(token, clientId, field, value) {
   };
   const col = cols[field];
   if (!col) return { ok: false, message: 'Unknown field.' };
+
+  // Refused, not just hidden. A field somebody cannot read but can overwrite
+  // is worse than one they can read — the number goes wrong and nobody who
+  // can see it was involved.
+  if (!financeWritable_(field)) {
+    return { ok: false, message: 'Only a partner can change what a client '
+      + 'pays. Ask one of them to tick you on the Team page.' };
+  }
 
   return setClientField_(clientId, col, value)
     ? { ok: true } : { ok: false, message: 'Client not found.' };

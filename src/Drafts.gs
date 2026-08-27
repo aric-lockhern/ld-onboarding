@@ -121,8 +121,13 @@ function openDraft(draftId) {
     folderUrl: r[D.FOLDER - 1] ? 'https://drive.google.com/drive/folders/' + r[D.FOLDER - 1] : '',
     updated: fmtWhen_(r[D.UPDATED - 1]),
     sources: sources,
-    extraction: safeParse_(r[D.EXTRACTION - 1], null),
-    form: safeParse_(r[D.FORM - 1], null),
+    // The stored extraction holds the fee table read off the contract, and a
+    // draft is reopened days later by whoever picks it up — so it is redacted
+    // on the way out here as well as when it is first produced.
+    extraction: redactExtractionFinance_(
+      safeParse_(r[D.EXTRACTION - 1], null)),
+    form: redactFormFinance_(safeParse_(r[D.FORM - 1], null)),
+    financeHidden: !viewerSeesFinance_(),
     missing: missing
   };
 }
@@ -145,6 +150,19 @@ function saveDraft(draftId, patch) {
   if (patch.name != null) sh.getRange(row, D.NAME).setValue(String(patch.name));
   if (patch.status != null) sh.getRange(row, D.STATUS).setValue(String(patch.status));
   if (patch.clientId != null) sh.getRange(row, D.CLIENT).setValue(String(patch.clientId));
+
+  // A form saved by somebody who cannot see the fee comes back without it,
+  // and writing that straight over the cell would delete a number they were
+  // never shown — data loss caused entirely by the gate. So the stored
+  // finance keys are carried across rather than overwritten.
+  if (patch.form && !viewerSeesFinance_()) {
+    const before = safeParse_(found.values[D.FORM - 1], null);
+    if (before) {
+      FINANCE_FIELDS.forEach(k => {
+        if (before[k] !== undefined) patch.form[k] = before[k];
+      });
+    }
+  }
 
   const oversized = [];
   [['form', D.FORM], ['extraction', D.EXTRACTION], ['sources', D.SOURCES]].forEach(pair => {

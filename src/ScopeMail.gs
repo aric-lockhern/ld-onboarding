@@ -31,6 +31,16 @@ const SCOPE_SOURCE_KEYS = ['sow', 'deck'];
 function draftScopeEmail(token, clientId) {
   checkToken_(token);
 
+  // A scope confirmation is a restatement of the contract, fees and all —
+  // there is no version of it that does not print the number. Hiding MRR on
+  // the client page and then offering a one-click draft that spells it out
+  // would be a gate with a door beside it.
+  if (!viewerSeesFinance_()) {
+    return { ok: false, message: 'A scope confirmation restates the fees, so '
+      + 'it is limited to whoever can see them. Ask a partner to draft it, or '
+      + 'to tick you on the Team page.' };
+  }
+
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, message: 'Client not found.' };
 

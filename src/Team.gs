@@ -88,7 +88,11 @@ function getTeamAdmin(token) {
     skillOptions: skillOptions_(),
     roles: TEAM_ROLES,
     slackReady: hasSlackToken(),
-    unassignedClients: unassignedClients_(ss, byName)
+    unassignedClients: unassignedClients_(ss, byName),
+    // Who is asking, so the page can render the finance tick as a control or
+    // as a read-only mark. Showing an editable checkbox that the server then
+    // refuses is worse than not offering it.
+    viewer: whoAmI()
   };
 }
 
@@ -146,15 +150,17 @@ function skillOptions_() {
 /** The raw tab, including people marked inactive — the admin has to see them. */
 function readTeamRows_(sh) {
   if (sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, TEAM_HEADERS.length).getValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, TM.WIDTH).getValues()
     .map((r, i) => ({
       row: i + 2,
-      name: String(r[0] || '').trim(),
-      email: String(r[1] || '').trim(),
-      slackId: String(r[2] || '').trim(),
-      skills: String(r[3] || '').split(',').map(x => x.trim()).filter(Boolean),
-      role: String(r[4] || '').trim(),
-      active: r[5] !== false
+      name: String(r[TM.NAME - 1] || '').trim(),
+      email: String(r[TM.EMAIL - 1] || '').trim(),
+      slackId: String(r[TM.SLACKID - 1] || '').trim(),
+      skills: String(r[TM.SKILLS - 1] || '').split(',')
+        .map(x => x.trim()).filter(Boolean),
+      role: String(r[TM.ROLE - 1] || '').trim(),
+      active: r[TM.ACTIVE - 1] !== false,
+      finance: r[TM.FINANCE - 1] === true
     }))
     .filter(t => t.name);
 }
@@ -180,19 +186,29 @@ function saveTeamMember(token, p) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(TABS.TEAM) || mkTab_(ss, TABS.TEAM, TEAM_HEADERS);
 
+  // Only a finance viewer can move the finance tick, and only ever on somebody
+  // else's row as much as their own. Without this the gate is a suggestion:
+  // the Team page is open to everyone, so anyone could tick themselves in.
+  const row = Number(p.row) || 0;
+  const before = row >= 2
+    ? readTeamRows_(sh).filter(t => t.row === row)[0] : null;
+  const mayGrant = viewerSeesFinance_();
+  const finance = mayGrant ? !!p.finance : !!(before && before.finance);
+
   const values = [
     name,
     String(p.email || '').trim(),
     String(p.slackId || '').trim(),
     (p.skills || []).map(s => String(s).trim()).filter(Boolean).join(', '),
     String(p.role || '').trim(),
-    p.active === false ? false : true
+    p.active === false ? false : true,
+    finance
   ];
 
-  const row = Number(p.row) || 0;
   if (row >= 2 && row <= sh.getLastRow()) {
-    sh.getRange(row, 1, 1, TEAM_HEADERS.length).setValues([values]);
-    return { ok: true, row: row, created: false };
+    sh.getRange(row, 1, 1, TM.WIDTH).setValues([values]);
+    return { ok: true, row: row, created: false,
+             financeIgnored: !mayGrant && !!p.finance !== finance };
   }
 
   // A second person with the same name breaks owner lookup silently — the
@@ -256,11 +272,15 @@ function importTeamMembers(token, people) {
     if (slackId) taken['id:' + slackId] = true;
     if (email) taken['em:' + email.toLowerCase()] = true;
 
-    rows.push([name, email, slackId, '', String((p && p.role) || '').trim(), true]);
+    // Never with finance access. Somebody imported off the Slack roster is
+    // a colleague, not a partner, and the whole point of the column is that
+    // it is granted deliberately rather than inherited from a bulk import.
+    rows.push([name, email, slackId, '',
+               String((p && p.role) || '').trim(), true, false]);
   });
 
   if (rows.length) {
-    sh.getRange(sh.getLastRow() + 1, 1, rows.length, TEAM_HEADERS.length)
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, TM.WIDTH)
       .setValues(rows);
   }
 
@@ -289,7 +309,7 @@ function deleteTeamMember(token, row) {
   const owns = clientsOwnedBy_(ss, name);
 
   if (owns.length) {
-    sh.getRange(row, TEAM_HEADERS.length).setValue(false);
+    sh.getRange(row, TM.ACTIVE).setValue(false);
     return { ok: true, deactivated: true, owns: owns.length,
              message: name + ' owns ' + owns.length + ' client'
                + (owns.length === 1 ? '' : 's')
