@@ -908,11 +908,47 @@ function emptyState(title, body){
 
 // ---------------------------------------------------------------- gate
 
+/*
+ * ?client=CLI-123 — where the Slack nudges point.
+ *
+ * The page runs in a sandboxed iframe and cannot read its own address bar, so
+ * the parameter comes from google.script.url.getLocation(), which is the only
+ * supported way to see it. It is asynchronous, hence a promise rather than a
+ * value: the PIN takes seconds to type and this resolves in milliseconds, but
+ * "usually resolves first" is not a thing to build a route on.
+ *
+ * It resolves to '' on anything unexpected, including a page opened from the
+ * in-sheet menu where google.script.url does not exist at all — the landing
+ * view then falls back to the overview, which is where a bare URL should land.
+ */
+var DEEP_LINK = new Promise(function(resolve){
+  try {
+    if (!window.google || !google.script || !google.script.url) { resolve(''); return; }
+    google.script.url.getLocation(function(loc){
+      resolve((loc && loc.parameter && loc.parameter.client) || '');
+    });
+  } catch (e) { resolve(''); }
+});
+
+/**
+ * The one way in, so the landing view cannot differ between the two doors.
+ *
+ * Both the PIN path and the no-PIN path come through here, which is what makes
+ * a Slack link work on a sheet with no PIN set as well as on one with — a
+ * routing rule written into only one of them is a link that works for some
+ * people and silently lands everyone else on the overview.
+ */
 function enterApp(token){
   TOKEN = token;
   el('gate').style.display = 'none';
   el('app').classList.add('on');
-  go('overview');
+  return DEEP_LINK.then(function(clientId){
+    // Consumed once. Pressing Clients after arriving on a deep link should
+    // behave normally rather than bouncing back to the same record.
+    DEEP_LINK = Promise.resolve('');
+    if (clientId) openClient(clientId);
+    else go('overview');
+  });
 }
 
 el('pin').addEventListener('keydown', function(e){
@@ -921,7 +957,7 @@ el('pin').addEventListener('keydown', function(e){
   el('gateMsg').textContent = 'Checking…';
   api('verifyPin', v).then(function(r){
     if (!r.ok){ el('gateMsg').textContent = r.message; el('pin').select(); return; }
-    enterApp(r.token);
+    return enterApp(r.token);
   }).catch(function(e){ el('gateMsg').textContent = (e && e.message) || 'Failed.'; });
 });
 

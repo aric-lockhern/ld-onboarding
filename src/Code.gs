@@ -721,7 +721,14 @@ function seedConfig_(ss) {
       'Merged into the Meta instructions as the partner ID'],
     ['Merchant Center MCA ID', '', 'Merged into the Merchant Center instructions'],
     ['Shopify Partner Name', '', 'Merged into the Shopify instructions'],
-    ['Default Onboarding Owner', '', '']
+    ['Default Onboarding Owner', '', ''],
+    // Read by the Slack nudges, which link straight to the client's record.
+    // Blank falls back to the deployment's own /exec URL, so it works without
+    // being set — this row exists so it can be the short Netlify address
+    // instead. Per rule 3 it only reaches a FRESH sheet; on an existing one,
+    // add the row by hand if you want the short URL.
+    ['App URL', '', 'Short URL for the web app, e.g. https://onboarding.'
+      + 'lockherndigital.com/app. Blank uses the /exec URL.']
   ];
   sh.getRange(1, 1, rows.length, 3).setValues(rows);
   sh.getRange(1, 1, 1, 3).setFontWeight('bold').setFontFamily('Roboto Mono')

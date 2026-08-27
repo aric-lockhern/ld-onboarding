@@ -587,7 +587,98 @@ function byOwner_(tasks) {
 }
 
 /**
- * The message body: owner, then their items.
+ * `&`, `<` and `>` have meaning in Slack message text.
+ *
+ * A company called "Smith & Sons" is harmless, but an unescaped `<` starts a
+ * link and swallows everything to the next `>` — so a task or a client name
+ * with an angle bracket in it silently eats the rest of the line.
+ */
+function slackEscape_(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * The web app, opened straight onto this client.
+ *
+ * The `App URL` config row is there so this can be the short Netlify address
+ * rather than the 70-character /exec one; blank falls back to the deployment's
+ * own URL, which is what an existing sheet has, because a seed row cannot
+ * reach a Config tab that already has rows (rule 3). Blank BOTH ways means no
+ * link, and the message simply does not carry one — better than a dead link.
+ */
+function clientUrl_(client) {
+  const base = cfg('App URL') || getWebAppUrl();
+  if (!base) return '';
+  const id = String(client.clientId || '');
+  if (!id) return base;
+  return base + (base.indexOf('?') === -1 ? '?' : '&')
+    + 'client=' + encodeURIComponent(id);
+}
+
+/** The client's name, bold. Never a link — see clientCta_. */
+function clientName_(client) {
+  return '*' + slackEscape_(client.company) + '*';
+}
+
+/**
+ * The one link in the message, as the thing you would click rather than as the
+ * client's name repeated.
+ *
+ * There is exactly one because the first draft had two — the name in the
+ * greeting and the name again at the foot, both pointing at the same record.
+ * In a four-line nudge that reads as clutter, and neither one looks like the
+ * action. A single line that says what clicking it does is the call to action.
+ *
+ * Returns '' when there is nowhere to point, and the message then carries no
+ * footer at all — better than "update it here" beside nothing.
+ */
+function clientCta_(client, count) {
+  const url = clientUrl_(client);
+  if (!url) return '';
+  // A pipe or an angle bracket inside the label would end the link early.
+  const label = (count === 1 ? 'Update it' : 'Update them')
+    + ' on the onboarding board →';
+  return '<' + url + '|' + label + '>';
+}
+
+/**
+ * One task, as a sentence rather than a parenthesis.
+ *
+ * Overdue beats assigned-days when both are true. They are different facts —
+ * one is about the deadline, the other about whether anybody has picked the
+ * work up — but printing both makes a bullet that wraps on a phone, and the
+ * deadline is the one that decides what happens today.
+ */
+function taskLine_(t) {
+  const status = String(t.status || '').toLowerCase();
+  let tail = '';
+  if (t.overdueBy > 0) {
+    tail = ' · ' + t.overdueBy + (t.overdueBy === 1 ? ' day overdue' : ' days overdue');
+  } else if (t.assignedDays > 0) {
+    tail = ' · assigned ' + t.assignedDays
+      + (t.assignedDays === 1 ? ' day ago' : ' days ago');
+  }
+  return '• *' + slackEscape_(t.task) + '* — ' + status + tail;
+}
+
+/**
+ * The message.
+ *
+ * ---------------------------------------------------------------------------
+ * IT IS A NOTE FROM A COLLEAGUE, NOT A REPORT FILED BY A ROBOT.
+ *
+ * The old format opened with a bold title and a count — "Left Main REI —
+ * outstanding onboarding items", then "@Cory — 1:". That is a machine
+ * announcing a record, and it reads as one: the person's name arrives second,
+ * the count duplicates the bullets underneath it, and there is nothing to
+ * click, so acting on it means going and finding the client yourself.
+ *
+ * So the name and the ask come first, the count is dropped because the bullets
+ * are the count, and the last line is a link that opens the client's record
+ * directly. A nudge you cannot act on from where you read it is a nudge that
+ * gets read and left.
+ * ---------------------------------------------------------------------------
  *
  * @-mentions where a Slack ID is stored and the plain name where it is not, so
  * a directory that is only half matched still produces a readable nudge rather
@@ -598,18 +689,41 @@ function taskLines_(client, tasks) {
   getTeam().forEach(t => { if (t.slackId) team[t.name] = t.slackId; });
 
   const groups = byOwner_(tasks);
-  const lines = ['*' + client.company + ' — outstanding onboarding items*'];
-
-  Object.keys(groups).forEach(who => {
-    const tag = team[who] ? '<@' + team[who] + '>' : who;
-    lines.push('', tag + ' — ' + groups[who].length + ':');
-    groups[who].forEach(t => {
-      lines.push('• ' + t.task + ' _(' + t.status
-        + (t.overdueBy > 0 ? ', ' + t.overdueBy + ' days overdue' : '')
-        + (t.assignedDays > 0 ? ', assigned ' + t.assignedDays + 'd ago' : '')
-        + ')_');
-    });
+  const owners = Object.keys(groups).sort((a, b) => {
+    // Unassigned last. It is a different ask — nobody has picked these up —
+    // and it reads badly standing above somebody's name.
+    if (a === 'Unassigned') return 1;
+    if (b === 'Unassigned') return -1;
+    return a.localeCompare(b);
   });
+
+  const name = clientName_(client);
+  const many = owners.length > 1;
+  const lines = [];
+
+  // With one owner the client belongs in their sentence. With several it needs
+  // its own line, or every greeting has to repeat it.
+  if (many) lines.push('Checking in on onboarding for ' + name + ' 👋');
+
+  owners.forEach((who, i) => {
+    if (i || many) lines.push('');
+
+    if (who === 'Unassigned') {
+      lines.push(many
+        ? 'Still unassigned — these need an owner:'
+        : 'These are still open on ' + name + ' and nobody is assigned yet:');
+    } else {
+      const tag = team[who] ? '<@' + team[who] + '>' : '*' + slackEscape_(who) + '*';
+      lines.push(many
+        ? 'Hi ' + tag + ' — these are with you:'
+        : 'Hi ' + tag + ' — checking in on the following for ' + name + ' 👋');
+    }
+
+    groups[who].forEach(t => lines.push(taskLine_(t)));
+  });
+
+  const cta = clientCta_(client, tasks.length);
+  if (cta) lines.push('', cta);
   return lines;
 }
 
@@ -632,32 +746,16 @@ function slackPingOutstanding(token, clientId, channelOverride) {
              message: 'Nothing outstanding — no message sent.' };
   }
 
-  const byOwner = {};
-  open.forEach(t => {
-    const who = t.owner || 'Unassigned';
-    (byOwner[who] = byOwner[who] || []).push(t);
-  });
-
-  const team = {};
-  getTeam().forEach(t => { if (t.slackId) team[t.name] = t.slackId; });
-
-  const lines = ['*' + client.company + ' — outstanding onboarding items*'];
-  Object.keys(byOwner).forEach(who => {
-    const tag = team[who] ? '<@' + team[who] + '>' : who;
-    lines.push('', tag + ' — ' + byOwner[who].length + ':');
-    byOwner[who].forEach(t => {
-      lines.push('• ' + t.task + ' _(' + t.status
-        + (t.overdueBy > 0 ? ', ' + t.overdueBy + ' days overdue' : '')
-        + ')_');
-    });
-  });
-
   const member = ensureBotInChannel_(channel);
   if (!member.ok) return member;
 
+  // Through taskLines_, not a second copy of it. This function used to build
+  // the same message with its own inline loop, and the two had already drifted
+  // — one printed "assigned Nd ago" and the other did not, so the same client
+  // read differently depending on which button was pressed.
   const r = slackCall_('chat.postMessage', {
     channel: member.channelId,
-    text: lines.join('\n')
+    text: taskLines_(client, open).join('\n')
   });
   if (!r.ok) return { ok: false, message: slackError_(r, 'post the message') };
 
