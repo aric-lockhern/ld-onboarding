@@ -220,6 +220,27 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### Hiding what clients pay
+
+MRR and the fee lines are hidden from everybody except the account that deployed the tool and anyone ticked **Sees finances** on the Team page.
+
+How to set it up, once:
+
+1. Re-run **Onboarding → Set up / repair sheet**. That adds the `Sees Finances` column to the Team tab.
+2. Open **Team** in the web app. Every existing person is unticked, so at that moment nobody but you sees the numbers.
+3. Edit each partner and tick **Sees finances**. The tick only appears for someone who already has it, so the first one has to be done by you.
+
+What it covers: MRR and the fee lines on the client page, the fee table on the intake review screen and on any draft reopened later, and the scope confirmation — which restates the contract and cannot be drafted without printing the fee. Writes are refused as well as hidden, and nothing withheld is sent to the browser in the first place.
+
+What it does not cover, and cannot:
+
+- **The spreadsheet.** Anyone the Sheet is shared with reads MRR in column J, and can read around all of this from the script editor. The tool runs as the deploying account, so **nobody needs the Sheet to use it** — stopping sharing it is the part that actually closes this. The gate is what makes that practical rather than punitive.
+- **Drive.** The signed scope of work states the fee on page four. Whoever can open the deal folder can read it there.
+
+It relies on `executeAs: USER_DEPLOYING` plus `access: DOMAIN` — that pairing is what lets Google name the visitor without them needing the Sheet. Switching `access` to `ANYONE` breaks it: Google stops reporting who is looking, and everybody is then treated as unable to see the numbers.
+
+A person who cannot see the fee can still do the intake. Their form comes back without it and the number is read off the draft when the client is created, so nothing is lost — it just never passes through their browser.
+
 ## Deploying code changes
 
 Code lives in this repo. `clasp push` uploads it to the script bound to the sheet — there is never a reason to paste files into the browser editor.

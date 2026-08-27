@@ -26,6 +26,11 @@
     --paper:#F7F9FC; --surface:#FFFFFF;
     --good:#0F7B2E; --warning:#B26A00; --critical:#C22B2B; --serious:#C22B2B;
     --tick-off:#DDE4EF;
+    /* The two brand colours, taken off the logo. --slate is the grey half of
+       the mark and the second half of the wordmark; it is the same value
+       --muted already carried, named separately so a text tweak to --muted
+       cannot quietly restyle the logo. */
+    --slate:#6B7A99;
     --sidebar-w:216px;
     --shadow:0 1px 2px rgba(14,41,112,.05), 0 1px 3px rgba(14,41,112,.04);
   }
@@ -43,9 +48,9 @@
 
   /* ---------------------------------------------------------------- gate */
   #gate{max-width:340px; margin:14vh auto; padding:0 20px}
-  #gate .mark{width:42px; height:42px; border-radius:10px; background:var(--blue);
-    display:grid; place-items:center; color:#fff; font-size:16px; font-weight:700;
-    margin-bottom:20px; letter-spacing:-.02em}
+  #gate .mark{width:46px; height:46px; display:grid; place-items:center;
+    margin-bottom:20px}
+  #gate .mark svg{width:100%; height:100%; display:block}
   #gate h1{font-size:24px; margin:0 0 6px}
   #gate p{color:var(--muted); font-size:14.5px; margin:0 0 22px}
   #pin{width:100%; padding:13px 14px; border:1px solid var(--line); border-radius:9px;
@@ -64,10 +69,16 @@
   nav{background:var(--surface); border-right:1px solid var(--line); padding:18px 12px;
     position:sticky; top:0; height:100vh; display:flex; flex-direction:column}
   nav .brand{display:flex; align-items:center; gap:10px; padding:2px 8px 22px}
-  nav .brand .mark{width:30px; height:30px; border-radius:8px; background:var(--blue);
-    display:grid; place-items:center; color:#fff; font-size:12.5px; font-weight:700;
-    letter-spacing:-.02em}
-  nav .brand b{font-size:15px; font-weight:600; color:var(--blue-ink); letter-spacing:-.012em}
+  nav .brand .mark{width:30px; height:30px; display:grid; place-items:center;
+    flex:none}
+  nav .brand .mark svg{width:100%; height:100%; display:block}
+  nav .brand .wm{display:flex; flex-direction:column; gap:1px; min-width:0}
+  nav .brand .wm b{font:700 13px/1 "Inter",sans-serif; color:var(--blue);
+    letter-spacing:.01em}
+  nav .brand .wm i{font:600 9px/1 "Inter",sans-serif; color:var(--slate);
+    letter-spacing:.34em; font-style:normal}
+  nav .brand .wm .app{font:500 12.5px/1 "Inter",sans-serif; color:var(--muted);
+    letter-spacing:0; margin-top:4px}
   nav button{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
     background:none; border:0; color:var(--muted); padding:9px 10px; cursor:pointer;
     font:500 14.5px/1.2 "Inter",sans-serif; border-radius:8px; margin-bottom:2px}
@@ -85,7 +96,13 @@
     border-bottom:1px solid var(--line)}
   header h1{font-size:21px; margin-right:auto}
   header .sub{color:var(--muted); font-size:13.5px}
-  .wrap{padding:22px 28px 48px; max-width:1120px; width:100%}
+  /* The window, not a column. 1120px was a reading measure borrowed from the
+     prose views, and on a 1900px screen it left a third of the page empty with
+     the team stacked one name per line inside a 300px cell. Facts, chips and
+     checklists are scanned across, not read down, so they get the width. The
+     cap is generous rather than absent: past about 1600px the label/value
+     pairs drift so far apart that the eye loses the pairing. */
+  .wrap{padding:22px 32px 48px; max-width:1600px; width:100%}
 
   /* --------------------------------------------------------------- bits */
   button.btn{border:1px solid var(--line); background:var(--surface); color:var(--ink);
@@ -419,10 +436,15 @@
   /* Facts first: name, contact, website, what they pay. Two columns of
      label/value, no inputs — reading these is a hundred times more common than
      editing them, and the editable form is still down in Details. */
-  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-    padding:4px 2px}
-  .fact{display:flex; gap:10px; align-items:center; padding:2px 12px; min-width:0}
-  .fact.wide{grid-column:1/-1; align-items:flex-start}
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr));
+    align-items:start; padding:4px 2px}
+  /* flex-start, not center. The grid stretches every cell to the height of the
+     tallest in its row, and centring inside that stretched box is what left
+     "Services" sitting alone at the top with its chips floating a hundred
+     pixels below, beside a team list that happened to be tall. */
+  .fact{display:flex; gap:10px; align-items:flex-start; padding:2px 12px;
+    min-width:0}
+  .fact.wide{grid-column:1/-1}
   .fact .k{flex:none; width:104px; font-size:12px; color:var(--faint);
     padding-top:5px; align-self:flex-start}
   .fact .v{flex:1; min-width:0; font-size:13.5px; overflow-wrap:anywhere;
@@ -436,6 +458,11 @@
   .fin{flex:1; min-width:0; font:13.5px/1.4 "Inter",sans-serif; color:var(--ink);
     background:none; border:1px solid transparent; border-radius:6px;
     padding:3px 6px; margin-left:-6px; width:100%}
+  /* An <input> shows one line and hides the rest, which is how Approvals read
+     as "Client (Joey Bryja) approves crea…" — the sentence that matters most
+     was the one truncated. Anything that can run long is a textarea sized to
+     its content, so the card is never hiding a value it is displaying. */
+  textarea.fin.grow{resize:none; overflow:hidden; line-height:1.5}
   .fin::placeholder{color:var(--mid)}
   .fin:hover{border-color:var(--line); background:var(--paper)}
   .fin:focus{outline:none; border-color:var(--blue); background:var(--surface);
@@ -444,7 +471,24 @@
      sits in a row of plain text rather than in a form. */
   select.fin{background-position:right 4px center; padding-right:22px}
   textarea.fin{resize:vertical; min-height:34px}
-  .fact .aft{flex:none; color:var(--faint)}
+  /* Scrolling a Scope box is reading a paragraph through a letterbox. */
+  .fact.wide textarea.fin{min-height:0}
+  .fact .aft{flex:none; color:var(--faint); padding-top:3px}
+
+  /* A value that exists and is being withheld. Not styled as an error — it is
+     a normal state of the page for most of the team, and a red box on the
+     client record of everyone they work on would read as something broken. */
+  .locked{display:inline-flex; align-items:center; gap:5px; font-size:12.5px;
+    color:var(--muted); background:var(--paper); border:1px solid var(--line);
+    border-radius:999px; padding:2px 10px; cursor:help}
+  .locked::before{content:'\1F512'; font-size:10px; opacity:.6}
+
+  /* A button that reads as a link, for a secondary action sitting inside a
+     line of text where a real button would shout. */
+  .lnk{border:0; background:none; padding:0; cursor:pointer; color:var(--blue);
+    font:400 12.5px/1.4 "Inter",sans-serif; text-decoration:underline;
+    text-underline-offset:2px}
+  .lnk:hover{color:var(--blue-dk)}
 
   /* Add-to-team: a menu, not a native select. A select shows its placeholder
      as if it were a chosen value, so "＋ add…" sat in the line looking like a
@@ -764,7 +808,11 @@
 <body>
 
 <div id="gate">
-  <div class="mark">LD</div>
+  <div class="mark logo"><svg viewBox="0 0 64 64" role="img" aria-label="Lockhern Digital">
+      <path fill="#317AE0" d="M5 15 L20 5 L20 44 L40 44 L29 59 L5 59 Z"/>
+      <path fill="#6B7A99" d="M25 5 L36 5 A27 27 0 0 1 36 59 L31 59 L42 44
+        A13 13 0 0 0 36 21 L25 21 Z"/>
+    </svg></div>
   <h1>Onboarding</h1>
   <p>Enter the dashboard PIN.</p>
   <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
@@ -773,7 +821,13 @@
 
 <div id="app">
   <nav>
-    <div class="brand"><div class="mark">LD</div><b>Onboarding</b></div>
+    <div class="brand"><div class="mark"><svg viewBox="0 0 64 64" role="img" aria-label="Lockhern Digital">
+      <path fill="#317AE0" d="M5 15 L20 5 L20 44 L40 44 L29 59 L5 59 Z"/>
+      <path fill="#6B7A99" d="M25 5 L36 5 A27 27 0 0 1 36 59 L31 59 L42 44
+        A13 13 0 0 0 36 21 L25 21 Z"/>
+    </svg></div>
+      <div class="wm"><b>LOCKHERN</b><i>DIGITAL</i>
+        <span class="app">Onboarding</span></div></div>
     <button data-v="overview" class="on"><span class="ic">◇</span>Overview</button>
     <button data-v="queue"><span class="ic">▸</span>Queue</button>
     <button data-v="clients"><span class="ic">▤</span>Clients</button>
@@ -1107,7 +1161,8 @@ function fact(label, field, value, opts){
 
   if (!field){
     return v || opts.always
-      ? '<div class="fact"><span class="k">' + esc(label) + '</span>'
+      ? '<div class="fact' + (opts.wide ? ' wide' : '') + '">'
+        + '<span class="k">' + esc(label) + '</span>'
         + '<span class="v">' + (opts.html ? v : esc(v)) + '</span></div>'
       : '';
   }
@@ -1121,19 +1176,56 @@ function fact(label, field, value, opts){
       + opts.options.map(function(o){
           return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
         }).join('') + '</select>';
-  } else if (opts.area){
-    input = '<textarea class="fin" data-field="' + esc(field) + '" rows="2" '
-      + 'placeholder="—">' + esc(v) + '</textarea>';
   } else {
-    input = '<input class="fin" data-field="' + esc(field) + '" value="'
-      + esc(v) + '" placeholder="—">';
+    // Every free-text value is a textarea sized to its content, not an input.
+    //
+    // An <input> shows one line and silently hides the rest, and which fields
+    // overflow is not something you can know in advance — it depends on the
+    // value and the window. Approvals was the reported one; the same check
+    // caught Vertical and Email alias truncating too, at a width nobody had
+    // looked at. A box that grows cannot lie about what it contains.
+    //
+    // rows="1" plus grow(): it opens at the height of what is in it and
+    // follows what you type. Enter blurs rather than inserting a newline, so
+    // a one-line field still behaves like one — and blurring saves.
+    input = '<textarea class="fin grow" data-field="' + esc(field) + '" rows="1" '
+      + (opts.area ? '' : 'data-oneline="1" ')
+      + 'placeholder="—">' + esc(v) + '</textarea>';
   }
 
-  return '<div class="fact' + (opts.area ? ' wide' : '') + '">'
+  return '<div class="fact' + (opts.area || opts.wide ? ' wide' : '') + '">'
     + '<span class="k">' + esc(label) + '</span>'
     + '<span class="v">' + input
     + (opts.after ? '<span class="aft">' + opts.after + '</span>' : '')
     + '</span></div>';
+}
+
+/**
+ * Sizes a textarea to its content.
+ *
+ * Called on render and on every keystroke. The height has to be reset to auto
+ * first or the box only ever grows: scrollHeight of an already-tall element is
+ * its current height, so deleting a paragraph would leave the hole behind.
+ */
+function grow(t){
+  if (!t) return;
+  t.style.height = 'auto';
+  t.style.height = (t.scrollHeight + 2) + 'px';
+}
+
+function growAll(root){
+  var box = root || document;
+  [].forEach.call(box.querySelectorAll('textarea.grow'), function(t){
+    grow(t);
+    if (t.dataset.grown) return;
+    t.dataset.grown = '1';
+    t.addEventListener('input', function(){ grow(t); });
+    if (t.dataset.oneline){
+      t.addEventListener('keydown', function(e){
+        if (e.key === 'Enter'){ e.preventDefault(); t.blur(); }
+      });
+    }
+  });
 }
 
 function factsCard(c, d){
@@ -1154,8 +1246,15 @@ function factsCard(c, d){
     + fact('Status', 'status', c.status, { options: CLIENT_STATUSES })
     + fact('Owner', 'owner', c.owner)
     + fact('Contract start', '', c.contractStart)
-    + fact('MRR', '', c.mrr
-        ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr) : '')
+    // Named as withheld rather than left blank. A missing MRR row reads as
+    // missing data, and the next thing that happens is somebody opens the
+    // contract and types the number back in.
+    + (c.financeHidden
+        ? fact('MRR', '', '<span class="locked" title="Only a partner sees '
+            + 'what clients pay">Hidden</span>', { html: true, always: true })
+        : fact('MRR', '', c.mrr
+            ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr)
+            : ''))
     + fact('Term', 'term', c.term, { options: d.terms })
     + fact('Business type', 'bizType', c.bizType, { options: d.bizTypes })
     + fact('Cadence', 'cadence', c.cadence,
@@ -1165,14 +1264,24 @@ function factsCard(c, d){
     // it reading "Scheduled" forever.
     + fact('Onboarding call', 'call', c.call,
            { options: CALL_STATES.concat(['Completed']) })
-    + fact('Slack', 'slack', c.slack)
+    // The channel, plus the one action still worth having once it exists. The
+    // Slack section below disappears the moment a channel is set, so this is
+    // where "ping them" and "change who is in it" live from then on.
+    + fact('Slack', 'slack', c.slack, { after: c.slack
+        ? '<button class="lnk" id="slackManage" type="button">manage</button>'
+        : '' })
     + fact('Email alias', 'alias', c.alias)
-    + fact('Approvals', 'approvals', c.approvals)
-    + fact('Services', '', serviceChips(c.services), { html: true })
+    // Wide and growing. Approvals is a sentence about who signs off on what,
+    // and it was being shown as its first forty characters.
+    + fact('Approvals', 'approvals', c.approvals, { area: true })
+    + fact('Services', '', serviceChips(c.services), { html: true, wide: true })
     // The team is a strip in here rather than a card of its own. Who is on the
     // account is one line of answer — six names — and a full section for it
     // pushed the phase rail and the profile below the fold on a laptop.
-    + '<div class="fact team"><span class="k">Team</span>'
+    // Full width, so seven people are two rows of chips rather than seven
+    // rows of one. In a 310px grid cell only one chip fits per line, which is
+    // the whole reason the team looked like a list.
+    + '<div class="fact team wide"><span class="k">Team</span>'
     + '<span class="v" id="teamStrip">…</span></div>'
     + fact('Scope', 'scope', c.scope, { area: true });
 
@@ -2136,6 +2245,11 @@ function renderTeam(){
     // stages read top to bottom: pick people, then give them specialties.
     h += '<div id="rosterWrap"></div>';
 
+    // Who is looking, and what that means. Said here rather than nowhere,
+    // because "MRR says Hidden" with no explanation anywhere on the tool is a
+    // support question, and the answer is one sentence.
+    h += financeNote();
+
     h += '<div class="grp">Editor</div><div class="card">'
       + '<div class="sect" id="teamEdit">'
       + '<h3>Nobody selected</h3><div class="hint" style="margin:0">Pick someone '
@@ -2168,6 +2282,47 @@ function renderTeam(){
   });
 }
 
+/**
+ * What the finance tick does, and where the person reading stands.
+ *
+ * Blunt about the two holes. Describing this as access control would be a lie:
+ * the number is in column J of a spreadsheet, and anyone that Sheet is shared
+ * with reads it there. The tool is what stops needing to share the Sheet.
+ */
+function financeNote(){
+  var v = (TEAM && TEAM.viewer) || {};
+  var who = v.email
+    ? esc(v.email)
+    : 'somebody Google will not name — check the deployment is set to run '
+      + 'within the domain';
+
+  var mine = v.finance
+    ? 'You can see what clients pay.'
+    : (v.reason === 'notOnTeam'
+        ? 'You are not on the Team tab, so MRR and the fee lines are hidden '
+          + 'from you.'
+        : 'MRR and the fee lines are hidden from you.');
+
+  var sees = (TEAM.people || []).filter(function(p){ return p.finance; })
+    .map(function(p){ return p.name; });
+
+  return '<div class="grp">What clients pay</div><div class="card">'
+    + '<div class="sect"><div class="hint" style="margin:0">'
+    + '<b>' + esc(mine) + '</b> Signed in as ' + who + '. '
+    + (sees.length
+        ? 'Tick "Sees finances" on someone to show them MRR and the fee lines '
+          + 'on every client. Currently ' + esc(sees.join(', ')) + '.'
+        : 'Nobody is ticked, so only the account that deployed the tool sees '
+          + 'the numbers. Tick "Sees finances" on the editor below to add '
+          + 'somebody.')
+    + '<br><br>This hides the numbers in <i>this tool</i>. Anyone the '
+    + 'spreadsheet itself is shared with still reads MRR in column J, and the '
+    + 'signed scope of work in Drive states the fee on its own. The tool runs '
+    + 'as the account that deployed it, so nobody needs the Sheet to use it — '
+    + 'stopping sharing it is the part that actually closes this.'
+    + '</div></div></div>';
+}
+
 function personRow(p){
   var tags = (p.skills || []).map(function(s){
     return '<span class="tag">' + esc(s) + '</span>';
@@ -2176,6 +2331,10 @@ function personRow(p){
   // someone the audit can assign work to and someone it will skip.
   if (!tags) tags = '<span class="tag none">no specialties — cannot be assigned by skill</span>';
   if (!p.slackId) tags += '<span class="tag grey">no Slack ID</span>';
+  // Shown to everyone, deliberately. Who can see what clients pay is not
+  // itself a secret, and "ask one of these three" is the answer somebody needs
+  // when the number they wanted says Hidden.
+  if (p.finance) tags += '<span class="tag">sees finances</span>';
   (p.clients || []).slice(0, 4).forEach(function(c){
     tags += '<span class="tag grey">' + esc(c) + '</span>';
   });
@@ -2203,8 +2362,14 @@ function personRow(p){
  * against something somebody typed is how "PPC" and "Paid search" become two
  * skills that assign to nobody.
  */
+/** Whether the person looking may hand out finance access. */
+function canGrantFinance(){
+  return !!(TEAM && TEAM.viewer && TEAM.viewer.finance);
+}
+
 function teamForm(p){
-  p = p || { row:0, name:'', email:'', slackId:'', skills:[], role:'', active:true };
+  p = p || { row:0, name:'', email:'', slackId:'', skills:[], role:'',
+             active:true, finance:false };
   var have = {};
   (p.skills || []).forEach(function(s){ have[s.toLowerCase()] = 1; });
 
@@ -2248,6 +2413,15 @@ function teamForm(p){
     + '<div class="startrow">'
     + '<label class="mini"><input type="checkbox" id="tmActive"'
     + (p.active === false ? '' : ' checked') + '> Active</label>'
+    // Only shown to somebody who already has it. Rendering a live checkbox
+    // that the server then refuses is a worse answer than not offering it, and
+    // rendering a disabled one tells everybody exactly which control to ask
+    // about. The row below says who does have it, which is the useful half.
+    + (canGrantFinance()
+        ? '<label class="mini" title="Sees MRR and the fee lines on every '
+          + 'client"><input type="checkbox" id="tmFinance"'
+          + (p.finance ? ' checked' : '') + '> Sees finances</label>'
+        : '')
     + '<button class="btn" id="tmCancel">Cancel</button>'
     + '<button class="btn pri" id="tmSave">Save</button></div>';
 }
@@ -2482,7 +2656,8 @@ function openTeamForm(p){
       slackId: el('tmSlack').value,
       role: el('tmRole').value,
       skills: skills,
-      active: el('tmActive').checked
+      active: el('tmActive').checked,
+      finance: !!(el('tmFinance') && el('tmFinance').checked)
     }).then(function(r){
       b.disabled = false; b.textContent = 'Save';
       if (!r.ok){ toast(r.message, true); return; }
@@ -4089,13 +4264,29 @@ function openClient(clientId){
       + '<div class="sect" id="recentWrap">' + loading() + '</div>'
       + '<div class="sect" id="rrOffer" style="display:none"></div></div>';
 
-    h += '<div class="grp"><button class="phtog" id="scopeTog">'
-      + '<span class="tw">▶</span>Scope confirmation '
-      + '<span class="st">drafted from the signed contract</span></button></div>'
-      + '<div class="card" id="scopeCard" style="display:none">'
-      + '<div class="sect" id="scopeWrap">' + scopeCard(null) + '</div></div>';
+    // Off the page entirely for anyone who cannot see fees. The draft restates
+    // the contract, fee table and all — there is no version of it that does
+    // not print the number. The server refuses to build one, and a button
+    // whose only possible outcome is a refusal is worse than no button.
+    if (!c.financeHidden){
+      h += '<div class="grp"><button class="phtog" id="scopeTog">'
+        + '<span class="tw">▶</span>Scope confirmation '
+        + '<span class="st">drafted from the signed contract</span></button></div>'
+        + '<div class="card" id="scopeCard" style="display:none">'
+        + '<div class="sect" id="scopeWrap">' + scopeCard(null) + '</div></div>';
+    }
 
-    h += '<div class="grp"><button class="phtog" id="slackTog">'
+    // Setup, and setup is over the moment a channel exists.
+    //
+    // Creating the channel and adding people is a five-minute job done once,
+    // and the section then sat on the page forever with nothing further to
+    // say. With a channel set the whole block is hidden: the channel name is a
+    // fact in the card at the top, and the manage link beside it opens this
+    // for the rare case — adding a person, pinging the outstanding items.
+    // Hidden rather than never rendered, because that link needs something to
+    // open, and the picker inside it is already wired.
+    h += '<div class="grp" id="slackGrp"' + (c.slack ? ' style="display:none"' : '')
+      + '><button class="phtog" id="slackTog">'
       + '<span class="tw">▶</span>Slack <span class="st">'
       + (c.slack ? esc(c.slack) : 'no channel yet') + '</span></button></div>'
       + '<div class="card" id="slackCard" style="display:none">'
@@ -4282,6 +4473,23 @@ function openClient(clientId){
         el('slackTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
       });
     }
+
+    // The way back to a section that has hidden itself. Scrolled into view
+    // after it opens, because otherwise the click appears to do nothing —
+    // whatever it revealed is a page and a half further down.
+    if (el('slackManage')){
+      el('slackManage').addEventListener('click', function(){
+        var grp = el('slackGrp');
+        var card = el('slackCard');
+        if (grp) grp.style.display = '';
+        if (card) card.style.display = '';
+        var tw = el('slackTog') && el('slackTog').querySelector('.tw');
+        if (tw) tw.textContent = '▼';
+        if (grp && grp.scrollIntoView){
+          grp.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    }
     if (el('scopeTog')){
       el('scopeTog').addEventListener('click', function(){
         var b = el('scopeCard');
@@ -4356,9 +4564,16 @@ function openClient(clientId){
       if (!c.profile) makeProfile(clientId, pend.draftId, el('mkProfile'));
     }
 
+    growAll();
+
     [].forEach.call(document.querySelectorAll('[data-field]'), function(inp){
       inp.addEventListener('change', function(){
-        api('updateClientField', TOKEN, clientId, inp.getAttribute('data-field'), inp.value)
+        // A one-line field is now a textarea, so a pasted value can carry
+        // newlines into a cell that is read as one line everywhere else.
+        var val = inp.dataset.oneline
+          ? inp.value.replace(/\s*\n+\s*/g, ' ').trim() : inp.value;
+        if (val !== inp.value) inp.value = val;
+        api('updateClientField', TOKEN, clientId, inp.getAttribute('data-field'), val)
           .then(function(r){
             toast(r.ok ? 'Saved.' : (r.message || 'Could not save.'), !r.ok);
             CACHE.overview = null; CACHE.queue = null;

@@ -67,6 +67,10 @@ const FAKE = {
       drive:'https://drive.google.com/drive/folders/fake',
       fees:[{label:'Google Ads',amount:6000},{label:'Reddit Ads',amount:2000},
             {label:'AI Search SEO',amount:2000},{label:'Bundle discount',amount:-4000}] },
+    // A partner, so the money is on the page. The redacted case is walked
+    // further down by flipping this and re-rendering.
+    viewer:{ email:'aric@lockherndigital.com', name:'Aric Whiteley',
+             owner:true, finance:true, reason:'' },
     statuses:['Not started','Info needed','Requested','Complete','Blocked','N/A'],
     terms:['Month to month','3 months','6 months','12 months','Custom'],
     bizTypes:['Lead Gen','eCommerce'],
@@ -160,6 +164,8 @@ const FAKE = {
   slackLinkChannel: { ok:true, name:'#harbor-sons', channelId:'C01HARB',
     url:'https://slack.com/app_redirect?channel=C01HARB', joined:false, warn:'' },
   getTeamAdmin: { ok:true, slackReady:true,
+    viewer:{ email:'aric@lockherndigital.com', name:'Aric Whiteley',
+             owner:true, finance:true, reason:'' },
     roles:['Account manager','Strategist','Specialist','Analyst','Designer','Owner','Contractor'],
     skillOptions:[
       { name:'Paid search', group:'Discipline' },
@@ -181,7 +187,8 @@ const FAKE = {
       // No specialties and no Slack ID: the two states the page exists to make
       // visible, because both silently exclude someone from being assigned.
       { row:4, name:'Cory Botti', email:'cory@lockherndigital.com', slackId:'',
-        skills:[], role:'Owner', active:true, clients:[], channels:[] }
+        skills:[], role:'Owner', active:true, finance:true,
+        clients:[], channels:[] }
     ],
     unassignedClients:[
       { clientId:'CORNHOLE-2608', company:'Cornhole Co', owner:'' }
@@ -671,6 +678,10 @@ const stub = `<script>
       }
     });
   }
+  // Exposed so a test can change the answer mid-run. Who is looking is a
+  // server fact that the page only reacts to, and the redacted view is not
+  // reachable any other way.
+  window.FAKE = FAKE;
   window.google = { script: { get run(){ return runner(null, null); } } };
 })();
 </script>`;
@@ -683,7 +694,13 @@ writeFileSync(page_path, html);
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const shots = [];
 
-for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
+// 1280 is a laptop and 430 is a phone, and between them they missed the thing
+// people actually complained about: on a 1900px monitor the page stopped a
+// third of the way from the right edge, and the team chips stacked one name
+// per line inside a 300px grid cell. Neither is visible at 1280, because 1280
+// is barely wider than the old 1120px cap. 'wide' is that monitor.
+for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
+                            ['mobile', 430, 900]]) {
   const page = await browser.newPage({ viewport: { width: w, height: h } });
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
@@ -1177,6 +1194,103 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
     throw new Error('Team chips can break a name across lines: ' + chipWrap);
   }
 
+  // The facts card is where the layout complaints landed, so it gets its own
+  // shot rather than being a band inside a 6,000px full-page capture nobody
+  // can read. Four things had to change and all four are visible here: the
+  // card fills the window, the team chips flow across instead of stacking one
+  // per line, Approvals is not truncated mid-sentence, and Scope is not a
+  // scrollbox.
+  const fFacts = `${OUT}/${name}-facts.png`;
+  await page.locator('.facts').first().screenshot({ path: fFacts });
+  shots.push(fFacts);
+
+  // Nothing on this card may be hiding what it is displaying. An <input> that
+  // has more text than it can show, or a textarea with content past its
+  // bottom edge, is a value the page is claiming to show and is not.
+  const clipped = await page.$$eval('.facts .fin', els => els
+    .filter(e => e.scrollWidth > e.clientWidth + 1
+              || e.scrollHeight > e.clientHeight + 2)
+    .map(e => ({ field: e.getAttribute('data-field'),
+                 tag: e.tagName.toLowerCase(),
+                 shown: e.clientWidth + 'x' + e.clientHeight,
+                 real: e.scrollWidth + 'x' + e.scrollHeight })));
+  if (clipped.length) {
+    throw new Error('Facts are being cut off: ' + JSON.stringify(clipped));
+  }
+
+  // What clients pay, hidden from everyone who is not a partner.
+  //
+  // The number is stripped on the server, so the browser is never sent it —
+  // this checks the two things the page is responsible for: saying the value
+  // exists and is withheld rather than leaving a blank that reads as missing
+  // data, and not offering an edit that the server would refuse.
+  await page.evaluate(() => {
+    const d = window.FAKE.getClientDetail;
+    window.FAKE.getClientDetail = Object.assign({}, d, {
+      viewer: { email:'freelancer@lockherndigital.com', name:'Sam Reed',
+                owner:false, finance:false, reason:'notFinance' },
+      client: (() => {
+        const c = Object.assign({}, d.client, { financeHidden:true });
+        delete c.mrr; delete c.fees;
+        return c;
+      })()
+    });
+  });
+  await page.click('#back');
+  await page.waitForSelector('.row.clickable', { timeout: 5000 });
+  await page.click('.row.clickable');
+  await page.waitForSelector('.facts', { timeout: 5000 });
+
+  const money = await page.evaluate(() => {
+    const labels = [].map.call(document.querySelectorAll('.facts .fact'), f => ({
+      k: (f.querySelector('.k') || {}).textContent,
+      v: (f.querySelector('.v') || {}).textContent.trim(),
+      editable: !!f.querySelector('[data-field]')
+    }));
+    const mrr = labels.filter(l => l.k === 'MRR')[0];
+    return { mrr: mrr || null,
+             // Not merely absent from its own row — nowhere on the card, and
+             // no input bound to the field either.
+             leaked: /\$6,000/.test(document.querySelector('.facts').textContent)
+                     || !!document.querySelector('[data-field="mrr"]'),
+             // The scope confirmation restates the fee in its body, so the
+             // whole section goes with it. The server refuses to draft one,
+             // and offering a button whose only outcome is a refusal is worse
+             // than not offering it.
+             scopeOffered: !!document.getElementById('scopeTog') };
+  });
+  if (!money.mrr) throw new Error('The MRR row vanished rather than saying it '
+    + 'is withheld — a blank reads as missing data and gets retyped');
+  if (money.mrr.v !== 'Hidden') {
+    throw new Error('MRR does not say it is hidden: ' + JSON.stringify(money.mrr));
+  }
+  if (money.mrr.editable) {
+    throw new Error('MRR is editable by somebody who cannot read it');
+  }
+  if (money.leaked) throw new Error('The MRR figure is still on the facts card');
+  if (money.scopeOffered) {
+    throw new Error('The scope confirmation is offered to somebody who cannot '
+      + 'see fees — its body restates them');
+  }
+
+  const fHidden = `${OUT}/${name}-facts-hidden.png`;
+  await page.locator('.facts').first().screenshot({ path: fHidden });
+  shots.push(fHidden);
+
+  // Back to the partner's view for everything below, which assumes it.
+  await page.evaluate(() => {
+    const c = Object.assign({}, window.FAKE.getClientDetail.client,
+      { mrr:6000, financeHidden:false });
+    window.FAKE.getClientDetail = Object.assign({},
+      window.FAKE.getClientDetail, { client:c,
+        viewer:{ email:'aric@lockherndigital.com', name:'Aric Whiteley',
+                 owner:true, finance:true, reason:'' } });
+  });
+  await page.click('#back');
+  await page.waitForSelector('.row.clickable', { timeout: 5000 });
+  await page.click('.row.clickable');
+  await page.waitForSelector('#teamStrip .tm', { timeout: 5000 });
+
   // The add menu opens on click, and its entries add directly.
   await page.click('#teamAdd');
   const menu = await page.evaluate(() => ({
@@ -1240,7 +1354,10 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   if (bulkBefore !== 'none') {
     throw new Error('The bulk bar is showing with nothing selected: ' + bulkBefore);
   }
-  await page.click('.tsel');
+  // The first VISIBLE one. Phase 1 is folded by default and a re-render — a
+  // trip out to the client list and back — puts it back that way, so the
+  // first .tsel in the document is inside a closed phase.
+  await page.locator('.tsel:visible').first().click();
   await page.waitForTimeout(120);
   const bulk = await page.evaluate(() => ({
     shown: getComputedStyle(document.getElementById('bulkBar')).display,
@@ -1590,13 +1707,24 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['mobile', 430, 900]]) {
   await page.screenshot({ path: fScope, fullPage: name === 'desktop' });
   shots.push(fScope);
 
-  // Slack folds away now — it is a people picker, a channel picker and five
-  // buttons, and on a client whose channel is set nobody needs any of it. Open
-  // it before anything below tries to click into it.
+  // Slack disappears entirely once a channel exists — it is setup, and setup
+  // is done. This client has one, so the whole section must be gone from the
+  // page rather than merely folded, and the only way back is the manage link
+  // beside the channel name at the top.
+  const slackGone = await page.$eval('#slackGrp', e => e.style.display);
+  if (slackGone !== 'none') {
+    throw new Error('The Slack section is still on the page for a client that '
+      + 'already has a channel');
+  }
   const slackShut = await page.$eval('#slackCard', e => e.style.display);
   if (slackShut !== 'none') throw new Error('The Slack card did not start folded');
-  await page.click('#slackTog');
-  await page.waitForTimeout(150);
+
+  await page.click('#slackManage');
+  await page.waitForTimeout(200);
+  const slackBack = await page.$eval('#slackCard', e => e.style.display);
+  if (slackBack === 'none') {
+    throw new Error('The manage link did not open the Slack section');
+  }
 
   // Regression: the Slack card painted "Loading the team…" and stayed there
   // forever. wireSlack had been dropped into the action-items click handler,

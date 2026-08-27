@@ -276,11 +276,15 @@ function runExtraction(items, draftId) {
 
   // Saved so reopening the draft shows what the model said last time without
   // paying for the call again. A failed save is not a failed extraction.
+  //
+  // Saved WHOLE and redacted only on the way back — the fee belongs on the
+  // draft whoever ran the analysis, or a partner reopening it later would find
+  // an extraction with the number permanently missing from the record.
   if (draftId) {
     try { saveDraft(draftId, { extraction: result, status: 'Analysed' }); }
     catch (e) { result.saveWarning = (e && e.message) || String(e); }
   }
-  return result;
+  return redactExtractionFinance_(result);
 }
 
 /** Whether a ClickUp token is configured, so the UI can say so up front. */

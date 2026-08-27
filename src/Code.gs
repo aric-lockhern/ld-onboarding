@@ -36,7 +36,26 @@ const DRAFT_HEADERS = [
  * Slack ID is the member ID (U01ABC…), not the handle: handles change, IDs do
  * not, and the API wants the ID anyway.
  */
-const TEAM_HEADERS = ['Name', 'Email', 'Slack Member ID', 'Skills', 'Role', 'Active'];
+const TEAM_HEADERS = ['Name', 'Email', 'Slack Member ID', 'Skills', 'Role',
+                      'Active', 'Sees Finances'];
+
+/**
+ * The Team tab by name, for the same reason the Platforms tab got one.
+ *
+ * It was read by raw index in four places while nothing wrote to it by
+ * position. `deleteTeamMember` then started writing FALSE to
+ * `TEAM_HEADERS.length` to deactivate somebody — which was the Active column
+ * only for as long as Active stayed last. Adding Sees Finances after it would
+ * have made "remove this person" quietly revoke their finance access instead,
+ * and leave them active.
+ *
+ * Sees Finances is last and blank on every existing row, which reads as FALSE.
+ * That is deliberate — see Viewer.gs.
+ */
+const TM = {
+  NAME: 1, EMAIL: 2, SLACKID: 3, SKILLS: 4, ROLE: 5, ACTIVE: 6, FINANCE: 7,
+  WIDTH: 7
+};
 
 /**
  * Work the audit says to do, as opposed to access we need before we can start.
@@ -927,17 +946,21 @@ function getTeam() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.TEAM);
   if (!sh || sh.getLastRow() < 2) return [];
 
-  return sh.getRange(2, 1, sh.getLastRow() - 1, TEAM_HEADERS.length).getValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, TM.WIDTH).getValues()
     // The sheet row travels with the record so the admin screen can write back
     // to the person it read, rather than matching on a name someone is editing.
     .map((r, i) => ({
       row: i + 2,
-      name: String(r[0]).trim(),
-      email: String(r[1] || '').trim(),
-      slackId: String(r[2] || '').trim(),
-      skills: String(r[3] || '').split(',').map(x => x.trim()).filter(Boolean),
-      role: String(r[4] || '').trim(),
-      active: r[5] !== false
+      name: String(r[TM.NAME - 1]).trim(),
+      email: String(r[TM.EMAIL - 1] || '').trim(),
+      slackId: String(r[TM.SLACKID - 1] || '').trim(),
+      skills: String(r[TM.SKILLS - 1] || '').split(',')
+        .map(x => x.trim()).filter(Boolean),
+      role: String(r[TM.ROLE - 1] || '').trim(),
+      active: r[TM.ACTIVE - 1] !== false,
+      // Ticked, not blank. An empty cell on a tab that predates the column is
+      // the normal case and it has to read as "no".
+      finance: r[TM.FINANCE - 1] === true
     }))
     .filter(t => t.name && t.active);
 }
@@ -989,6 +1012,13 @@ function submitIntake(payload) {
   const alias = payload.alias ||
     (slugAlias_(payload.company) + '@' + (cfg('Alias Domain') || 'example.com'));
 
+  // The submitter may not be allowed to see the fee, in which case the form
+  // came back without it. Recovering it from the draft server-side is the
+  // difference between a gate and a hole: otherwise the first client somebody
+  // else onboards is created with no MRR at all, and nobody notices until a
+  // report is short a line.
+  const money = intakeFinance_(payload);
+
   const row = firstFreeClientRow_(clients);
   const vals = new Array(C.WIDTH).fill('');
   vals[C.ID - 1] = clientId;
@@ -1000,14 +1030,14 @@ function submitIntake(payload) {
   vals[C.STATUS - 1] = 'Intake';
   vals[C.PLATFORMS - 1] = (payload.platforms || []).join(', ');
   vals[C.START - 1] = payload.contractStart || '';
-  vals[C.MRR - 1] = payload.mrr || '';
+  vals[C.MRR - 1] = money.mrr;
   vals[C.OWNER - 1] = payload.owner || cfg('Default Onboarding Owner');
   vals[C.SCOPE - 1] = payload.scope || '';
   vals[C.CADENCE - 1] = payload.cadence || '';
   vals[C.SLACK - 1] = payload.slack || '';
   vals[C.ALIAS - 1] = alias;
   vals[C.SERVICES - 1] = (payload.services || []).join(', ');
-  vals[C.FEES - 1] = payload.fees ? JSON.stringify(payload.fees) : '';
+  vals[C.FEES - 1] = money.fees;
   vals[C.BIZTYPE - 1] = payload.bizType || '';
   vals[C.ONBOARDING - 1] = 'Not started';
   vals[C.APPROVALS - 1] = payload.approvals || '';
