@@ -226,7 +226,7 @@ MRR and the fee lines are hidden from everybody except the account that deployed
 
 How to set it up, once:
 
-1. Re-run **Onboarding → Set up / repair sheet**. That adds the `Sees Finances` column to the Team tab.
+1. Re-run **Onboarding → Set up / repair sheet**. That adds the `Sees Finances` column to the Team tab (and the `Kind` column to the Actions tab, which the out-of-scope list needs).
 2. Open **Team** in the web app. Every existing person is unticked, so at that moment nobody but you sees the numbers.
 3. Edit each partner and tick **Sees finances**. The tick only appears for someone who already has it, so the first one has to be done by you.
 

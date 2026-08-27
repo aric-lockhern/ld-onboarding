@@ -245,9 +245,19 @@ const FAKE = {
       { at:44000, step:'Written', detail:'34 written · 34 new · 0 already started, left alone' }
     ],
     read:['Pitch deck','Sales call transcript','Onboarding / kickoff call transcript','Scope of work'],
-    outOfScope:[{ item:'Launch Reddit paid amplification at $10K/month',
-      why:'The deck sold it; the signed SOW covers Reddit organic only.',
-      needed:'A separate Reddit Ads line and an agreed monthly budget.' }] },
+    // Several, deliberately. One of these produced one red toast; six produced
+    // six, stacked, styled as errors, and they were the last thing left on
+    // screen after a run that wrote thirty-four items perfectly.
+    outOfScope:[
+      { item:'Launch Reddit paid amplification at $10K/month',
+        why:'The deck sold it; the signed SOW covers Reddit organic only.',
+        needed:'A separate Reddit Ads line and an agreed monthly budget.' },
+      { item:'Rebuild the product feed for a second storefront',
+        why:'One storefront is in contract.',
+        needed:'A feed management line for the second store.' },
+      { item:'Monthly creative production for paid social',
+        why:'No paid social was sold.',
+        needed:'A paid social retainer.' }] },
   updateActionItem: { ok:true },
   bulkTaskAction: { ok:true, touched:3, action:'assign' },
   assignTask: { ok:true, owner:'Jamie Okonkwo', assigned:'11 Aug 2026' },
@@ -473,6 +483,18 @@ const FAKE = {
       { key:'cu_h6apc-44014', label:'Meeting - 08/06/2026', chars:55300, isCall:true, suggested:false }
     ],
     team:['Drake King','Alexandra McCurdy'],
+    // Filed against the client rather than announced and forgotten. One
+    // already decided on, which must render faded and must not be counted as
+    // something the next rebuild would replace.
+    outOfScope:[
+      { row:2, item:'Launch Reddit paid amplification at $10K/month',
+        why:'The deck sold it; the signed SOW covers Reddit organic only.',
+        needed:'A separate Reddit Ads line and an agreed monthly budget.',
+        owner:'', status:'To do' },
+      { row:3, item:'Monthly creative production for paid social',
+        why:'No paid social was sold.',
+        needed:'A paid social retainer.', owner:'', status:'Not doing' }
+    ],
     items:[
       { row:2, priority:'Now', status:'To do', owner:'Drake King', effort:'half a day',
         action:'Split the single Shopping campaign by margin tier so bidding can differ',
@@ -1478,6 +1500,62 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (!/list may be short/.test(built)) {
     throw new Error('A cut-short list was reported as complete: ' + built);
   }
+
+  // Out-of-scope proposals are not errors and are not toasts.
+  //
+  // Three of them produced three red boxes, stacked, and they were the last
+  // thing on screen after a run that wrote thirty-four items — so a build that
+  // worked read as one that failed three times. They are also the most
+  // valuable part of the answer, and a toast keeps nothing.
+  const oosToasts = await page.$$eval('.toast', els => els
+    .filter(e => /Out of scope:/.test(e.textContent)
+              || (/not in contract/.test(e.textContent)
+                  && /err|bad/i.test(e.className)))
+    .map(e => e.textContent));
+  if (oosToasts.length) {
+    throw new Error('Out-of-scope proposals are still being toasted as '
+      + 'errors: ' + JSON.stringify(oosToasts));
+  }
+
+  await page.waitForTimeout(300);
+  const oos = await page.evaluate(() => {
+    const rows = [].map.call(document.querySelectorAll('.line.oos'), e => ({
+      text: e.querySelector('.tx').textContent,
+      settled: e.classList.contains('settled'),
+      status: (e.querySelector('select') || {}).value
+    }));
+    return { rows: rows,
+             // Each has to say what would have to be agreed. "Out of scope" on
+             // its own is a dead end; the sentence after it is the sales call.
+             needed: rows.filter(r => /Would need:/.test(r.text)).length,
+             replaces: /replaces the 1 still at To do/
+               .test(document.getElementById('actWrap').textContent) };
+  });
+  if (oos.rows.length !== 2) {
+    throw new Error('The out-of-scope list did not render: '
+      + JSON.stringify(oos));
+  }
+  if (oos.needed !== 2) {
+    throw new Error('An out-of-scope item does not say what would need '
+      + 'agreeing: ' + JSON.stringify(oos));
+  }
+  if (!oos.rows[1].settled || oos.rows[1].status !== 'Not doing') {
+    throw new Error('A decided proposal is not shown as settled: '
+      + JSON.stringify(oos.rows));
+  }
+  if (oos.rows[0].settled) {
+    throw new Error('An undecided proposal is shown as settled');
+  }
+  // Only the undecided one is replaced on a rebuild. A lead somebody declined
+  // in March coming back as To do in September is the failure this prevents.
+  if (!oos.replaces) {
+    throw new Error('The card does not say what a rebuild would replace: '
+      + JSON.stringify(oos));
+  }
+
+  const fOos = `${OUT}/${name}-out-of-scope.png`;
+  await page.locator('#actWrap').screenshot({ path: fOos });
+  shots.push(fOos);
 
   // Audit follow-ups are ON the checklist now, inside their phase and grouped
   // by channel — not in a table of their own. Two lists meant two places to

@@ -68,7 +68,7 @@ const TM = {
  */
 const ACTION_HEADERS = [
   'Client ID', 'Action', 'Why it matters', 'Source', 'Priority',
-  'Effort', 'Owner', 'Status', 'Created', 'Area'
+  'Effort', 'Owner', 'Status', 'Created', 'Area', 'Kind'
 ];
 
 /**
@@ -82,8 +82,23 @@ const ACTION_HEADERS = [
  */
 const ACT = {
   CLIENT: 1, ACTION: 2, WHY: 3, SOURCE: 4, PRIORITY: 5,
-  EFFORT: 6, OWNER: 7, STATUS: 8, CREATED: 9, AREA: 10, WIDTH: 10
+  EFFORT: 6, OWNER: 7, STATUS: 8, CREATED: 9, AREA: 10, KIND: 11, WIDTH: 11
 };
+
+/**
+ * What a row on the Actions tab IS.
+ *
+ * The tab used to hold the audit follow-ups. Those moved onto the Access tab
+ * as ordinary checklist rows, which left this one written by nothing and read
+ * by a card that ignored its answer — so the out-of-scope proposals, which are
+ * the one thing that genuinely does not belong on a checklist, had nowhere to
+ * live and were announced in six red toasts that then vanished.
+ *
+ * They live here now. A blank Kind is a follow-up row written before the move
+ * and is ignored, which is the usual meaning of an empty cell on a populated
+ * tab: as before, and before this the card showed nothing.
+ */
+const ACTION_KIND_LEAD = 'Out of scope';
 
 const ACTION_STATUSES = ['To do', 'In progress', 'Done', 'Not doing'];
 const ACTION_PRIORITIES = ['Now', 'Next', 'Later'];
