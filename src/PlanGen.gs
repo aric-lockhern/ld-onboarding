@@ -255,7 +255,11 @@ function callAnthropic_(prompt, opts) {
     try { console.log('[anthropic] ' + step + ' — ' + (detail || '')); } catch (e) {}
   };
 
-  note('Request', req.model + ' · max ' + req.max_tokens + ' tokens · thinking '
+  // "room for" rather than "max". The ceiling is a timeout guard, not a
+  // spending limit, and printing it as a maximum invited the reasonable
+  // question of why the tool is rationing an answer somebody is paying for.
+  note('Request', req.model + ' · room for ' + req.max_tokens
+    + ' tokens · thinking '
     + (req.thinking && req.thinking.type === 'disabled' ? 'off' : 'on')
     + ' · ' + Math.round(payload.length / 1000) + 'k characters sent');
 
@@ -307,9 +311,14 @@ function callAnthropic_(prompt, opts) {
   const data = JSON.parse(body);
 
   const usage = data.usage || {};
-  note('Tokens', (usage.input_tokens || '?') + ' in · '
-    + (usage.output_tokens || '?') + ' out of ' + req.max_tokens + ' allowed'
-    + ' · stopped because: ' + (data.stop_reason || 'unknown'));
+  // Says whether the ceiling was actually in the way, because "1737 out of
+  // 4000" reads as a limit doing something when it is not near it.
+  const used = Number(usage.output_tokens) || 0;
+  note('Tokens', (usage.input_tokens || '?') + ' in · ' + (used || '?')
+    + ' out · ' + (data.stop_reason === 'max_tokens'
+        ? 'CUT OFF at the ' + req.max_tokens + '-token ceiling'
+        : 'finished on its own, well inside the ' + req.max_tokens
+          + '-token ceiling'));
 
   // Models that think emit a thinking block before the text block; filtering by
   // type rather than taking content[0] keeps this working either way.

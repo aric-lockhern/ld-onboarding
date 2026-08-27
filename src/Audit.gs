@@ -283,6 +283,9 @@ function buildActionItems(clientId, keys) {
   // ok:false, so "we did not promise anything specific" and "the API call
   // broke" arrived on screen as the same red toast.
   if (!items.length) {
+    // Filed even here. A run that found no work but three upsells is exactly
+    // when this list is the whole value of having run it.
+    writeOutOfScope_(clientId, outOfScope);
     return { ok: true, written: 0, preserved: 0, read: read, log: log,
              outOfScope: outOfScope, unassigned: 0, teamEmpty: !team.length,
              nothing: true,
@@ -290,6 +293,12 @@ function buildActionItems(clientId, keys) {
                || 'Nothing in ' + read.join(', ') + ' reads as a specific '
                 + 'commitment. If the deck is missing from the draft, add it '
                 + 'and re-analyse first.' };
+  }
+
+  const leads = writeOutOfScope_(clientId, outOfScope);
+  if (outOfScope.length) {
+    step('Out of scope', leads.written + ' filed as leads · '
+      + leads.preserved + ' already decided on, left alone');
   }
 
   const kept = writeActions_(clientId, items);
@@ -331,34 +340,31 @@ function getActionItems(clientId) {
   // document" with nothing to tick.
   if (!sh || sh.getLastRow() < 2) {
     const empty = actionSources_(clientId);
-    return { ok: true, items: [], statuses: ACTION_STATUSES,
+    return { ok: true, outOfScope: [], statuses: ACTION_STATUSES,
              team: getTeam().map(t => t.name),
              sources: empty.rows, sourcesNote: empty.note };
   }
 
+  // The follow-ups themselves are checklist rows on the Access tab now, so
+  // what is left on this tab is the out-of-scope list. Rows with a blank Kind
+  // are follow-ups written before that move; they are already on the
+  // checklist and showing them again here would be the same task twice.
   const id = String(clientId).trim();
-  const items = sh.getRange(2, 1, sh.getLastRow() - 1, ACT.WIDTH).getValues()
+  const outOfScope = sh.getRange(2, 1, sh.getLastRow() - 1, ACT.WIDTH).getValues()
     .map((r, i) => ({ r: r, row: i + 2 }))
-    .filter(x => String(x.r[ACT.CLIENT - 1]).trim() === id)
+    .filter(x => String(x.r[ACT.CLIENT - 1]).trim() === id
+              && String(x.r[ACT.KIND - 1]).trim() === ACTION_KIND_LEAD)
     .map(x => ({
       row: x.row,
-      action: safeStr_(x.r[ACT.ACTION - 1]),
+      item: safeStr_(x.r[ACT.ACTION - 1]),
       why: safeStr_(x.r[ACT.WHY - 1]),
-      source: safeStr_(x.r[ACT.SOURCE - 1]),
-      priority: safeStr_(x.r[ACT.PRIORITY - 1]) || 'Later',
-      effort: safeStr_(x.r[ACT.EFFORT - 1]),
+      needed: safeStr_(x.r[ACT.SOURCE - 1]),
       owner: safeStr_(x.r[ACT.OWNER - 1]),
-      status: safeStr_(x.r[ACT.STATUS - 1]) || 'To do',
-      // Blank on anything built before the column existed. The card puts those
-      // under "Not sorted yet" rather than inventing an area for them.
-      area: safeStr_(x.r[ACT.AREA - 1])
+      status: safeStr_(x.r[ACT.STATUS - 1]) || 'To do'
     }));
 
-  const order = { 'Now': 0, 'Next': 1, 'Later': 2 };
-  items.sort((a, b) => (order[a.priority] || 9) - (order[b.priority] || 9));
-
   const picker = actionSources_(clientId);
-  return { ok: true, items: items, statuses: ACTION_STATUSES,
+  return { ok: true, outOfScope: outOfScope, statuses: ACTION_STATUSES,
            team: getTeam().map(t => t.name),
            sources: picker.rows, sourcesNote: picker.note };
 }
@@ -417,6 +423,82 @@ function actionSources_(clientId) {
       : 'The draft has no documents on it.';
   }
   return { rows: rows, note: note };
+}
+
+/**
+ * Files the out-of-scope proposals as leads.
+ *
+ * These are the things the deck sold that the contract did not buy — the
+ * Cornhole deck's $10K/month Reddit budget against a scope covering organic
+ * only. They are not work: queueing them puts billable hours on a checklist
+ * nobody is paying for, and dropping them loses the one thing in an audit that
+ * is worth money.
+ *
+ * They were being announced in a toast per item and never stored, so a build
+ * that went perfectly ended in six red boxes that then disappeared, taking the
+ * leads with them. The Actions tab is their home — it already has the shape
+ * (what, why, priority, owner, status) and nothing else writes to it since the
+ * follow-ups moved to the checklist.
+ *
+ * Rebuilding replaces the ones nobody has decided on and leaves the rest
+ * exactly as they are, the same rule the checklist follows: an item somebody
+ * marked Not doing must not quietly come back as To do next Tuesday.
+ */
+function writeOutOfScope_(clientId, list) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(TABS.ACTIONS);
+  if (!sh) return { written: 0, preserved: 0 };
+
+  const id = String(clientId).trim();
+  const decided = {};
+  let preserved = 0;
+
+  if (sh.getLastRow() > 1) {
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, ACT.WIDTH).getValues();
+    // Descending, so the indexes stay valid as rows are removed.
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (String(rows[i][ACT.CLIENT - 1]).trim() !== id) continue;
+      // A blank Kind is a follow-up row from before those moved to the
+      // checklist. Not ours to delete, and not shown either.
+      if (String(rows[i][ACT.KIND - 1]).trim() !== ACTION_KIND_LEAD) continue;
+
+      const text = String(rows[i][ACT.ACTION - 1]).trim();
+      const status = String(rows[i][ACT.STATUS - 1] || 'To do');
+      if (status === 'To do') {
+        sh.deleteRow(i + 2);
+      } else {
+        decided[text.toLowerCase()] = true;
+        preserved++;
+      }
+    }
+  }
+
+  const now = new Date();
+  const rows = [];
+
+  (list || []).forEach(o => {
+    const text = String((o && o.item) || '').trim();
+    if (!text || decided[text.toLowerCase()]) return;
+    decided[text.toLowerCase()] = true;
+
+    const v = new Array(ACT.WIDTH).fill('');
+    v[ACT.CLIENT - 1] = id;
+    v[ACT.ACTION - 1] = text;
+    v[ACT.WHY - 1] = String((o && o.why) || '');
+    // What would have to be agreed before it could be done — the sentence that
+    // turns a flag into something somebody can actually take to the client.
+    v[ACT.SOURCE - 1] = String((o && o.needed) || '');
+    v[ACT.PRIORITY - 1] = 'Later';
+    v[ACT.STATUS - 1] = 'To do';
+    v[ACT.CREATED - 1] = now;
+    v[ACT.KIND - 1] = ACTION_KIND_LEAD;
+    rows.push(v);
+  });
+
+  if (rows.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, ACT.WIDTH).setValues(rows);
+  }
+  return { written: rows.length, preserved: preserved };
 }
 
 /** Status or owner change from the client page. */
@@ -559,11 +641,21 @@ function writeActions_(clientId, items) {
 /**
  * Room for one area's worth of actions, which is a dozen or so.
  *
- * Higher than the old whole-list ceiling because it no longer has to hold the
- * whole list — and still small enough that the request finishes long before
- * Apps Script gives up on it.
+ * NOT A BUDGET. Nothing here is trying to save money — the ceiling exists
+ * because UrlFetchApp abandons a request that runs long and throws "Address
+ * unavailable", which reads as the API being down and is really the model
+ * having been asked for more than it can write in the time. The only thing
+ * that fixes that is a smaller request, never a bigger allowance, which is why
+ * the list is assembled from one pass per area instead of one long pass.
+ *
+ * 6000 rather than 4000 because the observed runs write about 1,700 tokens in
+ * seventeen seconds — well under half the old ceiling — so there is room to
+ * let an unusually rich area finish rather than clipping it, and still finish
+ * inside the deadline. If an area ever does hit this, the answer is another
+ * area, not another thousand tokens: `_truncated` sets cutShort and the page
+ * says the list may be short.
  */
-const ACTIONS_MAX_TOKENS_AREA = 4000;
+const ACTIONS_MAX_TOKENS_AREA = 6000;
 
 /**
  * The passes to make over the documents.

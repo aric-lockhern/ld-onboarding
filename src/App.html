@@ -523,6 +523,19 @@
   .line .sub{flex:1; color:var(--faint); font-size:12px; text-align:right;
     white-space:nowrap}
   .line.note .sub{flex:none}
+  /* A proposal that is not work. Left-ruled rather than boxed: it sits in a
+     list of them, and six boxes in a row is a wall. */
+  .line.oos{align-items:flex-start; gap:12px; padding:10px 0 10px 11px;
+    border-left:2px solid var(--blue-line); padding-left:11px}
+  .line.oos .tx{line-height:1.5}
+  .line.oos .sub2{color:var(--muted); font-size:12.5px}
+  .line.oos .need{color:var(--blue-ink); font-size:12.5px}
+  .line.oos select{flex:none; align-self:center}
+  /* Decided on. Faded, never removed — a lead declined in March is worth
+     seeing again in September. */
+  .line.oos.settled{border-left-color:var(--line)}
+  .line.oos.settled .tx{opacity:.55}
+
   .line .x{flex:none; border:0; background:none; cursor:pointer; color:var(--mid);
     font-size:15px; line-height:1; padding:0 2px}
   .line .x:hover{color:var(--critical)}
@@ -3123,7 +3136,55 @@ function actionsCard(r){
           + 'Build action items</button></div>'
         : '<div class="hint" style="margin-top:10px"><strong>Nothing to read.</strong> '
           + esc((r && r.sourcesNote) || 'No documents are available on the draft.')
-          + '</div>');
+          + '</div>')
+      + outOfScopeList(r);
+}
+
+/**
+ * What the documents proposed that the contract did not buy.
+ *
+ * A deck written to win the deal sells more than the scope of work bought —
+ * the Cornhole deck put a $10K/month Reddit budget against a contract covering
+ * organic only. That is a sales conversation, not work: queueing it bills
+ * nobody, and dropping it loses the most valuable thing in an audit.
+ *
+ * Each one carries what would have to be agreed, because "out of scope" on its
+ * own is a dead end and "they would need to add £2k/month for paid Reddit" is
+ * something somebody can take to the client on Thursday.
+ *
+ * Marking one Not doing keeps it out of the next rebuild. Nothing is deleted:
+ * a lead somebody declined in March is worth seeing again in September.
+ */
+function outOfScopeList(r){
+  var list = (r && r.outOfScope) || [];
+  if (!list.length) return '';
+
+  var open = list.filter(function(o){ return o.status === 'To do'; }).length;
+
+  return '<div class="pri-h" style="margin-top:20px">Proposed, not in contract '
+    + '<span class="n">' + list.length + '</span></div>'
+    + '<div class="hint" style="margin:0 0 10px">These were promised or pitched '
+    + 'in the documents but sit outside what was sold, so they are not on the '
+    + 'checklist. Each one says what would need agreeing.</div>'
+    + '<div class="lines">' + list.map(function(o){
+        var done = o.status !== 'To do';
+        return '<div class="line oos' + (done ? ' settled' : '') + '">'
+          + '<span class="tx"><b>' + esc(o.item) + '</b>'
+          + (o.why ? '<br><span class="sub2">' + esc(o.why) + '</span>' : '')
+          + (o.needed ? '<br><span class="need">Would need: ' + esc(o.needed)
+              + '</span>' : '')
+          + '</span>'
+          + '<select data-oos="' + o.row + '">'
+          + (r.statuses || ['To do','In progress','Done','Not doing'])
+              .map(function(st){
+                return '<option' + (st === o.status ? ' selected' : '') + '>'
+                  + esc(st) + '</option>'; }).join('')
+          + '</select></div>';
+      }).join('') + '</div>'
+    + (open
+        ? '<div class="hint" style="margin:10px 0 0">Rebuilding replaces the '
+          + open + ' still at To do and leaves the rest alone.</div>'
+        : '');
 }
 
 function loadActions(clientId){
@@ -3269,9 +3330,16 @@ function wireActions(clientId, r){
             + res.trimmed.join(', ') + '. Untick another document and rebuild '
             + 'to read it whole.', true);
         }
-        (res.outOfScope || []).forEach(function(o){
-          toast('Out of scope: ' + o.item + ' — ' + o.why, true);
-        });
+        // NOT a toast, and never red. Six of them stacked up after a run that
+        // worked perfectly, each one styled as an error, and they were the
+        // last thing left on screen — so a build that wrote twenty items read
+        // as a build that failed six times. They are also the one part of the
+        // answer worth keeping, and a toast keeps nothing. They are filed
+        // against the client and rendered in the card below.
+        if ((res.outOfScope || []).length){
+          toast(res.outOfScope.length + ' proposed but not in contract — '
+            + 'listed under the build.');
+        }
         loadActions(clientId);
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Build action items';
@@ -3285,6 +3353,17 @@ function wireActions(clientId, r){
       });
     });
   }
+  [].forEach.call(document.querySelectorAll('[data-oos]'), function(sel){
+    sel.addEventListener('change', function(){
+      api('updateActionItem', TOKEN, Number(sel.getAttribute('data-oos')),
+          'status', sel.value)
+        .then(function(res){
+          toast(res.ok ? 'Saved.' : (res.message || 'Could not save.'), !res.ok);
+          if (res.ok) loadActions(clientId);
+        }).catch(fail);
+    });
+  });
+
   [].forEach.call(document.querySelectorAll('[data-src]'), function(i){
     i.addEventListener('change', function(){
       var n = [].filter.call(document.querySelectorAll('[data-src]'),
