@@ -73,9 +73,14 @@ function slackTest() {
   // channels:join is what lets the bot add itself to a public channel rather
   // than failing every post with not_in_channel. There is no private equivalent
   // — Slack requires a human to invite it — so nothing here covers that.
+  // bookmarks:write puts the link back to the client in the channel's tab bar.
+  // bookmarks:read is what stops a second one appearing beside the first every
+  // time the channel is relinked — without it the link still gets added, it
+  // just cannot be checked for first.
   const wanted = ['channels:manage', 'channels:join', 'groups:write',
                   'channels:read', 'groups:read', 'users:read',
-                  'users:read.email', 'chat:write'];
+                  'users:read.email', 'chat:write',
+                  'bookmarks:write', 'bookmarks:read'];
   const missing = granted.length ? wanted.filter(s => granted.indexOf(s) === -1) : [];
 
   return {
@@ -88,6 +93,115 @@ function slackTest() {
     // reporting everything as missing.
     scopesUnknown: !granted.length
   };
+}
+
+// ---------------------------------------------------------------- BOOKMARK
+
+/**
+ * The label on the channel's tab bar. Not the client's name — the channel is
+ * already named after them, and "Harbor & Sons" sitting next to Messages and
+ * Pins says nothing about what clicking it does.
+ */
+const SLACK_BOOKMARK_TITLE = 'Onboarding';
+const SLACK_BOOKMARK_EMOJI = 'clipboard';
+
+/**
+ * Puts a link to the client's page in the channel's tab bar.
+ *
+ * Slack calls these bookmarks; they sit beside Messages, Files and Pins at the
+ * top of a channel. It is the right home for this because it is the one place
+ * in Slack that is per-channel and permanent — a pinned message scrolls out of
+ * relevance and a link in the purpose is three clicks deep.
+ *
+ * The direction that matters is Slack → tool. The tool already links out to
+ * the channel from the client page, and every nudge carries a link back; what
+ * was missing is the way in from the conversation, which is where people
+ * actually are when they think "what is outstanding on this account".
+ *
+ * NEVER THROWS, AND NEVER FAILS THE LINKING. Connecting the channel is the act
+ * somebody asked for; the bookmark is a convenience on top of it. A workspace
+ * that has not granted bookmarks:write must still be able to link a channel,
+ * and be told why the tab did not appear rather than told the link failed.
+ */
+function slackBookmarkClient_(client, channelId) {
+  const url = clientUrl_(client);
+  if (!url) {
+    return { ok: false, reason: 'noUrl',
+             message: 'No web app URL, so there is nowhere for the Slack link '
+               + 'to point. Deploy the web app, or set Config "App URL".' };
+  }
+  if (!channelId) return { ok: false, reason: 'noChannel' };
+
+  // Look before adding, or relinking a channel leaves two identical tabs and
+  // no clue which is current. A failure here is not fatal — see below.
+  let existing = null;
+  let couldNotCheck = false;
+  try {
+    const list = slackCall_('bookmarks.list', { channel_id: channelId });
+    if (list.ok) {
+      existing = (list.bookmarks || []).filter(b =>
+        b && b.title === SLACK_BOOKMARK_TITLE)[0] || null;
+    } else {
+      couldNotCheck = true;
+    }
+  } catch (e) {
+    couldNotCheck = true;
+  }
+
+  // The URL carries the client ID, so a bookmark pointing at the wrong client
+  // — a channel relinked to a different account — is corrected rather than
+  // duplicated.
+  if (existing && existing.link === url) {
+    return { ok: true, already: true, url: url };
+  }
+
+  try {
+    const res = existing
+      ? slackCall_('bookmarks.edit', {
+          channel_id: channelId, bookmark_id: existing.id, link: url,
+          title: SLACK_BOOKMARK_TITLE })
+      : slackCall_('bookmarks.add', {
+          channel_id: channelId, title: SLACK_BOOKMARK_TITLE, type: 'link',
+          link: url, emoji: ':' + SLACK_BOOKMARK_EMOJI + ':' });
+
+    if (!res.ok) {
+      return { ok: false, reason: 'slack', url: url,
+               message: slackError_(res, 'add the link to the channel') };
+    }
+    return { ok: true, url: url, updated: !!existing,
+             couldNotCheck: couldNotCheck };
+  } catch (e) {
+    return { ok: false, reason: 'threw', url: url,
+             message: (e && e.message) || String(e) };
+  }
+}
+
+/**
+ * Adds the link by hand, for a channel connected before this existed.
+ *
+ * Every client already linked has a channel with no tab on it, and the only
+ * way to get one otherwise would be to unlink and relink — which is a
+ * destructive-looking action to ask somebody to perform for a cosmetic reason.
+ */
+function slackAddBookmark(token, clientId) {
+  checkToken_(token);
+
+  const client = getClientRecord_(clientId);
+  if (!client) return { ok: false, message: 'Client not found.' };
+  if (!client.slack) {
+    return { ok: false, message: 'No Slack channel on this client yet.' };
+  }
+
+  // findChannel_ takes the name with or without the hash and reports its own
+  // reason for failing, which is usually "it is private and I am not in it".
+  const found = findChannel_(String(client.slack).replace(/^#/, ''));
+  if (!found.ok) return { ok: false, message: found.message };
+
+  const res = slackBookmarkClient_(client, found.channel.id);
+  if (!res.ok) return { ok: false, message: res.message || 'Could not add it.' };
+  return { ok: true, already: !!res.already, updated: !!res.updated,
+           url: res.url, channel: client.slack,
+           couldNotCheck: !!res.couldNotCheck };
 }
 
 // ---------------------------------------------------------------- CHANNELS
@@ -155,8 +269,13 @@ function slackCreateChannel(token, clientId, opts) {
   const url = 'https://slack.com/app_redirect?channel=' + channelId;
   setClientField_(clientId, C.SLACK, '#' + name);
 
+  // The way back. Everything else here points out of the tool and into Slack;
+  // this is the one link that goes the other way, and it belongs in the
+  // channel's tab bar rather than in a message that scrolls away.
+  const mark = slackBookmarkClient_(client, channelId);
+
   return { ok: true, name: '#' + name, channelId: channelId, url: url,
-           invited: invited.length, failed: failed };
+           invited: invited.length, failed: failed, bookmark: mark };
 }
 
 /**
@@ -246,9 +365,14 @@ function slackLinkChannel(token, clientId, channelId) {
   }
 
   setClientField_(clientId, C.SLACK, '#' + ch.name);
+
+  // Linking an existing channel is the commoner path — most accounts already
+  // have one — so it is the one that most needs the tab.
+  const mark = slackBookmarkClient_(client, ch.id);
+
   return { ok: true, name: '#' + ch.name, channelId: ch.id,
            url: 'https://slack.com/app_redirect?channel=' + ch.id,
-           joined: joined, warn: warn };
+           joined: joined, warn: warn, bookmark: mark };
 }
 
 /**

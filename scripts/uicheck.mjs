@@ -161,8 +161,20 @@ const FAKE = {
     { id:'C01CORN', name:'cornhole-co', isPrivate:true, isMember:false, members:4, purpose:'' },
     { id:'C01PAID', name:'paid-search', isPrivate:false, isMember:false, members:11, purpose:'' }
   ] },
+  // The bookmark failed here on purpose: the workspace has not granted
+  // bookmarks:write, which is the case somebody actually hits, and the channel
+  // must still link. A tab that could not be added is not a link that failed.
   slackLinkChannel: { ok:true, name:'#harbor-sons', channelId:'C01HARB',
-    url:'https://slack.com/app_redirect?channel=C01HARB', joined:false, warn:'' },
+    url:'https://slack.com/app_redirect?channel=C01HARB', joined:false, warn:'',
+    bookmark:{ ok:false, reason:'slack',
+      message:'Slack refused to add the link to the channel: missing_scope '
+            + '(needed bookmarks:write, token has chat:write).' } },
+  // Linking a channel also puts a tab in it pointing back at the client. It
+  // is reported only when it fails, so the success shape carries nothing to
+  // assert beyond its absence from the toasts.
+  slackAddBookmark: { ok:true, updated:false, already:false,
+    channel:'#harbor-sons',
+    url:'https://onboarding.lockherndigital.com/?client=HARBOR-2608' },
   getTeamAdmin: { ok:true, slackReady:true,
     viewer:{ email:'aric@lockherndigital.com', name:'Aric Whiteley',
              owner:true, finance:true, reason:'' },
@@ -1832,6 +1844,47 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (!/bot not in it/.test(await page.$eval('#slackChanSel', s => s.textContent))) {
     throw new Error('The picker did not flag a channel the bot is not in');
   }
+  // Linking puts a tab in the channel that opens this client — the one link
+  // that goes Slack → tool, where everything else goes the other way.
+  //
+  // The stub's workspace has not granted bookmarks:write, which is the case
+  // people actually hit. The channel must still link: a tab that could not be
+  // added is not a link that failed. And the reason has to reach the screen,
+  // because "why is there no tab" is otherwise unanswerable from here.
+  await page.click('#slackLink');
+  await page.waitForTimeout(400);
+  const linked = await page.$$eval('.toast',
+    els => els.map(e => e.textContent).join(' || '));
+  if (!/Linked #harbor-sons/.test(linked)) {
+    throw new Error('Linking the channel did not report success: ' + linked);
+  }
+  if (!/bookmarks:write/.test(linked)) {
+    throw new Error('A tab that could not be added said nothing about why: '
+      + linked);
+  }
+  if (!/channel is linked, but/.test(linked)) {
+    throw new Error('A failed bookmark is being reported as a failed link: '
+      + linked);
+  }
+
+  // And the way to add one to a channel connected before this existed —
+  // otherwise the only route is to unlink and relink, which is a
+  // destructive-looking act to ask for a cosmetic reason.
+  await page.click('#slackManage');
+  await page.waitForTimeout(250);
+  if (!await page.$('#slackBookmark')) {
+    throw new Error('No way to add the tab to an already-linked channel');
+  }
+  await page.click('#slackBookmark');
+  await page.waitForTimeout(300);
+  const added = await page.$$eval('.toast',
+    els => els.map(e => e.textContent).join(' || '));
+  if (!/Onboarding tab on #harbor-sons/.test(added)) {
+    throw new Error('Adding the tab by hand said nothing useful: ' + added);
+  }
+
+  await page.click('#slackPickBtn');
+  await page.waitForSelector('#slackChanSel', { timeout: 5000 });
   await page.waitForTimeout(200);
   const fPick = `${OUT}/${name}-detail-channel-picker.png`;
   await page.screenshot({ path: fPick, fullPage: name === 'desktop' });
