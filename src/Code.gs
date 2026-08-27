@@ -200,7 +200,7 @@ const C = {
 const A = {
   ID: 1, COMPANY: 2, TASK: 3, CATEGORY: 4, METHOD: 5, NEEDS: 6, ACCOUNT: 7,
   STATUS: 8, DUE: 9, REQUESTED: 10, COMPLETED: 11, OWNER: 12, NOTES: 13,
-  PHASE: 14, GATE: 15, ASSIGNED: 16, ORIGIN: 17, WIDTH: 17
+  PHASE: 14, GATE: 15, ASSIGNED: 16, ORIGIN: 17, CLICKUP: 18, WIDTH: 18
 };
 
 /**
@@ -321,7 +321,7 @@ function setup() {
   mkTab_(ss, TABS.ACCESS, [
     'Client ID', 'Company', 'Task', 'Category', 'Method', 'Client Info Needed',
     'Account ID', 'Status', 'Due', 'Requested', 'Completed', 'Owner', 'Notes',
-    'Phase', 'Gate', 'Assigned', 'Origin'
+    'Phase', 'Gate', 'Assigned', 'Origin', 'ClickUp Task'
   ]);
 
   mkTab_(ss, TABS.PLANS, [
@@ -909,6 +909,39 @@ function cfg(key) {
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
   const hit = rows.find(r => String(r[0]).trim() === key);
   return hit ? String(hit[1]).trim() : '';
+}
+
+/**
+ * Writes a Config value, adding the row if the tab has never had that key.
+ *
+ * Only for values the tool itself sets — a remembered ClickUp list, not
+ * something somebody typed. `cfg` reads by key rather than position, so an
+ * appended row is found the same as a seeded one.
+ */
+function setConfig_(key, value) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(TABS.CONFIG);
+  if (!sh) return false;
+
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const rows = sh.getRange(2, 1, last - 1, 1).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === key) {
+        sh.getRange(i + 2, 2).setValue(value);
+        return true;
+      }
+    }
+  }
+
+  // Padded to the tab's width, or a two-cell write into a three-column tab
+  // throws rather than leaving the third blank.
+  const width = Math.max(2, sh.getLastColumn());
+  const row = new Array(width).fill('');
+  row[0] = key;
+  row[1] = value;
+  sh.getRange(last + 1, 1, 1, width).setValues([row]);
+  return true;
 }
 
 function promptForApiKey() {

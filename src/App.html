@@ -529,6 +529,12 @@
     border-left:2px solid var(--blue-line); padding-left:11px}
   .line.oos .tx{line-height:1.5}
   .line.oos .sub2{color:var(--muted); font-size:12.5px}
+  /* The channel beside a task name, as metadata rather than more sentence.
+     Without a mark of its own "Add H1 tags to all product pages AI Search
+     SEO" reads as one run-on title. */
+  .line .tx .sub2{color:var(--faint); font-size:12.5px}
+  .line .tx .sub2::before{content:'·'; margin:0 6px; color:var(--mid)}
+  .line.oos .tx .sub2::before{content:none; margin:0}
   .line.oos .need{color:var(--blue-ink); font-size:12.5px}
   .line.oos select{flex:none; align-self:center}
   /* Decided on. Faded, never removed — a lead declined in March is worth
@@ -919,6 +925,7 @@ var SERVER_FNS = [
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
+  'clickupWorkspaces', 'clickupLists', 'clickupPlan', 'clickupPush',
   'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
@@ -3150,17 +3157,6 @@ function wireSlack(clientId, c){
   });
 }
 
-function loadActions(clientId){
-  api('getActionItems', clientId).then(function(r){
-    if (!el('actWrap')) return;
-    el('actWrap').innerHTML = actionsCard(r);
-    wireActions(clientId, r);
-  }).catch(function(){
-    if (el('actWrap')) el('actWrap').innerHTML =
-      '<h3>Action items</h3><div class="hint">Could not read them.</div>';
-  });
-}
-
 /**
  * The builder, not the list.
  *
@@ -3235,6 +3231,236 @@ function outOfScopeList(r){
         ? '<div class="hint" style="margin:10px 0 0">Rebuilding replaces the '
           + open + ' still at To do and leaves the rest alone.</div>'
         : '');
+}
+
+/**
+ * Sending the checklist into ClickUp.
+ *
+ * The audit produces twenty owned, dated items and the work then happens in
+ * ClickUp, which meant somebody retyped twenty tasks and picked twenty
+ * assignees off a dropdown. What arrived was a partial list with the boring
+ * half missing.
+ *
+ * Two decisions, then a button: which workspace, which list. Both are
+ * remembered against the client, so it is one press from the second time on.
+ */
+var CU = { loaded:false, workspaces:[], lists:[], plan:null,
+           workspaceId:'', listId:'' };
+
+function loadClickUp(clientId){
+  var box = el('cuWrap');
+  if (!box) return;
+
+  api('clickupWorkspaces').then(function(r){
+    if (!r.ok){
+      box.innerHTML = '<h3>Not connected</h3><div class="hint">'
+        + esc(r.message || 'ClickUp could not be reached.') + '</div>';
+      return;
+    }
+    CU.workspaces = r.workspaces || [];
+    if (!CU.workspaces.length){
+      box.innerHTML = '<h3>No workspaces</h3><div class="hint">That ClickUp '
+        + 'token can see no workspaces at all.</div>';
+      return;
+    }
+    // Whatever was used for this client last time, or the only one there is.
+    return api('clickupPlan', TOKEN, clientId, {}).then(function(p){
+      CU.plan = p;
+      CU.workspaceId = (p && p.workspaceId)
+        || (CU.workspaces.length === 1 ? CU.workspaces[0].id : '');
+      CU.listId = (p && p.listId) || '';
+      drawClickUp(clientId);
+      if (CU.workspaceId) fetchLists(clientId);
+    });
+  }).catch(function(e){
+    box.innerHTML = '<h3>Could not reach ClickUp</h3><div class="hint">'
+      + esc((e && e.message) || 'Unknown error.') + '</div>';
+  });
+}
+
+function fetchLists(clientId){
+  var sel = el('cuList');
+  if (sel) sel.innerHTML = '<option>Loading lists…</option>';
+  api('clickupLists', CU.workspaceId).then(function(r){
+    CU.lists = (r && r.ok && r.lists) || [];
+    CU.listsNote = (r && r.ok)
+      ? ((r.unreadable || []).length
+          ? 'Could not read ' + r.unreadable.join(', ')
+            + ' — lists in there are not offered.' : '')
+      : ((r && r.message) || 'Could not read the lists.');
+    drawClickUp(clientId);
+  }).catch(function(e){
+    CU.lists = [];
+    CU.listsNote = (e && e.message) || 'Could not read the lists.';
+    drawClickUp(clientId);
+  });
+}
+
+function drawClickUp(clientId){
+  var box = el('cuWrap');
+  if (!box) return;
+  var p = CU.plan || {};
+  var items = p.items || [];
+  var unmatched = items.filter(function(i){ return i.unmatched; })
+    .map(function(i){ return i.unmatched; })
+    .filter(function(v, i, a){ return a.indexOf(v) === i; });
+
+  var h = '<h3>Send the checklist to ClickUp</h3>'
+    + '<div class="hint">Creates one ClickUp task per item, assigned to the '
+    + 'same person, with the due date and why it matters. A row already sent '
+    + 'is never sent twice — press it again after a rebuild and only the new '
+    + 'ones go.</div>';
+
+  h += '<div class="fields" style="margin-top:14px">'
+    + '<div class="f"><label>Workspace</label><select id="cuWs">'
+    + (CU.workspaceId ? '' : '<option value="">Pick one…</option>')
+    + CU.workspaces.map(function(w){
+        return '<option value="' + esc(w.id) + '"'
+          + (w.id === CU.workspaceId ? ' selected' : '') + '>'
+          + esc(w.name) + '</option>'; }).join('')
+    + '</select></div>'
+    + '<div class="f"><label>List</label><select id="cuList">'
+    + (CU.lists.length
+        ? ('<option value="">Pick one…</option>'
+           + CU.lists.map(function(l){
+               return '<option value="' + esc(l.id) + '"'
+                 + (l.id === CU.listId ? ' selected' : '') + '>'
+                 // The path, because two lists both called "Tasks" are told
+                 // apart only by the space above them.
+                 + esc(l.path + ' / ' + l.name) + '</option>'; }).join(''))
+        : '<option value="">' + (CU.workspaceId ? 'No lists found'
+            : 'Pick a workspace first') + '</option>')
+    + '</select></div></div>';
+
+  if (CU.listsNote){
+    h += '<div class="hint" style="color:var(--warning)">'
+      + esc(CU.listsNote) + '</div>';
+  }
+
+  h += '<div class="pri-h" style="margin-top:18px">Would send '
+    + '<span class="n">' + items.length + '</span></div>';
+
+  if (p.sent){
+    h += '<div class="hint" style="margin:0 0 8px">'
+      + p.sent + ' already in ClickUp and skipped.</div>';
+  }
+
+  if (!items.length){
+    h += '<div class="hint" style="margin:0">Nothing to send. Everything on '
+      + 'this checklist is either complete or already over there — build the '
+      + 'action items, or tick "everything" below.</div>';
+  } else {
+    h += '<div class="lines">' + items.slice(0, 12).map(function(i){
+        return '<div class="line"><span class="tx">' + esc(i.task)
+          + (i.area ? ' <span class="sub2">' + esc(i.area) + '</span>' : '')
+          + '</span><span class="sub">'
+          + (i.assignee ? esc(i.assignee)
+             : (i.unmatched ? '<b style="color:var(--warning)">'
+                  + esc(i.unmatched) + ' — not in ClickUp</b>' : 'unassigned'))
+          + '</span></div>'; }).join('')
+      + (items.length > 12
+          ? '<div class="line"><span class="tx sub2">and '
+            + (items.length - 12) + ' more</span></div>' : '')
+      + '</div>';
+  }
+
+  // Named, not counted. "3 will be unassigned" is a number; "Sasha Roe is not
+  // in this ClickUp workspace" is something somebody can fix in a minute.
+  if (unmatched.length){
+    h += '<div class="hint" style="color:var(--warning); margin-top:10px">'
+      + esc(unmatched.join(', ')) + ' ' + (unmatched.length === 1 ? 'is' : 'are')
+      + ' not in that ClickUp workspace, matched on the email on the Team tab. '
+      + 'Those tasks go over unassigned.</div>';
+  }
+  if (p.peopleOk === false && p.peopleNote){
+    h += '<div class="hint" style="color:var(--warning)">'
+      + esc(p.peopleNote) + '</div>';
+  }
+
+  h += '<div class="startrow">'
+    + '<label class="mini"><input type="checkbox" id="cuAll">'
+    + ' The whole checklist, not just the audit items</label>'
+    + '<button class="btn pri" id="cuSend"'
+    + (items.length && CU.listId ? '' : ' disabled') + '>Send '
+    + (items.length || '') + ' to ClickUp</button></div>';
+
+  box.innerHTML = h;
+  wireClickUp(clientId);
+}
+
+function wireClickUp(clientId){
+  if (el('cuWs')){
+    el('cuWs').addEventListener('change', function(){
+      CU.workspaceId = this.value;
+      CU.listId = '';
+      CU.lists = [];
+      // The people come from the workspace, so the plan is re-asked for: who
+      // a task would land on is not the same answer in a different workspace.
+      refreshPlan(clientId, function(){ fetchLists(clientId); });
+    });
+  }
+  if (el('cuList')){
+    el('cuList').addEventListener('change', function(){
+      CU.listId = this.value;
+      drawClickUp(clientId);
+    });
+  }
+  if (el('cuAll')){
+    el('cuAll').addEventListener('change', function(){
+      CU.everything = this.checked;
+      refreshPlan(clientId);
+    });
+  }
+  if (!el('cuSend')) return;
+
+  el('cuSend').addEventListener('click', function(){
+    var b = this;
+    // Armed. It creates real tasks in a shared list that other people are
+    // looking at, and there is no undo but deleting them one at a time.
+    if (b.getAttribute('data-armed') !== '1'){
+      b.setAttribute('data-armed', '1');
+      b.textContent = 'Send ' + ((CU.plan && CU.plan.items || []).length)
+        + ' tasks?';
+      setTimeout(function(){
+        if (!b.parentNode) return;
+        b.removeAttribute('data-armed');
+        b.textContent = 'Send ' + ((CU.plan && CU.plan.items || []).length)
+          + ' to ClickUp';
+      }, 6000);
+      return;
+    }
+
+    b.disabled = true; b.textContent = 'Sending…';
+    api('clickupPush', TOKEN, clientId, {
+      workspaceId: CU.workspaceId, listId: CU.listId,
+      everything: !!CU.everything
+    }).then(function(r){
+      b.disabled = false; b.removeAttribute('data-armed');
+      if (!r.ok){ toast(r.message || 'Nothing was created.', true); return; }
+      toast('Created ' + r.sent + ' task' + (r.sent === 1 ? '' : 's')
+        + ' in ClickUp.');
+      (r.failed || []).forEach(function(f){
+        toast(f.task + ' — ' + f.why, true);
+      });
+      if ((r.unassignedOwners || []).length){
+        toast(r.unassignedOwners.join(', ') + ' could not be matched in '
+          + 'ClickUp, so those went over unassigned.', true);
+      }
+      refreshPlan(clientId);
+    }).catch(function(e){
+      b.disabled = false; b.removeAttribute('data-armed'); fail(e);
+    });
+  });
+}
+
+function refreshPlan(clientId, then){
+  api('clickupPlan', TOKEN, clientId, {
+    workspaceId: CU.workspaceId, everything: !!CU.everything
+  }).then(function(p){
+    CU.plan = p;
+    drawClickUp(clientId);
+    if (then) then();
+  }).catch(function(){ if (then) then(); });
 }
 
 function loadActions(clientId){
@@ -4423,6 +4649,15 @@ function openClient(clientId){
 
     h += '<div class="grp">Action items</div><div class="card">'
       + '<div class="sect" id="actWrap">' + loading() + '</div></div>'
+      // Folded, because it is a once-per-client setup followed by a button.
+      // Open on the page it would push twenty rows into is a section that
+      // makes the client page longer every day for one press a fortnight.
+      + '<div class="grp"><button class="phtog" id="cuTog">'
+      + '<span class="tw">▶</span>Send to ClickUp '
+      + '<span class="st" id="cuSum">the audit items, assigned</span>'
+      + '</button></div>'
+      + '<div class="card" id="cuCard" style="display:none">'
+      + '<div class="sect" id="cuWrap">' + loading() + '</div></div>'
       // Outside actWrap: loadActions redraws that, and a log wiped by the
       // reload that follows a failed build is a log nobody reads.
       + '<div id="actLog"></div>';
@@ -4593,6 +4828,19 @@ function openClient(clientId){
 
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    // Loaded on first open rather than with the page: it is three ClickUp
+    // round trips to build the list picker, and most visits to a client never
+    // touch it.
+    if (el('cuTog')){
+      el('cuTog').addEventListener('click', function(){
+        var b = el('cuCard');
+        var shut = b.style.display === 'none';
+        b.style.display = shut ? '' : 'none';
+        el('cuTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+        if (shut && !CU.loaded){ CU.loaded = true; loadClickUp(clientId); }
+      });
+    }
 
     if (el('slackTog')){
       el('slackTog').addEventListener('click', function(){
