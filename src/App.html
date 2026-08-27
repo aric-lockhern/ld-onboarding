@@ -918,7 +918,7 @@ var SERVER_FNS = [
   'buildActionItems', 'getActionItems',
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
-  'slackPingTasks', 'slackJoinChannel',
+  'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
   'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
@@ -2861,13 +2861,17 @@ function slackCard(c){
     return '<h3>' + esc(c.slack) + '</h3>'
       + '<div class="hint">Post the outstanding onboarding items to this channel, '
       + 'grouped by who owns them and tagging them by name. Nothing is sent when '
-      + 'nothing is outstanding. Tick people below to add them to the channel.</div>'
+      + 'nothing is outstanding. Tick people below to add them to the channel.'
+      + '<br><br>Linking a channel also puts an <b>Onboarding</b> tab in it, '
+      + 'beside Messages and Pins, that opens this client. Channels connected '
+      + 'before that existed need it adding once.</div>'
       + '<div id="slackPeople" class="hint">Loading the team…</div>'
       + '<div id="slackPick"></div>'
       + '<div class="startrow">'
       + '<button class="btn" id="slackAdd">Add to channel</button>'
       + '<button class="btn" id="slackJoin">Add bot to channel</button>'
       + '<button class="btn" id="slackPickBtn">Change channel</button>'
+      + '<button class="btn" id="slackBookmark">Add link to Slack</button>'
       + '<button class="btn" id="slackCheck">Test connection</button>'
       + '<button class="btn pri" id="slackPing">Ping outstanding items</button></div>';
   }
@@ -2884,6 +2888,27 @@ function slackCard(c){
     + '<button class="btn" id="slackPickBtn">Use an existing channel</button>'
     + '<button class="btn" id="slackCheck">Test connection</button>'
     + '<button class="btn pri" id="slackMake">Create channel</button></div>';
+}
+
+/**
+ * What happened to the channel's link back to this client.
+ *
+ * Silent on success. A tab appearing in Slack is its own confirmation, and a
+ * toast for every side effect of linking a channel is three toasts for one
+ * action. It speaks only when it did not work, because "why is there no tab"
+ * is otherwise unanswerable from this screen — and the usual cause is a scope
+ * nobody knew to grant.
+ */
+function reportBookmark(mark){
+  if (!mark || mark.ok) return;
+  if (mark.reason === 'noUrl'){
+    toast(mark.message, true);
+    return;
+  }
+  toast('The channel is linked, but the tab back to this client could not be '
+    + 'added: ' + (mark.message || 'unknown reason')
+    + ' Grant bookmarks:write to the Slack app and use "Add link to Slack".',
+    true);
 }
 
 function wireSlack(clientId, c){
@@ -2905,6 +2930,29 @@ function wireSlack(clientId, c){
         }
       }).catch(function(e){
         b.disabled = false; b.textContent = 'Test connection'; fail(e);
+      });
+    });
+  }
+
+  if (el('slackBookmark')){
+    el('slackBookmark').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Adding…';
+      api('slackAddBookmark', TOKEN, clientId).then(function(r){
+        b.disabled = false; b.textContent = 'Add link to Slack';
+        if (!r.ok){ toast(r.message, true); return; }
+        toast(r.already
+          ? ('The Onboarding tab is already on ' + r.channel + '.')
+          : ((r.updated ? 'Updated' : 'Added') + ' the Onboarding tab on '
+             + r.channel + '.'));
+        // Without bookmarks:read it cannot look before it adds, so a second
+        // press would sit a duplicate beside the first. Say so once.
+        if (r.couldNotCheck){
+          toast('Could not check for an existing tab first — grant '
+            + 'bookmarks:read, or pressing this again may add a second one.',
+            true);
+        }
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Add link to Slack'; fail(e);
       });
     });
   }
@@ -3065,6 +3113,7 @@ function wireSlack(clientId, c){
               if (!res.ok){ toast(res.message, true); return; }
               toast('Linked ' + res.name + (res.joined ? ', bot joined' : '') + '.');
               if (res.warn) toast(res.warn, true);
+              reportBookmark(res.bookmark);
               openClient(clientId);
             }).catch(function(e){
               lb.disabled = false; lb.textContent = 'Link this channel'; fail(e);
@@ -3093,6 +3142,7 @@ function wireSlack(clientId, c){
       if (!r.ok){ toast(r.message, true); return; }
       toast('Created ' + r.name + (r.invited ? ' and invited ' + r.invited : '') + '.');
       (r.failed || []).forEach(function(f){ toast(f, true); });
+      reportBookmark(r.bookmark);
       openClient(clientId);
     }).catch(function(e){
       b.disabled = false; b.textContent = 'Create channel'; fail(e);

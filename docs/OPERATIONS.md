@@ -220,6 +220,20 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### The Slack app's scopes
+
+`slackTest` reads the granted scopes off Slack's own response and names anything missing, so **Test connection** on any client page is the check. The tool wants:
+
+`channels:manage` · `channels:join` · `groups:write` · `channels:read` · `groups:read` · `users:read` · `users:read.email` · `chat:write` · `bookmarks:write` · `bookmarks:read`
+
+The two bookmark scopes are what put an **Onboarding** tab in a client's channel, beside Messages and Pins, that opens that client in this tool. Without `bookmarks:write` everything else still works and channels still link — the tab just does not appear, and the toast says so. Without `bookmarks:read` the tab is added but cannot be checked for first, so relinking a channel can leave two.
+
+Ticking a scope does nothing until the app is **reinstalled** to the workspace. That is where this usually goes wrong.
+
+Channels connected before the tab existed do not have one. **Add link to Slack** on the client's Slack card adds it — the card is hidden once a channel is set, so reach it through the `manage` link beside the channel name at the top of the client page.
+
+The bot has to be in the channel to add a tab to it. For a private channel that means somebody inviting it: `/invite @your-bot`.
+
 ### Hiding what clients pay
 
 MRR and the fee lines are hidden from everybody except the account that deployed the tool and anyone ticked **Sees finances** on the Team page.
