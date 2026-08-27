@@ -4376,12 +4376,18 @@ function openClient(clientId){
       });
     });
 
-    // One handler for both: a single-task ping is a list of one, so the two
-    // buttons differ only in how many names they send.
-    function pingTasks(btn, tasks, label){
+    // One handler for all of them: a single-task ping is a list of one, so the
+    // buttons differ only in how many names they send and what the set IS.
+    //
+    // `about` is that second part, and it is why a channel ping says "Reddit".
+    // Without it the message is four task names with the reason for grouping
+    // them thrown away, and the reader has no idea why these four. Blank for a
+    // single task and for a hand-ticked selection, because neither is a set
+    // with a name.
+    function pingTasks(btn, tasks, about){
       var was = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = '…';
-      api('slackPingTasks', TOKEN, clientId, tasks).then(function(r){
+      api('slackPingTasks', TOKEN, clientId, tasks, about || '').then(function(r){
         btn.disabled = false; btn.innerHTML = was;
         if (!r.ok){ toast(r.message, !r.nothing); return; }
         toast('Posted ' + r.posted + ' to ' + r.channel
@@ -4439,7 +4445,7 @@ function openClient(clientId){
           return String(t.phase) === phase
             && t.status !== 'Complete' && t.status !== 'N/A';
         }).map(function(t){ return t.task; });
-        pingTasks(b, names);
+        pingTasks(b, names, 'Phase ' + phase);
       });
     });
 
@@ -4567,7 +4573,7 @@ function openClient(clientId){
             && (t.category || 'Everything else') === chan
             && t.status !== 'Complete' && t.status !== 'N/A';
         }).map(function(t){ return t.task; });
-        pingTasks(b, names);
+        pingTasks(b, names, chan);
       });
     });
 

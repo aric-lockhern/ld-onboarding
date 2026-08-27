@@ -534,8 +534,11 @@ function slackJoinChannel(token, clientId) {
  * nudge that includes finished work reads as not having looked.
  *
  * @param {Array<string>} tasks task names, as they appear on the Access tab
+ * @param {string} [about] what the set IS — a channel, a phase. See taskLines_:
+ *   a ping of everything open on Reddit that never says "Reddit" is a list of
+ *   tasks with the reason for grouping them thrown away.
  */
-function slackPingTasks(token, clientId, tasks) {
+function slackPingTasks(token, clientId, tasks, about) {
   checkToken_(token);
 
   const client = getClientRecord_(clientId);
@@ -568,7 +571,7 @@ function slackPingTasks(token, clientId, tasks) {
 
   const r = slackCall_('chat.postMessage', {
     channel: member.channelId,
-    text: taskLines_(client, open).join('\n')
+    text: taskLines_(client, open, about).join('\n')
   });
   if (!r.ok) return { ok: false, message: slackError_(r, 'post the message') };
 
@@ -684,7 +687,7 @@ function taskLine_(t) {
  * a directory that is only half matched still produces a readable nudge rather
  * than a wall of raw user IDs or nothing at all.
  */
-function taskLines_(client, tasks) {
+function taskLines_(client, tasks, about) {
   const team = {};
   getTeam().forEach(t => { if (t.slackId) team[t.name] = t.slackId; });
 
@@ -701,9 +704,23 @@ function taskLines_(client, tasks) {
   const many = owners.length > 1;
   const lines = [];
 
+  /*
+   * What this set IS, when it is a set rather than everything.
+   *
+   * The channel and phase buttons send a filtered list — "everything still
+   * open on Reddit", "everything outstanding in Phase 2" — and without this
+   * the message is those task names with the reason for grouping them thrown
+   * away. The reader gets four bullets and no idea why these four.
+   *
+   * Trimmed and escaped because it comes from the browser. Nothing else here
+   * takes a caller-supplied string.
+   */
+  const subject = slackEscape_(String(about || '').trim()).slice(0, 60);
+  const topic = subject ? '*' + subject + '* for ' + name : '';
+
   // With one owner the client belongs in their sentence. With several it needs
   // its own line, or every greeting has to repeat it.
-  if (many) lines.push('Checking in on onboarding for ' + name + ' 👋');
+  if (many) lines.push('Checking in on ' + (topic || 'onboarding for ' + name) + ' 👋');
 
   owners.forEach((who, i) => {
     if (i || many) lines.push('');
@@ -711,12 +728,13 @@ function taskLines_(client, tasks) {
     if (who === 'Unassigned') {
       lines.push(many
         ? 'Still unassigned — these need an owner:'
-        : 'These are still open on ' + name + ' and nobody is assigned yet:');
+        : 'These are still open on ' + (topic || name) + ' and nobody is assigned yet:');
     } else {
       const tag = team[who] ? '<@' + team[who] + '>' : '*' + slackEscape_(who) + '*';
       lines.push(many
         ? 'Hi ' + tag + ' — these are with you:'
-        : 'Hi ' + tag + ' — checking in on the following for ' + name + ' 👋');
+        : 'Hi ' + tag + ' — checking in on '
+          + (topic || 'the following for ' + name) + ' 👋');
     }
 
     groups[who].forEach(t => lines.push(taskLine_(t)));
