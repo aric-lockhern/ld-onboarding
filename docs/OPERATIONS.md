@@ -220,6 +220,20 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### Sending the checklist to ClickUp
+
+**Send to ClickUp** on the client page creates one ClickUp task per checklist item — assigned to the same person, with the due date, and with why it matters in the description.
+
+Pick a **workspace** and a **list** the first time; both are remembered against that client, so it is one press from then on. The list picker shows the space and folder above each list, because two lists called "Tasks" are otherwise the same word twice.
+
+It sends the **audit follow-ups** by default. Tick *the whole checklist* to send the access-chasing rows too.
+
+**Nothing is ever sent twice.** The created task's ID is written into the `ClickUp Task` column on the Access tab, and a row carrying one is skipped. So after rebuilding the action items, pressing the button again sends only the new ones. Clear that cell by hand to force a row to send again.
+
+**Assignees are matched on email** — the owner's name on the checklist, to their row on the Team tab, to their ClickUp account. Anybody without an email on the Team tab, or not in that ClickUp workspace, is named on screen and their task goes over unassigned rather than being silently dropped.
+
+Needs `CLICKUP_API_TOKEN` set (Onboarding → Set ClickUp API token), which is the same token the meeting-doc scan uses.
+
 ### The Slack app's scopes
 
 `slackTest` reads the granted scopes off Slack's own response and names anything missing, so **Test connection** on any client page is the check. The tool wants:

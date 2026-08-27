@@ -172,6 +172,36 @@ const FAKE = {
   // Linking a channel also puts a tab in it pointing back at the client. It
   // is reported only when it fails, so the success shape carries nothing to
   // assert beyond its absence from the toasts.
+  clickupWorkspaces: { ok:true, workspaces:[
+    { id:'18033356', name:'Lockhern Digital' },
+    { id:'90210777', name:'Client Sandbox' } ] },
+  // Two lists share the name "Tasks". The space above them is the only thing
+  // telling them apart, which is why the path is on the label.
+  clickupLists: { ok:true, unreadable:['Archive'], lists:[
+    { id:'901300', name:'Tasks', path:'Client Delivery' },
+    { id:'901301', name:'Harbor & Sons', path:'Client Delivery / Accounts' },
+    { id:'901302', name:'Tasks', path:'Internal' } ] },
+  // One owner is on the Team tab but not in the ClickUp workspace, which is
+  // the case worth surfacing: that task arrives belonging to nobody.
+  clickupPlan: { ok:true, sent:3, peopleOk:true, peopleNote:'',
+    workspaceId:'18033356', listId:'',
+    items:[
+      { task:'Split the single Shopping campaign by margin tier',
+        area:'Google Ads', owner:'Drake King', assignee:'drake', unmatched:'',
+        due:'4 Sep 2026', phase:3, origin:'Audit' },
+      { task:'Add H1 tags to all product pages', area:'AI Search SEO',
+        owner:'Alexandra McCurdy', assignee:'alex', unmatched:'',
+        due:'', phase:3, origin:'Audit' },
+      { task:'Rewrite the negative keyword list', area:'Google Ads',
+        owner:'Sasha Roe', assignee:'', unmatched:'Sasha Roe',
+        due:'', phase:3, origin:'Audit' } ] },
+  clickupPush: { ok:true, sent:2, unassignedOwners:['Sasha Roe'],
+    failed:[{ task:'Rewrite the negative keyword list',
+              why:'ClickUp said 400: Team not authorized (OAUTH_027)' }],
+    created:[{ task:'Split the single Shopping campaign by margin tier',
+               id:'86a1', url:'https://app.clickup.com/t/86a1', assignee:'drake' },
+             { task:'Add H1 tags to all product pages', id:'86a2',
+               url:'https://app.clickup.com/t/86a2', assignee:'alex' }] },
   slackAddBookmark: { ok:true, updated:false, already:false,
     channel:'#harbor-sons',
     url:'https://onboarding.lockherndigital.com/?client=HARBOR-2608' },
@@ -1512,6 +1542,96 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (!/list may be short/.test(built)) {
     throw new Error('A cut-short list was reported as complete: ' + built);
   }
+
+  // Pushing the checklist into ClickUp.
+  //
+  // Two decisions and a button. The list picker is the part that has to be
+  // right: ClickUp nests workspace → space → folder → list, agencies keep two
+  // lists called "Tasks", and a task in the wrong one is worse than no task
+  // because nobody finds it to delete it.
+  await page.click('#cuTog');
+  // An <option> is never "visible" to Playwright, so this waits on the state
+  // rather than the element.
+  await page.waitForFunction(
+    () => !!document.querySelector('#cuList option[value="901301"]'),
+    null, { timeout: 5000 });
+
+  const cu = await page.evaluate(() => {
+    const lists = [].map.call(document.querySelectorAll('#cuList option'),
+      o => o.textContent);
+    const send = document.getElementById('cuSend');
+    return {
+      workspaces: document.querySelectorAll('#cuWs option').length,
+      lists: lists,
+      // Two lists named "Tasks" must not appear as the same word twice.
+      pathed: lists.filter(t => /Client Delivery \/ Tasks|Internal \/ Tasks/
+        .test(t)).length,
+      rows: document.querySelectorAll('#cuWrap .line').length,
+      // A person on the Team tab who is not in the ClickUp workspace is named,
+      // not counted — that task is about to arrive belonging to nobody.
+      namesUnmatched: /Sasha Roe/.test(document.getElementById('cuWrap').textContent),
+      // A space the token cannot read narrows the picker, and saying so is the
+      // only answer to "my list is not in the dropdown".
+      saysUnreadable: /Archive/.test(document.getElementById('cuWrap').textContent),
+      alreadySent: /3 already in ClickUp/
+        .test(document.getElementById('cuWrap').textContent),
+      // Nothing can be sent until a list is chosen.
+      disabled: !!send && send.disabled
+    };
+  });
+  if (cu.workspaces < 2) {
+    throw new Error('The workspace picker did not render: ' + JSON.stringify(cu));
+  }
+  if (cu.pathed !== 2) {
+    throw new Error('Two lists with the same name are not told apart by their '
+      + 'path: ' + JSON.stringify(cu.lists));
+  }
+  if (!cu.namesUnmatched) {
+    throw new Error('An owner missing from ClickUp is not named');
+  }
+  if (!cu.saysUnreadable) {
+    throw new Error('A space that could not be read is not mentioned');
+  }
+  if (!cu.alreadySent) {
+    throw new Error('The card does not say what is already over there');
+  }
+  if (!cu.disabled) {
+    throw new Error('Send is live before a list has been picked');
+  }
+
+  await page.selectOption('#cuList', '901301');
+  await page.waitForTimeout(150);
+  if (await page.$eval('#cuSend', e => e.disabled)) {
+    throw new Error('Send is still disabled after picking a list');
+  }
+
+  // Armed before it fires. It creates real tasks in a shared list other people
+  // are looking at, and the only undo is deleting them one at a time.
+  await page.click('#cuSend');
+  const armedCu = await page.$eval('#cuSend', e => e.textContent);
+  if (!/\?$/.test(armedCu.trim())) {
+    throw new Error('Sending to ClickUp fired without arming: ' + armedCu);
+  }
+  await page.click('#cuSend');
+  await page.waitForTimeout(400);
+  const pushed = await page.$$eval('.toast',
+    els => els.map(e => e.textContent).join(' || '));
+  if (!/Created 2 tasks in ClickUp/.test(pushed)) {
+    throw new Error('The push did not report what it created: ' + pushed);
+  }
+  // A partial failure has to name which one died, or fourteen successes and a
+  // bare "it failed" is the worst possible answer.
+  if (!/negative keyword list — ClickUp said 400/.test(pushed)) {
+    throw new Error('A failed task was not named: ' + pushed);
+  }
+  if (!/Sasha Roe could not be matched/.test(pushed)) {
+    throw new Error('Unassigned tasks were not reported: ' + pushed);
+  }
+
+  const fCu = `${OUT}/${name}-clickup.png`;
+  await page.locator('#cuWrap').screenshot({ path: fCu });
+  shots.push(fCu);
+  await page.click('#cuTog');
 
   // Out-of-scope proposals are not errors and are not toasts.
   //
