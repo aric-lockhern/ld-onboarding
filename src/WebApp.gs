@@ -57,6 +57,31 @@ function getWebAppUrl() {
   return url || '';
 }
 
+/**
+ * The base URL to build a shareable client link from.
+ *
+ * Returned once for a whole list rather than per client: fifty clients on a
+ * screen is fifty copy buttons, and asking the server for fifty near-identical
+ * strings to fill them is fifty round trips for one fact.
+ *
+ * Config "App URL" first, which is what makes the short Netlify address usable
+ * — a seventy-character /exec link pasted into Slack is one nobody clicks.
+ * Falls back to the deployment's own URL, and to '' when the script has never
+ * been deployed at all, which the UI has to say rather than offering a copy
+ * button that yields nothing.
+ *
+ * Public rather than trailing-underscore because the browser needs it, and it
+ * exposes nothing: it is the address of a page every one of these people is
+ * already signed in to.
+ */
+function appBaseUrl() {
+  const base = cfg('App URL') || getWebAppUrl();
+  return { ok: !!base, base: base,
+           message: base ? '' : 'The web app has not been deployed yet, so '
+             + 'there is no address to link to. Deploy it, or put the short '
+             + 'URL in Config "App URL".' };
+}
+
 function showWebAppUrl() {
   const url = getWebAppUrl();
   SpreadsheetApp.getUi().alert(url

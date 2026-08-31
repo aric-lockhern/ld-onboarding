@@ -220,6 +220,12 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### Sharing a client with a colleague
+
+Every row on the **Clients** list has a copy button (it appears on hover), and every client page has **Copy link** beside the back button. The link opens straight onto that client for anyone who can reach the tool.
+
+Set Config **App URL** to the short Netlify address first if you have one. Without it the link is the seventy-character `/exec` URL, which works but is not something anyone clicks in a Slack message.
+
 ### Bringing in clients you already have
 
 **Clients → Import existing clients.** Paste from whatever spreadsheet the client list already lives in — headings on the first row, in any order.
