@@ -172,6 +172,28 @@ const FAKE = {
   // Linking a channel also puts a tab in it pointing back at the client. It
   // is reported only when it fails, so the success shape carries nothing to
   // assert beyond its absence from the toasts.
+  // Fifty existing clients pasted out of a spreadsheet. Three outcomes in one
+  // reply: a clean row, one already in the tool, and one whose service is not
+  // on the Services tab — which imports, but says so.
+  bulkParse: { ok:true, ready:2, truncated:0,
+    matched:['Company','Owner','Services','MRR'], ignored:['Notes'],
+    rows:[
+      { ok:true, problems:[], notes:[], company:'Larkspur Bakery',
+        owner:'Drake King', services:['Google Ads'], mrr:4200, contact:'',
+        email:'', website:'', slack:'', vertical:'', bizType:'',
+        contractStart:'', cadence:'', term:'' },
+      { ok:true, problems:[], notes:['Not on the Services tab: TikTok Ads'],
+        company:'Verity Outdoors', owner:'Alexandra McCurdy',
+        services:['AI Search SEO'], mrr:3000, contact:'', email:'', website:'',
+        slack:'', vertical:'', bizType:'', contractStart:'', cadence:'',
+        term:'' },
+      { ok:false, problems:['Already in the tool.'], notes:[],
+        company:'Harbor & Sons', owner:'Drake King', services:[], mrr:'',
+        contact:'', email:'', website:'', slack:'', vertical:'', bizType:'',
+        contractStart:'', cadence:'', term:'' } ] },
+  bulkImport: { ok:true, imported:2, skipped:[], financeSkipped:false,
+    clients:[{ clientId:'LARKSP-2608', company:'Larkspur Bakery' },
+             { clientId:'VERITY-2608', company:'Verity Outdoors' }] },
   clickupWorkspaces: { ok:true, workspaces:[
     { id:'18033356', name:'Lockhern Digital' },
     { id:'90210777', name:'Client Sandbox' } ] },
@@ -1060,6 +1082,81 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
       await page.screenshot({ path: fAfterDel, fullPage: name === 'desktop' });
       shots.push(fAfterDel);
     }
+  }
+
+  // Bringing in the clients you already have.
+  //
+  // Fifty existing accounts pasted out of a spreadsheet. The preview is the
+  // whole point: a column read into the wrong field across fifty rows is a
+  // mess to unpick afterwards, and it costs one screen to show what was
+  // understood before anything is written.
+  await page.click('nav button[data-v="clients"]');
+  await page.waitForTimeout(250);
+  await page.click('#bulkBtn');
+  await page.waitForSelector('#bulkText', { timeout: 5000 });
+  await page.fill('#bulkText', 'Company\tOwner\nLarkspur Bakery\tDrake King');
+  await page.click('#bulkRead');
+  await page.waitForSelector('.line.bulk', { timeout: 5000 });
+
+  const paste = await page.evaluate(() => {
+    const rows = [].map.call(document.querySelectorAll('.line.bulk'), e => ({
+      text: e.querySelector('.tx').textContent,
+      ticked: e.querySelector('input').checked,
+      blocked: e.querySelector('input').disabled
+    }));
+    const body = document.getElementById('bulkBody').textContent;
+    return { rows: rows,
+             // A heading nobody noticed being dropped is a field fifty clients
+             // are silently missing.
+             saysIgnored: /Ignored: Notes/.test(body),
+             saysRead: /Columns read: Company, Owner, Services, MRR/.test(body),
+             go: (document.getElementById('bulkGo') || {}).textContent };
+  });
+  if (paste.rows.length !== 3) {
+    throw new Error('The import preview did not render every row: '
+      + JSON.stringify(paste));
+  }
+  if (!paste.saysIgnored || !paste.saysRead) {
+    throw new Error('The preview does not say which columns it read and which '
+      + 'it dropped: ' + JSON.stringify(paste));
+  }
+  // Already in the tool: shown, never importable, and never silently absent.
+  if (!paste.rows[2].blocked || paste.rows[2].ticked) {
+    throw new Error('A client already in the tool is offered for import: '
+      + JSON.stringify(paste.rows[2]));
+  }
+  if (!/Already in the tool/.test(paste.rows[2].text)) {
+    throw new Error('A blocked row does not say why: ' + paste.rows[2].text);
+  }
+  // A service the Services tab does not have imports, but says so — the fix is
+  // a row on that tab, and dropping it silently loses a workstream.
+  if (!/Not on the Services tab: TikTok Ads/.test(paste.rows[1].text)) {
+    throw new Error('An unmatched service was not reported: '
+      + paste.rows[1].text);
+  }
+  if (!paste.rows[1].ticked) {
+    throw new Error('An unmatched service blocked the whole row');
+  }
+  if (!/Import 2$/.test((paste.go || '').trim())) {
+    throw new Error('The import button does not say how many: ' + paste.go);
+  }
+
+  const fBulk = `${OUT}/${name}-bulk-import.png`;
+  await page.locator('#bulkWrap').screenshot({ path: fBulk });
+  shots.push(fBulk);
+
+  // Armed. Fifty client records is not something to undo by hand.
+  await page.click('#bulkGo');
+  const armedBulk = await page.$eval('#bulkGo', e => e.textContent);
+  if (!/\?$/.test(armedBulk.trim())) {
+    throw new Error('Bulk import fired without arming: ' + armedBulk);
+  }
+  await page.click('#bulkGo');
+  await page.waitForTimeout(400);
+  const imported = await page.$$eval('.toast',
+    els => els.map(e => e.textContent).join(' || '));
+  if (!/Created 2 clients/.test(imported)) {
+    throw new Error('The import did not report what it created: ' + imported);
   }
 
   // Client detail, reached by clicking a row on the clients list

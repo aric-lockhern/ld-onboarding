@@ -220,6 +220,20 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### Bringing in clients you already have
+
+**Clients → Import existing clients.** Paste from whatever spreadsheet the client list already lives in — headings on the first row, in any order.
+
+`Company` is the only column that matters. `Contact`, `Email`, `Website`, `Owner`, `Services`, `MRR`, `Slack`, `Vertical`, `Business type`, `Contract start`, `Cadence` and `Term` are all read if present, and the heading names are matched loosely (`Owner`, `Account Manager` and `AM` are the same column). Anything it does not recognise is **named on screen** rather than dropped.
+
+Read the paste first — it never writes — then check the preview. It shows what each row will become, refuses anything already in the tool, and flags a service that is not on the Services tab or an owner who is not on the Team tab. Those still import; they just tell you what to fix.
+
+Imported clients land as **Live** with **no onboarding checklist**. They granted access months ago, and a checklist of access requests for a client of two years is noise. Everything else works on them immediately: audit action items, the ClickUp push, Slack, the profile, the call scan.
+
+If you *do* want a checklist for one of them, press **Start onboarding** on that client. Due dates are anchored to today rather than to a contract start in the past, so it is not born overdue.
+
+Two limits worth knowing: 300 rows per paste, and somebody who cannot see MRR imports everything except the money — a partner fills that in afterwards.
+
 ### Sending the checklist to ClickUp
 
 **Send to ClickUp** on the client page creates one ClickUp task per checklist item — assigned to the same person, with the due date, and with why it matters in the description.

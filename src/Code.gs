@@ -884,6 +884,66 @@ function repairClientRows_(ss) {
  * carrying pre-filled cells it points hundreds of rows past the data. Scanning
  * the ID column is the only measure of where the records actually end.
  */
+/**
+ * One client record, as a row.
+ *
+ * The only place a client row is composed. It used to live inside
+ * submitIntake, and the bulk importer would have been a second copy of
+ * twenty-four column assignments — which is rule 2 waiting to happen: add a
+ * column, update one writer, and half the clients created after that are
+ * missing a field nobody notices for a month.
+ *
+ * `payload.status` exists for the importer. A new deal starts at Intake
+ * because that is what it is; an account that has been running since March is
+ * Live on the day it is typed in, and starting it at Intake would put fifty
+ * live clients into a queue meant for deals being set up.
+ */
+function clientRowValues_(payload, clientId, alias, money, now) {
+  const vals = new Array(C.WIDTH).fill('');
+  vals[C.ID - 1] = clientId;
+  vals[C.COMPANY - 1] = payload.company;
+  vals[C.CONTACT - 1] = payload.contact || '';
+  vals[C.EMAIL - 1] = payload.email || '';
+  vals[C.WEBSITE - 1] = payload.website || '';
+  vals[C.VERTICAL - 1] = payload.vertical || '';
+  vals[C.STATUS - 1] = payload.status || 'Intake';
+  vals[C.PLATFORMS - 1] = (payload.platforms || []).join(', ');
+  vals[C.START - 1] = payload.contractStart || '';
+  vals[C.MRR - 1] = money.mrr;
+  vals[C.OWNER - 1] = payload.owner || cfg('Default Onboarding Owner');
+  vals[C.SCOPE - 1] = payload.scope || '';
+  vals[C.CADENCE - 1] = payload.cadence || '';
+  vals[C.SLACK - 1] = payload.slack || '';
+  vals[C.ALIAS - 1] = alias;
+  vals[C.SERVICES - 1] = (payload.services || []).join(', ');
+  vals[C.FEES - 1] = money.fees;
+  vals[C.BIZTYPE - 1] = payload.bizType || '';
+  vals[C.ONBOARDING - 1] = 'Not started';
+  vals[C.APPROVALS - 1] = payload.approvals || '';
+  vals[C.TERM - 1] = payload.term || 'Month to month';
+  vals[C.CALL - 1] = payload.weeklyCall ? 'To schedule' : 'Not applicable';
+  vals[C.PLAN_STATUS - 1] = 'Not started';
+  vals[C.CREATED - 1] = now;
+  return vals;
+}
+
+/**
+ * The last row carrying a client ID.
+ *
+ * firstFreeClientRow_ finds the first gap, which is right for one record and
+ * wrong for fifty: a gap in the middle of the tab is one free row, and writing
+ * a block of fifty from there would overwrite every client below it.
+ */
+function lastUsedClientRow_(sh) {
+  const last = sh.getLastRow();
+  if (last < 2) return 1;
+  const ids = sh.getRange(2, C.ID, last - 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]).trim()) return i + 2;
+  }
+  return 1;
+}
+
 function firstFreeClientRow_(sh) {
   const last = sh.getLastRow();
   if (last < 2) return 2;
@@ -1068,31 +1128,7 @@ function submitIntake(payload) {
   const money = intakeFinance_(payload);
 
   const row = firstFreeClientRow_(clients);
-  const vals = new Array(C.WIDTH).fill('');
-  vals[C.ID - 1] = clientId;
-  vals[C.COMPANY - 1] = payload.company;
-  vals[C.CONTACT - 1] = payload.contact || '';
-  vals[C.EMAIL - 1] = payload.email || '';
-  vals[C.WEBSITE - 1] = payload.website || '';
-  vals[C.VERTICAL - 1] = payload.vertical || '';
-  vals[C.STATUS - 1] = 'Intake';
-  vals[C.PLATFORMS - 1] = (payload.platforms || []).join(', ');
-  vals[C.START - 1] = payload.contractStart || '';
-  vals[C.MRR - 1] = money.mrr;
-  vals[C.OWNER - 1] = payload.owner || cfg('Default Onboarding Owner');
-  vals[C.SCOPE - 1] = payload.scope || '';
-  vals[C.CADENCE - 1] = payload.cadence || '';
-  vals[C.SLACK - 1] = payload.slack || '';
-  vals[C.ALIAS - 1] = alias;
-  vals[C.SERVICES - 1] = (payload.services || []).join(', ');
-  vals[C.FEES - 1] = money.fees;
-  vals[C.BIZTYPE - 1] = payload.bizType || '';
-  vals[C.ONBOARDING - 1] = 'Not started';
-  vals[C.APPROVALS - 1] = payload.approvals || '';
-  vals[C.TERM - 1] = payload.term || 'Month to month';
-  vals[C.CALL - 1] = payload.weeklyCall ? 'To schedule' : 'Not applicable';
-  vals[C.PLAN_STATUS - 1] = 'Not started';
-  vals[C.CREATED - 1] = now;
+  const vals = clientRowValues_(payload, clientId, alias, money, now);
 
   clients.getRange(row, 1, 1, C.WIDTH).setValues([vals]);
   clients.getRange(row, C.PROGRESS).setFormula(progressFormula_(row));
@@ -1365,7 +1401,18 @@ function buildAccessRows_(clientId, company, platforms, skipWeeklyCall) {
     : [];
 
   const client = getClientRecord_(clientId);
-  const anchor = parseDate_(client && client.contractStartRaw) || new Date();
+  // A checklist cannot be overdue on the day it is created.
+  //
+  // Due dates are the contract start plus an offset, which is right for a deal
+  // signed last week and wrong for a client who has been running since March —
+  // every row would be born weeks past its date, and fifty existing clients
+  // brought into the tool would put a thousand overdue tasks on the overview
+  // and make the one number anybody looks at useless. Today is the baseline
+  // whenever the contract start is already behind us: the work starts when
+  // somebody presses the button, whatever the paperwork says.
+  const signed = parseDate_(client && client.contractStartRaw);
+  const today = midnight_(new Date());
+  const anchor = (signed && midnight_(signed) > today) ? signed : today;
   const defaultOwner = (client && client.owner) || cfg('Default Onboarding Owner');
   const rows = [];
 
