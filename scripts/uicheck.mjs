@@ -175,6 +175,11 @@ const FAKE = {
   // Fifty existing clients pasted out of a spreadsheet. Three outcomes in one
   // reply: a clean row, one already in the tool, and one whose service is not
   // on the Services tab — which imports, but says so.
+  // Config "App URL" is set to the short address, which is the whole point of
+  // that setting — a seventy-character /exec link pasted into Slack is one
+  // nobody clicks.
+  appBaseUrl: { ok:true, base:'https://onboarding.lockherndigital.com/',
+                message:'' },
   bulkParse: { ok:true, ready:2, truncated:0,
     matched:['Company','Owner','Services','MRR'], ignored:['Notes'],
     rows:[
@@ -1084,6 +1089,46 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
     }
   }
 
+  // Sharing a client with somebody.
+  //
+  // Until now that meant reading the address bar, which the app cannot even
+  // show — it runs in a sandboxed iframe. There is a copy on every row of the
+  // list, because grabbing three links to send to three people otherwise means
+  // opening three clients and coming back twice.
+  await page.click('nav button[data-v="clients"]');
+  await page.waitForSelector('.row.clickable', { timeout: 5000 });
+
+  const linkBtns = await page.$$eval('[data-copy]', els => els.length);
+  if (!linkBtns) throw new Error('No way to copy a client link from the list');
+
+  // Copying must not also open the client. The whole row is the click target,
+  // and landing on a page you did not ask for makes the button feel broken
+  // even though it worked.
+  await page.click('[data-copy]');
+  await page.waitForTimeout(350);
+  const afterCopy = await page.evaluate(() => ({
+    stillOnList: !!document.querySelector('.row.clickable'),
+    toast: [].map.call(document.querySelectorAll('.toast'),
+      e => e.textContent).join(' || ')
+  }));
+  if (!afterCopy.stillOnList) {
+    throw new Error('Copying a link navigated into the client');
+  }
+  // Named, not just "copied": after a column of identical buttons, which one
+  // you got is the only thing worth saying.
+  if (!/Link to .+ copied|Could not copy/.test(afterCopy.toast)) {
+    throw new Error('Copying a link said nothing useful: ' + afterCopy.toast);
+  }
+
+  // The link itself: the short address from Config "App URL", plus the client
+  // id the page reads back after the gate. A link that opens the overview
+  // instead of the client is one somebody sends and nobody can act on.
+  const shareUrl = await page.evaluate(() => clientLink('HARBOR-2608'));
+  if (shareUrl !== 'https://onboarding.lockherndigital.com/?client=HARBOR-2608') {
+    throw new Error('The shared link is not what a teammate could open: '
+      + shareUrl);
+  }
+
   // Bringing in the clients you already have.
   //
   // Fifty existing accounts pasted out of a spreadsheet. The preview is the
@@ -1164,6 +1209,12 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   await page.waitForTimeout(250);
   await page.click('.row.clickable');
   await page.waitForTimeout(350);
+
+  // And from the client's own page, which is where somebody is standing when
+  // they decide to send it to a colleague.
+  if (!await page.$('#copyLink')) {
+    throw new Error('No way to copy this client\'s link from its own page');
+  }
 
   // Assignment. The point of ranking is that the right specialist is reachable
   // without scrolling fourteen names on every one of twenty rows — so the

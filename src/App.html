@@ -532,6 +532,21 @@
   /* The channel beside a task name, as metadata rather than more sentence.
      Without a mark of its own "Add H1 tags to all product pages AI Search
      SEO" reads as one run-on title. */
+  /* Back on the left, share on the right. */
+  .pgtop{display:flex; align-items:center; gap:12px; margin-bottom:2px}
+  .pgtop .btn{margin-left:auto}
+
+  /* One per client row. Faint until the row is under the cursor — fifty of
+     them at full contrast is a column of icons competing with the company
+     names, which are what the list is for. */
+  .lnkbtn{flex:none; border:0; background:none; cursor:pointer; padding:4px 6px;
+    margin-left:8px; border-radius:6px; font-size:14px; line-height:1;
+    color:var(--mid); opacity:0; transition:opacity .12s}
+  .row:hover .lnkbtn, .lnkbtn:focus{opacity:1}
+  .lnkbtn:hover{color:var(--blue); background:var(--blue-wash)}
+  /* Touch has no hover, so it is always there. */
+  @media (hover:none){ .lnkbtn{opacity:.75} }
+
   /* The Clients header: search on the left, the way in for the fifty accounts
      you already have on the right. */
   .clhead{display:flex; align-items:center; gap:12px; margin-bottom:6px;
@@ -940,7 +955,7 @@ var SERVER_FNS = [
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
   'clickupWorkspaces', 'clickupLists', 'clickupPlan', 'clickupPush',
-  'bulkParse', 'bulkImport',
+  'bulkParse', 'bulkImport', 'appBaseUrl',
   'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
@@ -1159,6 +1174,78 @@ function statTile(kind, label, value, cap){
     + '<div class="v">' + (value || 0) + '</div>'
     + '<div class="cap">' + esc(cap) + '</div></div>';
 }
+/**
+ * Puts text on the clipboard.
+ *
+ * A hidden textarea and execCommand, not navigator.clipboard: the page runs in
+ * a sandboxed iframe where the clipboard API is unavailable, and calling it
+ * fails in a way that looks like the button doing nothing.
+ *
+ * Returns whether it worked, because "could not copy — select it yourself" is
+ * a usable answer and a silent no-op is not.
+ */
+function copyText(text){
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+/**
+ * The address of one client's page, for pasting to somebody.
+ *
+ * The base comes from the server and is cached for the session. The page
+ * cannot read its own address bar — it is in a sandboxed iframe — so this is
+ * not something the browser can work out, and Config "App URL" is what lets it
+ * be the short link rather than the seventy-character /exec one.
+ */
+var APP_BASE = null;
+
+function loadBase(){
+  if (APP_BASE) return Promise.resolve(APP_BASE);
+  return api('appBaseUrl').then(function(r){
+    APP_BASE = r || { ok:false, base:'' };
+    return APP_BASE;
+  }).catch(function(){
+    APP_BASE = { ok:false, base:'',
+                 message:'Could not read the web app address.' };
+    return APP_BASE;
+  });
+}
+
+function clientLink(clientId){
+  var b = (APP_BASE && APP_BASE.base) || '';
+  if (!b) return '';
+  return b + (b.indexOf('?') === -1 ? '?' : '&')
+    + 'client=' + encodeURIComponent(clientId);
+}
+
+/**
+ * Copies one client's link and says which.
+ *
+ * The name is in the toast rather than the link, because a bare URL is what a
+ * Slack message or a calendar invite wants — but "copied" alone, after
+ * clicking a row of identical buttons, does not tell you which one you got.
+ */
+function copyClientLink(clientId, company){
+  return loadBase().then(function(b){
+    if (!b.ok){
+      toast(b.message || 'No web app address to link to.', true);
+      return false;
+    }
+    var ok = copyText(clientLink(clientId));
+    toast(ok ? ('Link to ' + company + ' copied.')
+             : 'Could not copy automatically — the link is ' +
+               clientLink(clientId), !ok);
+    return ok;
+  });
+}
+
 function clientRow(c){
   var tags = '';
   if (c.overdue) tags += pill('critical', c.overdue + ' overdue');
@@ -1169,7 +1256,12 @@ function clientRow(c){
     + '<div class="who"><div class="co">' + esc(c.company) + '</div>'
     + '<div class="meta">' + esc(c.status || '—') + (c.owner ? ' · ' + esc(c.owner) : '') + '</div></div>'
     + tags + ticks(c.done, c.total)
-    + '<div class="frac">' + c.done + '/' + c.total + '</div></div>';
+    + '<div class="frac">' + c.done + '/' + c.total + '</div>'
+    // Grabbing three links to send to three people means opening three
+    // clients and coming back twice. From the list it is three clicks.
+    + '<button class="lnkbtn" data-copy="' + esc(c.clientId) + '" '
+    + 'data-co="' + esc(c.company) + '" title="Copy a link to this client">'
+    + '\u29c9</button></div>';
 }
 /**
  * The answers to "who are these people", above everything else.
@@ -2707,6 +2799,16 @@ function openTeamForm(p){
 function wireClientRows(){
   [].forEach.call(document.querySelectorAll('.row.clickable[data-id]'), function(r){
     r.addEventListener('click', function(){ openClient(r.getAttribute('data-id')); });
+  });
+
+  // stopPropagation, or copying a link also opens the client — the whole row
+  // is the click target, and landing on a page you did not ask for makes the
+  // button feel broken even though it worked.
+  [].forEach.call(document.querySelectorAll('[data-copy]'), function(b){
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      copyClientLink(b.getAttribute('data-copy'), b.getAttribute('data-co'));
+    });
   });
 }
 
@@ -4737,7 +4839,12 @@ function openClient(clientId){
     el('hTitle').textContent = c.company || 'Client';
     el('hSub').textContent = (c.status || '') + (c.owner ? ' · ' + c.owner : '');
 
-    var h = '<button class="back" id="back">← All clients</button>';
+    // Sharing one client with somebody is the commonest thing anybody does
+    // with this page, and until now it meant reading the address bar — which
+    // the app cannot even show, because it runs in a sandboxed iframe.
+    var h = '<div class="pgtop">'
+      + '<button class="back" id="back">← All clients</button>'
+      + '<button class="btn sm" id="copyLink">Copy link</button></div>';
 
     // Creating a client and committing it to an onboarding are separate acts.
     // Once tasks exist there are due dates, owners and a queue entry, so the
@@ -5011,6 +5118,12 @@ function openClient(clientId){
 
     el('view').innerHTML = h;
     el('back').addEventListener('click', function(){ go('clients'); });
+
+    if (el('copyLink')){
+      el('copyLink').addEventListener('click', function(){
+        copyClientLink(clientId, c.company || 'this client');
+      });
+    }
 
     // Loaded on first open rather than with the page: it is three ClickUp
     // round trips to build the list picker, and most visits to a client never
