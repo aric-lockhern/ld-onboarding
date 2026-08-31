@@ -532,6 +532,20 @@
   /* The channel beside a task name, as metadata rather than more sentence.
      Without a mark of its own "Add H1 tags to all product pages AI Search
      SEO" reads as one run-on title. */
+  /* The Clients header: search on the left, the way in for the fifty accounts
+     you already have on the right. */
+  .clhead{display:flex; align-items:center; gap:12px; margin-bottom:6px;
+    flex-wrap:wrap}
+  .clhead .btn{margin-left:auto}
+  .paste{width:100%; margin-top:12px; padding:10px 12px; border-radius:9px;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; resize:vertical}
+  .paste:focus{outline:none; border-color:var(--blue);
+    box-shadow:0 0 0 3px var(--blue-wash)}
+  .line.bulk{align-items:flex-start; gap:11px; padding:9px 0; line-height:1.5}
+  .line.bulk input[type=checkbox]{margin-top:3px; accent-color:var(--blue)}
+  .line.bulk.settled .tx{opacity:.6}
+
   .line .tx .sub2{color:var(--faint); font-size:12.5px}
   .line .tx .sub2::before{content:'·'; margin:0 6px; color:var(--mid)}
   .line.oos .tx .sub2::before{content:none; margin:0}
@@ -926,6 +940,7 @@ var SERVER_FNS = [
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
   'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
   'clickupWorkspaces', 'clickupLists', 'clickupPlan', 'clickupPush',
+  'bulkParse', 'bulkImport',
   'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
@@ -2798,14 +2813,173 @@ function showPreview(p, clientId, phase, nudge){
 
 // ---------------------------------------------------------------- clients
 
+/**
+ * Bringing the clients you already have into the tool.
+ *
+ * A paste box, because the list already exists in a spreadsheet and retyping
+ * fifty of them is a job nobody finishes. Paste, look at what it read, import.
+ *
+ * The preview is the whole point. A column read into the wrong field across
+ * fifty rows is a mess to unpick afterwards, and it costs one screen to show
+ * what was understood before anything is written.
+ */
+var BULK = { rows: [], parsed: null };
+
+function bulkCard(){
+  return '<div class="grp">Import existing clients</div>'
+    + '<div class="card"><div class="sect" id="bulkBody">'
+    + '<div class="hint">Paste from a spreadsheet — headings on the first row, '
+    + 'in any order. <b>Company</b> is the only one that matters; '
+    + 'Contact, Email, Website, Owner, Services, MRR, Slack, Vertical, '
+    + 'Business type and Contract start are all read if they are there.'
+    + '<br><br>These land as <b>Live</b> clients with no onboarding checklist — '
+    + 'they granted access months ago, and a checklist of access requests for '
+    + 'a client of two years is noise. Everything else works on them straight '
+    + 'away: the audit items, ClickUp, Slack, the profile.</div>'
+    + '<textarea id="bulkText" class="paste" rows="7" '
+    + 'placeholder="Company&#9;Owner&#9;Services&#9;MRR&#10;'
+    + 'Harbor &amp; Sons&#9;Drake King&#9;Google Ads, AI Search SEO&#9;6000">'
+    + '</textarea>'
+    + '<div class="startrow">'
+    + '<button class="btn pri" id="bulkRead">Read the paste</button></div>'
+    + '</div></div>';
+}
+
+function wireBulk(){
+  if (el('bulkRead')){
+    el('bulkRead').addEventListener('click', function(){
+      var b = this;
+      var text = (el('bulkText') && el('bulkText').value) || '';
+      if (!text.trim()){ toast('Nothing pasted.', true); return; }
+      b.disabled = true; b.textContent = 'Reading…';
+      api('bulkParse', TOKEN, text).then(function(r){
+        b.disabled = false; b.textContent = 'Read the paste';
+        if (!r.ok){ toast(r.message, true); return; }
+        BULK.parsed = r;
+        BULK.rows = r.rows || [];
+        drawBulkPreview();
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Read the paste'; fail(e);
+      });
+    });
+  }
+  if (el('bulkGo')){
+    el('bulkGo').addEventListener('click', function(){
+      var b = this;
+      var picked = BULK.rows.filter(function(r, i){
+        var box = el('bk' + i);
+        return box && box.checked;
+      });
+      if (!picked.length){ toast('Nothing ticked.', true); return; }
+
+      // Armed. Fifty client records is not something to undo by hand.
+      if (b.getAttribute('data-armed') !== '1'){
+        b.setAttribute('data-armed', '1');
+        b.textContent = 'Create ' + picked.length + ' clients?';
+        setTimeout(function(){
+          if (!b.parentNode) return;
+          b.removeAttribute('data-armed');
+          b.textContent = 'Import ' + picked.length;
+        }, 6000);
+        return;
+      }
+
+      b.disabled = true; b.textContent = 'Importing…';
+      api('bulkImport', TOKEN, picked).then(function(r){
+        b.disabled = false; b.removeAttribute('data-armed');
+        if (!r.ok){ toast(r.message, true); return; }
+        toast('Created ' + r.imported + ' client'
+          + (r.imported === 1 ? '' : 's') + '.');
+        if ((r.skipped || []).length){
+          toast('Already in the tool, skipped: ' + r.skipped.join(', '), true);
+        }
+        if (r.financeSkipped){
+          toast('MRR was not imported — only a partner can set what a client '
+            + 'pays. The rest of every record went in.', true);
+        }
+        CACHE.overview = null; CACHE.queue = null;
+        renderClients();
+      }).catch(function(e){
+        b.disabled = false; b.removeAttribute('data-armed'); fail(e);
+      });
+    });
+  }
+}
+
+function drawBulkPreview(){
+  var box = el('bulkBody');
+  if (!box) return;
+  var p = BULK.parsed || {};
+  var rows = BULK.rows || [];
+  var ready = rows.filter(function(r){ return r.ok; }).length;
+
+  var h = '<div class="hint" style="margin-top:0">Read '
+    + rows.length + ' row' + (rows.length === 1 ? '' : 's') + '. '
+    + '<b>' + ready + '</b> ready to import'
+    + (ready < rows.length ? ', ' + (rows.length - ready) + ' skipped' : '')
+    + '.</div>';
+
+  // Which columns were understood, and which heading was ignored. A column
+  // nobody noticed being dropped is a field fifty clients are missing.
+  h += '<div class="hint">Columns read: '
+    + esc((p.matched || []).join(', ') || 'Company only') + '.'
+    + ((p.ignored || []).length
+        ? ' <span style="color:var(--warning)">Ignored: '
+          + esc(p.ignored.join(', ')) + '.</span>' : '')
+    + (p.truncated ? ' <span style="color:var(--warning)">'
+        + p.truncated + ' rows past the limit were dropped.</span>' : '')
+    + '</div>';
+
+  h += '<div class="lines" style="margin-top:12px">' + rows.map(function(r, i){
+      var bad = !r.ok;
+      return '<div class="line bulk' + (bad ? ' settled' : '') + '">'
+        + '<input type="checkbox" id="bk' + i + '"'
+        + (bad ? ' disabled' : ' checked') + '>'
+        + '<span class="tx"><b>' + esc(r.company || '(no name)') + '</b>'
+        + (r.owner ? ' <span class="sub2">' + esc(r.owner) + '</span>' : '')
+        + (r.services && r.services.length
+            ? '<br><span class="sub2">' + esc(r.services.join(', '))
+              + '</span>' : '')
+        + (r.problems.length
+            ? '<br><span class="need" style="color:var(--critical)">'
+              + esc(r.problems.join(' ')) + '</span>' : '')
+        + (r.notes.length
+            ? '<br><span class="need" style="color:var(--warning)">'
+              + esc(r.notes.join(' ')) + '</span>' : '')
+        + '</span></div>';
+    }).join('') + '</div>';
+
+  h += '<div class="startrow">'
+    + '<button class="btn" id="bulkBack">Paste something else</button>'
+    + '<button class="btn pri" id="bulkGo"' + (ready ? '' : ' disabled')
+    + '>Import ' + ready + '</button></div>';
+
+  box.innerHTML = h;
+  wireBulk();
+  if (el('bulkBack')){
+    el('bulkBack').addEventListener('click', function(){
+      el('bulkWrap').innerHTML = bulkCard();
+      wireBulk();
+    });
+  }
+}
+
 function renderClients(){
   el('view').innerHTML = loading();
   var p = cachedRead('overview', function(){ return api('getDashboardOverview', TOKEN); });
   p.then(function(d){
     stamp();
     var all = d.clients || [];
-    var h = '<div class="f" style="max-width:280px; margin-bottom:4px">'
+    var h = '<div class="clhead">'
+      + '<div class="f" style="max-width:280px; margin:0">'
       + '<input id="q" placeholder="Search company or owner…" autocomplete="off"></div>'
+      // The way in for the clients you already have. Not "+ New client", which
+      // opens the document-reading flow built for a deal signed last week and
+      // is the wrong shape for fifty accounts that have been running since
+      // March.
+      + '<button class="btn" id="bulkBtn">Import existing clients</button>'
+      + '</div>'
+      + '<div id="bulkWrap"></div>'
       + '<div id="list"></div>';
     el('view').innerHTML = h;
     var draw = function(){
@@ -2820,6 +2994,15 @@ function renderClients(){
       wireClientRows();
     };
     el('q').addEventListener('input', draw);
+    el('bulkBtn').addEventListener('click', function(){
+      var box = el('bulkWrap');
+      if (box.innerHTML){ box.innerHTML = ''; this.textContent =
+        'Import existing clients'; return; }
+      this.textContent = 'Close importer';
+      box.innerHTML = bulkCard();
+      wireBulk();
+      if (el('bulkText')) el('bulkText').focus();
+    });
     draw();
   }).catch(function(e){
     el('view').innerHTML = emptyState('Could not load', (e && e.message) || 'Unknown error.');
