@@ -610,7 +610,16 @@ const CONFIG_DEFAULTS = [
   // of them is "change something in the account", and you cannot change what
   // you cannot log into.
   ['Audit Follow-up Phase', '3',
-    'Which phase audit follow-ups are added to. 3 = after access.']
+    'Which phase audit follow-ups are added to. 3 = after access.'],
+  // Blank on purpose. Blank means "use the shipped copy in Kickoff.gs", which
+  // is what a sheet nobody has edited should get — seeding the text here would
+  // make the shipped version unreachable the moment somebody cleared a cell.
+  ['Call Rules', '',
+    'How we behave on a client call. One per line, "rule | why". Blank uses '
+    + 'the shipped set.'],
+  ['Call Agenda', '',
+    'The kickoff agenda. One per line, "item | weight | note". Weights are '
+    + 'proportions, not minutes. Blank uses the shipped agenda.']
 ];
 
 function repairConfig_(ss) {

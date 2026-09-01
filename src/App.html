@@ -532,6 +532,29 @@
   /* The channel beside a task name, as metadata rather than more sentence.
      Without a mark of its own "Add H1 tags to all product pages AI Search
      SEO" reads as one run-on title. */
+  /* The three house rules. Numbered and heavy, because they are the part
+     somebody is meant to carry into the room — not a paragraph of guidance. */
+  .rules{display:flex; flex-direction:column; gap:2px}
+  .rule{display:flex; gap:12px; align-items:flex-start; padding:11px 0;
+    border-top:1px solid var(--line)}
+  .rule:first-child{border-top:0}
+  .rule .rn{flex:none; width:22px; height:22px; border-radius:999px;
+    background:var(--blue-wash); color:var(--blue-ink);
+    font:600 12px/22px "Inter",sans-serif; text-align:center; margin-top:1px}
+  .rule b{font-size:14px}
+  .rule .rw{color:var(--muted); font-size:13px; line-height:1.55; margin-top:3px;
+    max-width:74ch}
+
+  /* An agenda row: the clock on the left, so being behind is read down the
+     column rather than worked out. */
+  .line.ag{align-items:flex-start; gap:12px; padding:9px 0}
+  .line.ag .at{flex:none; width:64px; font:600 12.5px/1.5 ui-monospace,
+    SFMono-Regular,Menlo,monospace; color:var(--faint)}
+  /* Three lengths, together. .startrow would push each one to the right edge
+     with margin-left:auto, which spreads a single control across the card. */
+  .mins{display:flex; gap:7px; margin:0 0 10px}
+  .tm.off{opacity:.6; border-style:dashed}
+
   /* Back on the left, share on the right. */
   .pgtop{display:flex; align-items:center; gap:12px; margin-bottom:2px}
   .pgtop .btn{margin-left:auto}
@@ -956,6 +979,7 @@ var SERVER_FNS = [
   'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
   'clickupWorkspaces', 'clickupLists', 'clickupPlan', 'clickupPush',
   'bulkParse', 'bulkImport', 'appBaseUrl',
+  'getCallBrief', 'getCallRules', 'saveCallRules',
   'clickupFindCalls', 'clickupImportCall',
   'getTeamAdmin', 'saveTeamMember', 'deleteTeamMember', 'assignClientOwner',
   'syncTeamSlackIds', 'slackRoster', 'importTeamMembers'
@@ -1892,6 +1916,8 @@ function renderSettings(){
     + 'id="stPhases">Phases</button>'
     + '<button class="btn' + (SETTINGS.tab === 'mail' ? ' pri' : '') + '" '
     + 'id="stMail">Email templates</button>'
+    + '<button class="btn' + (SETTINGS.tab === 'calls' ? ' pri' : '') + '" '
+    + 'id="stCalls">Call conduct</button>'
     + '<span class="note">Editing a template changes what the NEXT client gets. '
     + 'Checklists that already exist are left alone.</span>'
     + '</div></div></div>'
@@ -1899,6 +1925,9 @@ function renderSettings(){
 
   el('stTasks').addEventListener('click', function(){
     SETTINGS.tab = 'tasks'; SETTINGS.editing = null; renderSettings();
+  });
+  el('stCalls').addEventListener('click', function(){
+    SETTINGS.tab = 'calls'; SETTINGS.editing = null; renderSettings();
   });
   el('stPhases').addEventListener('click', function(){
     SETTINGS.tab = 'phases'; SETTINGS.editing = null; renderSettings();
@@ -1909,7 +1938,84 @@ function renderSettings(){
 
   if (SETTINGS.tab === 'tasks') loadTaskLibrary();
   else if (SETTINGS.tab === 'phases') loadPhases();
+  else if (SETTINGS.tab === 'calls') loadCallRules();
   else loadEmailTemplates();
+}
+
+/**
+ * The house rules for a client call, and the kickoff agenda.
+ *
+ * House rules, not per-client ones. How this client likes to be talked to is
+ * the profile's job; whether we interrupt people is not a thing that should
+ * differ by account.
+ *
+ * Blank means the shipped copy, which is why the box is pre-filled with it
+ * rather than empty: an empty textarea under "Call conduct" reads as having no
+ * rules, and the first thing somebody would do is retype the three they
+ * already have.
+ */
+function loadCallRules(){
+  api('getCallRules', TOKEN).then(function(r){
+    if (!el('stBody')) return;
+    el('stBody').innerHTML = (r && r.ok) ? callRulesCard(r)
+      : emptyState('Could not load', (r && r.message) || 'No response.');
+    if (r && r.ok) wireCallRules(r);
+  }).catch(function(e){
+    if (el('stBody')) el('stBody').innerHTML =
+      emptyState('Could not load', (e && e.message) || 'Unknown error.');
+  });
+}
+
+function callRulesCard(r){
+  return '<div class="grp">Call conduct</div><div class="card"><div class="sect">'
+    + '<div class="hint" style="margin-top:0">These appear on every client '
+    + 'page above the checklist, and are what somebody reads in the two '
+    + 'minutes before they join a call. They are the same for every client — '
+    + 'how a particular client likes to be handled is the profile\'s job.</div>'
+    + '<div class="f wide" style="margin-top:14px"><label>Rules '
+    + '<span class="note">one per line, <code>rule | why it matters</code>'
+    + ' — currently ' + (r.rulesSource === 'edited' ? 'edited' : 'the shipped set')
+    + '</span></label>'
+    + '<textarea id="crRules" class="paste" rows="7">' + esc(r.rules)
+    + '</textarea></div>'
+    + '<div class="f wide"><label>Kickoff agenda '
+    + '<span class="note">one per line, <code>item | weight | note</code>. '
+    + 'Weights are proportions, not minutes — the clock is worked out from '
+    + 'the length of the call. Currently '
+    + (r.agendaSource === 'edited' ? 'edited' : 'the shipped agenda')
+    + '</span></label>'
+    + '<textarea id="crAgenda" class="paste" rows="7">' + esc(r.agenda)
+    + '</textarea></div>'
+    + '<div class="startrow">'
+    + '<button class="btn" id="crReset">Back to the shipped copy</button>'
+    + '<button class="btn pri" id="crSave">Save</button></div>'
+    + '</div></div>';
+}
+
+function wireCallRules(r){
+  if (el('crReset')){
+    el('crReset').addEventListener('click', function(){
+      // Fills the boxes rather than saving. Somebody pressing this wants to
+      // see what they are going back to before they commit to it.
+      el('crRules').value = r.shippedRules || '';
+      el('crAgenda').value = r.shippedAgenda || '';
+      toast('Shipped copy loaded. Save to use it.');
+    });
+  }
+  if (el('crSave')){
+    el('crSave').addEventListener('click', function(){
+      var b = this; b.disabled = true; b.textContent = 'Saving…';
+      api('saveCallRules', TOKEN, el('crRules').value, el('crAgenda').value)
+        .then(function(res){
+          b.disabled = false; b.textContent = 'Save';
+          toast(res && res.ok ? 'Saved.'
+            : ((res && res.message) || 'Could not save.'), !(res && res.ok));
+          if (res && res.ok) loadCallRules();
+        }).catch(function(e){
+          b.disabled = false; b.textContent = 'Save'; fail(e);
+        });
+    });
+  }
 }
 
 /**
@@ -3748,6 +3854,119 @@ function refreshPlan(clientId, then){
   }).catch(function(){ if (then) then(); });
 }
 
+/**
+ * The kickoff-call brief.
+ *
+ * Three house rules and a clock. It exists because one new person on one call
+ * talked over the client, said they were new, and took the call into the
+ * weeds until the time was gone — none of which is a competence problem, and
+ * all of which is fixed by a page somebody reads in the two minutes before
+ * they join.
+ */
+var BRIEF = { minutes: 30 };
+
+function loadBrief(clientId, minutes){
+  BRIEF.minutes = minutes || 30;
+  api('getCallBrief', clientId, BRIEF.minutes).then(function(r){
+    if (!el('briefWrap')) return;
+    el('briefWrap').innerHTML = briefCard(r);
+    wireBrief(clientId, r);
+  }).catch(function(e){
+    if (el('briefWrap')) el('briefWrap').innerHTML =
+      '<h3>Kickoff call</h3><div class="hint">Could not load the brief: '
+      + esc((e && e.message) || 'unknown error') + '</div>';
+  });
+}
+
+function briefCard(r){
+  if (!r || !r.ok){
+    return '<h3>Kickoff call</h3><div class="hint">'
+      + esc((r && r.message) || 'Nothing came back.') + '</div>';
+  }
+
+  // The rules first and unmissable. They are the part somebody is supposed to
+  // carry into the room, and burying them under an agenda would make this a
+  // scheduling card that happens to mention conduct.
+  var h = '<h3>Before you join</h3>'
+    + '<div class="hint" style="margin-bottom:12px">Three things that cost us '
+    + 'the room, in order of how often they happen.</div>'
+    + '<div class="rules">' + (r.rules || []).map(function(x, i){
+        return '<div class="rule"><span class="rn">' + (i + 1) + '</span>'
+          + '<div><b>' + esc(x.rule) + '</b>'
+          + (x.why ? '<div class="rw">' + esc(x.why) + '</div>' : '')
+          + '</div></div>';
+      }).join('') + '</div>';
+
+  // Who the client will see, because rule two is about how a new person gets
+  // introduced and that needs somebody to be doing the introducing.
+  if ((r.team || []).length){
+    h += '<div class="pri-h" style="margin-top:20px">On the call</div>'
+      + '<div class="tstrip">' + r.team.map(function(p){
+          return '<span class="tm' + (p.unknown ? ' off' : '') + '">'
+            + avatar(p.name) + '<span class="nm">' + esc(p.name)
+            + (p.lead ? ' · leads' : (p.role ? ' · ' + esc(p.role) : ''))
+            + '</span></span>';
+        }).join('') + '</div>'
+      + '<div class="hint" style="margin:8px 0 0">Whoever leads introduces '
+      + 'everyone. Nobody introduces themselves as new.</div>';
+  }
+
+  h += '<div class="pri-h" style="margin-top:20px">The clock '
+    + '<span class="n">' + r.minutes + ' min</span></div>'
+    + '<div class="mins">'
+    + (r.lengths || [30,45,60]).map(function(m){
+        return '<button class="btn sm' + (m === r.minutes ? ' pri' : '')
+          + '" data-mins="' + m + '">' + m + ' min</button>'; }).join('')
+    + '</div>'
+    + '<div class="lines">' + (r.agenda || []).map(function(a){
+        return '<div class="line ag"><span class="at">'
+          + a.from + '–' + a.to + '</span>'
+          + '<span class="tx"><b>' + esc(a.item) + '</b>'
+          + (a.note ? '<br><span class="sub2">' + esc(a.note) + '</span>' : '')
+          + '</span><span class="sub">' + a.mins + ' min</span></div>';
+      }).join('') + '</div>';
+
+  if (r.lead){
+    h += '<div class="pri-h" style="margin-top:20px">This client</div>'
+      + '<div class="prof" style="margin:0">' + esc(r.lead) + '</div>';
+  }
+
+  h += '<div class="startrow">'
+    + '<button class="btn" id="briefCopy">Copy the brief</button></div>';
+  return h;
+}
+
+function wireBrief(clientId, r){
+  [].forEach.call(document.querySelectorAll('[data-mins]'), function(b){
+    b.addEventListener('click', function(){
+      loadBrief(clientId, Number(b.getAttribute('data-mins')));
+    });
+  });
+
+  // Paste-into-Slack, because the person who most needs this is often not the
+  // one with the client page open — and "read the brief" with no brief
+  // attached is an instruction nobody follows.
+  if (el('briefCopy')){
+    el('briefCopy').addEventListener('click', function(){
+      var lines = [];
+      if (r.company) lines.push(r.company + ' — kickoff call brief');
+      lines.push('');
+      (r.rules || []).forEach(function(x, i){
+        lines.push((i + 1) + '. ' + x.rule + (x.why ? ' ' + x.why : ''));
+      });
+      lines.push('');
+      lines.push('Agenda (' + r.minutes + ' min)');
+      (r.agenda || []).forEach(function(a){
+        lines.push('  ' + a.from + '–' + a.to + '  ' + a.item
+          + '  (' + a.mins + ' min)');
+      });
+      var ok = copyText(lines.join('\n'));
+      toast(ok ? 'Brief copied.'
+               : 'Could not copy automatically — select it and copy.', !ok);
+    });
+  }
+}
+
 function loadActions(clientId){
   api('getActionItems', clientId).then(function(r){
     if (!el('actWrap')) return;
@@ -4865,6 +5084,21 @@ function openClient(clientId){
     // website" meant scrolling past ten thousand characters of profile.
     h += factsCard(c, d);
 
+    // How to run the call, at the moment somebody is about to run it.
+    //
+    // Folded once the call is done — it is a briefing for a thing that has
+    // happened, and a section that never goes away is one people stop reading.
+    // Open while the call is still ahead, because that is when it is worth
+    // two minutes.
+    var callDone = c.call === 'Completed' || c.call === 'Not applicable';
+    h += '<div class="grp"><button class="phtog" id="briefTog">'
+      + '<span class="tw">' + (callDone ? '\u25b6' : '\u25bc') + '</span>'
+      + 'Kickoff call <span class="st">how we run it, and the clock</span>'
+      + '</button></div>'
+      + '<div class="card" id="briefCard"'
+      + (callDone ? ' style="display:none"' : '') + '>'
+      + '<div class="sect" id="briefWrap">' + loading() + '</div></div>';
+
     // Who is on it, before the work itself. The answer was previously spread
     // across an Owner cell and twenty task rows, and somebody who sits on every
     // call but owns no checklist row appeared nowhere at all.
@@ -5128,6 +5362,16 @@ function openClient(clientId){
     // Loaded on first open rather than with the page: it is three ClickUp
     // round trips to build the list picker, and most visits to a client never
     // touch it.
+    if (el('briefTog')){
+      el('briefTog').addEventListener('click', function(){
+        var b = el('briefCard');
+        var shut = b.style.display === 'none';
+        b.style.display = shut ? '' : 'none';
+        el('briefTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+      });
+    }
+    loadBrief(clientId, 30);
+
     if (el('cuTog')){
       el('cuTog').addEventListener('click', function(){
         var b = el('cuCard');
