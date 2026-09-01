@@ -220,6 +220,20 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### How we run a client call
+
+Every client page carries a **Kickoff call** brief above the checklist: three house rules, who is on the call, and a timed agenda. It is open while the call is still ahead and folds itself once the call is marked Completed.
+
+The rules are the same for every client — how a particular client likes to be handled is the profile's job. They ship as:
+
+1. **Do not talk over the client.**
+2. **Do not volunteer that you are new.** Answer honestly if asked; introducing a new person is something we do deliberately, by whoever owns the relationship.
+3. **Do not get into the weeds on a kickoff call.** Scope, access, timelines, who does what — book a working session for the rest.
+
+The agenda is stored as proportions, so pick 30, 45 or 60 minutes and the clock is worked out to match and always sums to the call. **Copy the brief** puts the whole thing on the clipboard for pasting into Slack before the call, which is how it reaches whoever is joining but does not have the client page open.
+
+Edit both under **Settings → Call conduct**. Rules are `rule | why it matters`, one per line; the agenda is `item | weight | note`. Leaving a box empty falls back to the shipped copy, and **Back to the shipped copy** fills the boxes so you can see what you would be reverting to before you save.
+
 ### Sharing a client with a colleague
 
 Every row on the **Clients** list has a copy button (it appears on hover), and every client page has **Copy link** beside the back button. The link opens straight onto that client for anyone who can reach the tool.

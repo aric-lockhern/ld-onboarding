@@ -178,6 +178,45 @@ const FAKE = {
   // Config "App URL" is set to the short address, which is the whole point of
   // that setting — a seventy-character /exec link pasted into Slack is one
   // nobody clicks.
+  // The kickoff brief. Three house rules and a clock, because one new person
+  // on one call talked over the client, said they were new, and ran the time
+  // out in the weeds.
+  getCallBrief: { ok:true, minutes:30, lengths:[30,45,60],
+    company:'Harbor & Sons',
+    rules:[
+      { rule:'Do not talk over the client.',
+        why:'Let them finish. An interruption is the part they remember.',
+        source:'shipped' },
+      { rule:'Do not volunteer that you are new.',
+        why:'Introducing a new person is a deliberate thing WE do.',
+        source:'shipped' },
+      { rule:'Do not get into the weeds on a kickoff call.',
+        why:'Scope, access, timelines and who does what. Book the rest.',
+        source:'shipped' }
+    ],
+    agenda:[
+      { item:'Introductions', mins:3, from:0, to:3, note:'Whoever leads introduces the team.' },
+      { item:'What we understand you bought', mins:5, from:3, to:8, note:'Restate the scope.' },
+      { item:'What we need from you, and by when', mins:8, from:8, to:16, note:'The access list, dated.' },
+      { item:'How we will work together', mins:5, from:16, to:21, note:'Cadence and channel.' },
+      { item:'Their questions', mins:6, from:21, to:27, note:'Leave real room.' },
+      { item:'Next steps, said out loud', mins:3, from:27, to:30, note:'Who does what by when.' }
+    ],
+    // One name on the client is not on the Team tab — usually somebody who
+    // left, and worth marking on a briefing screen.
+    team:[
+      { name:'Drake King', role:'Specialist', lead:true, unknown:false },
+      { name:'Alexandra McCurdy', role:'Strategist', lead:false, unknown:false },
+      { name:'Justin Gonnella', role:'', lead:false, unknown:true }
+    ],
+    lead:'Dana Whitlock is the second-generation owner of Harbor & Sons. '
+       + 'Short written answers; she disengages rather than asking twice.' },
+  getCallRules: { ok:true, rulesSource:'shipped', agendaSource:'shipped',
+    rules:'Do not talk over the client. | Let them finish.',
+    agenda:'Introductions | 1 | Whoever leads introduces the team.',
+    shippedRules:'Do not talk over the client. | Let them finish.',
+    shippedAgenda:'Introductions | 1 | Whoever leads introduces the team.' },
+  saveCallRules: { ok:true },
   appBaseUrl: { ok:true, base:'https://onboarding.lockherndigital.com/',
                 message:'' },
   bulkParse: { ok:true, ready:2, truncated:0,
@@ -986,6 +1025,32 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
       const fMail = `${OUT}/${name}-settings-email.png`;
       await page.screenshot({ path: fMail, fullPage: name === 'desktop' });
       shots.push(fMail);
+
+      // Call conduct: the house rules and the kickoff agenda, editable in one
+      // place. Blank falls back to the shipped copy, so the boxes are
+      // pre-filled with it rather than empty — an empty box under "Call
+      // conduct" reads as having no rules at all.
+      await page.click('#stCalls');
+      await page.waitForSelector('#crRules', { timeout: 5000 });
+      const conduct = await page.evaluate(() => ({
+        rules: document.getElementById('crRules').value,
+        agenda: document.getElementById('crAgenda').value,
+        canReset: !!document.getElementById('crReset'),
+        saysShipped: /the shipped set/
+          .test(document.getElementById('stBody').textContent)
+      }));
+      if (!conduct.rules.trim() || !conduct.agenda.trim()) {
+        throw new Error('The conduct editor opened empty, which reads as '
+          + 'having no rules: ' + JSON.stringify(conduct));
+      }
+      if (!conduct.canReset || !conduct.saysShipped) {
+        throw new Error('The editor does not say whether it is showing the '
+          + 'shipped copy or an edit: ' + JSON.stringify(conduct));
+      }
+      await page.waitForTimeout(200);
+      const fConduct = `${OUT}/${name}-settings-calls.png`;
+      await page.screenshot({ path: fConduct, fullPage: name === 'desktop' });
+      shots.push(fConduct);
       SETTINGS_DONE: ;
     }
 
@@ -1405,6 +1470,84 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (chipWrap !== 'nowrap') {
     throw new Error('Team chips can break a name across lines: ' + chipWrap);
   }
+
+  // The kickoff brief: three house rules and a clock.
+  //
+  // It exists because one new person on one call talked over the client, said
+  // they were new, and ran the time out in the weeds. So the rules have to be
+  // the first thing on the card — not a footnote under a schedule — and the
+  // agenda has to carry minutes, because "keep to time" without a number is
+  // a thing you discover you failed at as the client leaves.
+  await page.waitForSelector('.rule', { timeout: 5000 });
+  const brief = await page.evaluate(() => {
+    const card = document.getElementById('briefWrap');
+    const rules = [].map.call(card.querySelectorAll('.rule'),
+      e => e.textContent);
+    const rows = [].map.call(card.querySelectorAll('.line.ag'), e => ({
+      clock: e.querySelector('.at').textContent,
+      mins: Number((e.querySelector('.sub').textContent.match(/\d+/) || [0])[0])
+    }));
+    return {
+      rules: rules,
+      // Rules above the agenda, or this is a scheduling card that mentions
+      // conduct in passing.
+      rulesFirst: card.innerHTML.indexOf('class="rules"')
+        < card.innerHTML.indexOf('class="lines"'),
+      rows: rows,
+      total: rows.reduce((n, r) => n + r.mins, 0),
+      // Somebody on the client who is not on the Team tab — usually a leaver.
+      marksStranger: !!card.querySelector('.tm.off'),
+      lengths: card.querySelectorAll('[data-mins]').length,
+      open: document.getElementById('briefCard').style.display !== 'none'
+    };
+  });
+  if (brief.rules.length !== 3) {
+    throw new Error('The house rules did not render: ' + JSON.stringify(brief));
+  }
+  if (!/talk over the client/.test(brief.rules[0])
+      || !/volunteer that you are new/.test(brief.rules[1])) {
+    throw new Error('The rules are not the ones that cost us the room: '
+      + JSON.stringify(brief.rules));
+  }
+  if (!brief.rulesFirst) {
+    throw new Error('The agenda is above the rules, which buries them');
+  }
+  // The clock has to add up to the call, or nobody trusts it to keep them to
+  // thirty minutes.
+  if (brief.total !== 30) {
+    throw new Error('The agenda does not sum to the call length: '
+      + JSON.stringify(brief.rows));
+  }
+  if (brief.rows[0].clock !== '0–3') {
+    throw new Error('The running clock is wrong: ' + JSON.stringify(brief.rows));
+  }
+  if (!brief.marksStranger) {
+    throw new Error('Somebody on the call who is not on the Team tab is not '
+      + 'marked');
+  }
+  if (brief.lengths !== 3) {
+    throw new Error('No way to change the call length');
+  }
+  // Open while the call is still ahead. This client is at "Scheduled".
+  if (!brief.open) {
+    throw new Error('The brief is folded away before the call has happened');
+  }
+
+  const fBrief = `${OUT}/${name}-kickoff-brief.png`;
+  await page.locator('#briefWrap').screenshot({ path: fBrief });
+  shots.push(fBrief);
+
+  // And in place, so it is obvious where on the page somebody meets it: under
+  // the facts card, above the phase rail — before the work, which is the
+  // order the call happens in.
+  const fBriefPage = `${OUT}/${name}-kickoff-in-place.png`;
+  await page.evaluate(() => {
+    const g = document.getElementById('briefTog');
+    if (g) g.scrollIntoView({ block: 'center' });
+  });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: fBriefPage });
+  shots.push(fBriefPage);
 
   // The facts card is where the layout complaints landed, so it gets its own
   // shot rather than being a band inside a 6,000px full-page capture nobody
