@@ -1025,6 +1025,32 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
       const fMail = `${OUT}/${name}-settings-email.png`;
       await page.screenshot({ path: fMail, fullPage: name === 'desktop' });
       shots.push(fMail);
+
+      // Call conduct: the house rules and the kickoff agenda, editable in one
+      // place. Blank falls back to the shipped copy, so the boxes are
+      // pre-filled with it rather than empty — an empty box under "Call
+      // conduct" reads as having no rules at all.
+      await page.click('#stCalls');
+      await page.waitForSelector('#crRules', { timeout: 5000 });
+      const conduct = await page.evaluate(() => ({
+        rules: document.getElementById('crRules').value,
+        agenda: document.getElementById('crAgenda').value,
+        canReset: !!document.getElementById('crReset'),
+        saysShipped: /the shipped set/
+          .test(document.getElementById('stBody').textContent)
+      }));
+      if (!conduct.rules.trim() || !conduct.agenda.trim()) {
+        throw new Error('The conduct editor opened empty, which reads as '
+          + 'having no rules: ' + JSON.stringify(conduct));
+      }
+      if (!conduct.canReset || !conduct.saysShipped) {
+        throw new Error('The editor does not say whether it is showing the '
+          + 'shipped copy or an edit: ' + JSON.stringify(conduct));
+      }
+      await page.waitForTimeout(200);
+      const fConduct = `${OUT}/${name}-settings-calls.png`;
+      await page.screenshot({ path: fConduct, fullPage: name === 'desktop' });
+      shots.push(fConduct);
       SETTINGS_DONE: ;
     }
 
@@ -1510,6 +1536,18 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   const fBrief = `${OUT}/${name}-kickoff-brief.png`;
   await page.locator('#briefWrap').screenshot({ path: fBrief });
   shots.push(fBrief);
+
+  // And in place, so it is obvious where on the page somebody meets it: under
+  // the facts card, above the phase rail — before the work, which is the
+  // order the call happens in.
+  const fBriefPage = `${OUT}/${name}-kickoff-in-place.png`;
+  await page.evaluate(() => {
+    const g = document.getElementById('briefTog');
+    if (g) g.scrollIntoView({ block: 'center' });
+  });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: fBriefPage });
+  shots.push(fBriefPage);
 
   // The facts card is where the layout complaints landed, so it gets its own
   // shot rather than being a band inside a 6,000px full-page capture nobody
