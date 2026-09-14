@@ -103,6 +103,12 @@ function openDraft(draftId) {
   const r = found.values;
 
   const sources = safeParse_(r[D.SOURCES - 1], []);
+  // Every record written before a document could exist twice has no id, and
+  // its key IS its identity. Backfilled on read rather than migrated in the
+  // cell, so an old draft keeps working untouched — and the first audit deck
+  // on any client keeps the id 'audit', which is what the pickers already say.
+  sources.forEach(s => { if (s && !s.id) s.id = s.key; });
+
   const missing = [];
   sources.forEach(s => {
     if (s && s.fileId && !driveFileExists_(s.fileId)) {
@@ -218,10 +224,32 @@ function renameDraft(draftId, name) {
  * original upload is kept alongside when there is one — the text is what gets
  * analysed, but the PDF is what someone will want to look at in six months.
  */
+/**
+ * Stores one document against a draft.
+ *
+ * IDENTITY IS `id`, KIND IS `key`, AND THEY ARE NOT THE SAME THING.
+ *
+ * They used to be. A record was found and replaced by its `key`, which made
+ * "audit presentation" mean one document forever: filing a second audit deck
+ * trashed the first one's Drive files and dropped it from the list. That is
+ * right for a scope of work — two contracts on file is how the model ends up
+ * disagreeing with itself about the fee — and wrong for an audit deck, where
+ * two decks presented on different dates are two sets of commitments, exactly
+ * like two calls.
+ *
+ * So the caller passes an `id` when it wants a new document rather than a
+ * replacement, and everything downstream keeps filtering on `key`. That is the
+ * property that makes this cheap: `buildActionItems`, `profileSources_` and
+ * the scope drafter all select by kind and none of them dedupe, so a second
+ * audit deck reaches every one of them without a line changing in any of them.
+ */
 function storeSource_(draftId, key, label, text, meta) {
   const found = draftRow_(draftId);
   if (!found) throw new Error('That draft no longer exists.');
   meta = meta || {};
+  // Defaults to the kind, which is the old behaviour exactly: re-reading a
+  // source to retry a failed fetch still replaces it.
+  const id = String(meta.id || key);
 
   const folderId = String(found.values[D.FOLDER - 1] || '');
   if (!folderId) throw new Error('This draft has no Drive folder, so documents '
@@ -232,7 +260,8 @@ function storeSource_(draftId, key, label, text, meta) {
   // Replace rather than accumulate: re-reading a source should leave one file,
   // not a pile of near-identical ones.
   const sources = safeParse_(found.values[D.SOURCES - 1], []);
-  const prior = sources.filter(s => s && s.key === key)[0];
+  sources.forEach(s => { if (s && !s.id) s.id = s.key; });
+  const prior = sources.filter(s => s && s.id === id)[0];
   if (prior) {
     [prior.fileId, prior.originalId].forEach(id => {
       if (!id) return;
@@ -240,7 +269,7 @@ function storeSource_(draftId, key, label, text, meta) {
     });
   }
 
-  const textFile = folder.createFile(key + '.txt', text, MimeType.PLAIN_TEXT);
+  const textFile = folder.createFile(id + '.txt', text, MimeType.PLAIN_TEXT);
 
   let originalId = '';
   let originalMime = '';
@@ -255,7 +284,8 @@ function storeSource_(draftId, key, label, text, meta) {
   }
 
   const record = {
-    key: key, label: label, via: meta.via || '', origin: meta.origin || '',
+    id: id, key: key, label: label,
+    via: meta.via || '', origin: meta.origin || '',
     fileId: textFile.getId(), originalId: originalId,
     originalName: (meta.original && meta.original.name) || '',
     // Kept because a PDF is re-attached to the model on every analysis, not
@@ -268,7 +298,7 @@ function storeSource_(draftId, key, label, text, meta) {
     clickupDocId: meta.clickupDocId || ''
   };
 
-  const next = sources.filter(s => s && s.key !== key);
+  const next = sources.filter(s => s && s.id !== id);
   next.push(record);
   saveDraft(draftId, { sources: next });
   return record;

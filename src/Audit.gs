@@ -194,7 +194,11 @@ function buildActionItems(clientId, keys) {
   if (keys && keys.length) {
     const want = {};
     keys.forEach(k => { want[k] = true; });
-    docs = all.filter(d => want[d.key]);
+    // By id first, falling back to kind. A caller sending 'audit' — the picker
+    // before this change, or anything else that speaks in kinds — still gets
+    // every audit deck, which is the safer way round: the failure this exists
+    // to prevent is a deck being missed, not one being read twice.
+    docs = all.filter(d => want[d.id || d.key] || want[d.key]);
     if (!docs.length) {
       return fail('None of the documents you picked are stored against this '
         + 'client any more.');
@@ -400,6 +404,10 @@ function actionSources_(clientId) {
   const rows = all
     .filter(s => s.fileId)
     .map(s => ({
+      // The DOCUMENT, not the kind. Two audit decks are two rows with two
+      // ticks — picking by kind would offer the same four words twice and tick
+      // both together, which is not a choice.
+      id: s.id || s.key,
       key: s.key,
       label: s.label,
       chars: s.chars || 0,

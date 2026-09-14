@@ -3787,7 +3787,8 @@ function sourcePicker(r){
   return '<div class="pri-h">Read from <span id="srcSum">'
     + Math.round(total / 1000) + 'k characters</span></div>'
     + '<div class="checks">' + src.map(function(s){
-        return '<label class="chk"><input type="checkbox" data-src="' + esc(s.key)
+        return '<label class="chk"><input type="checkbox" data-src="'
+          + esc(s.id || s.key)
           + '" data-chars="' + s.chars + '"' + (s.suggested ? ' checked' : '') + '>'
           + '<span><span class="nm">' + esc(s.label) + '</span><br>'
           + '<span class="cat">' + Math.round(s.chars / 1000) + 'k'
@@ -4412,7 +4413,12 @@ function wireRecent(clientId){
         b.disabled = false; b.textContent = 'Add document';
         if (!r.ok){ toast(r.message, true); return; }
         toast('Filed ' + Math.round(r.chars / 1000) + 'k characters as '
-          + r.label + (r.replaced ? ' — replacing the previous one.' : '.'));
+          + r.label
+          + (r.replaced ? ' — replacing the previous one.'
+             // The one that matters for a second audit deck: it is ADDED, and
+             // the first is still there. The old copy said "replacing", which
+             // was true and was also the bug.
+             : r.added ? ' — added alongside the one already on file.' : '.'));
         loadRecent(clientId);
         // The document list and the action-item picker both change.
         loadDocs(clientId);
