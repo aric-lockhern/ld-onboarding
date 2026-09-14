@@ -443,8 +443,8 @@ const FAKE = {
       { key:'call', label:'Call transcript', hint:'Listed under recent calls.' },
       { key:'audit', label:'Audit presentation',
         hint:'The default document the action items are built from.' },
-      { key:'deck', label:'Pitch deck', hint:'' },
-      { key:'sow', label:'Scope of work', hint:'Replaces the stored contract.' }
+      { id:'deck', key:'deck', label:'Pitch deck', hint:'' },
+      { id:'sow', key:'sow', label:'Scope of work', hint:'Replaces the stored contract.' }
     ],
     calls:[
       // One filed by hand, one found by the scan. They render differently and
@@ -544,12 +544,17 @@ const FAKE = {
     sources:[
       // With an audit on file it is the default and the pitch deck is not:
       // ticking both is how the request gets big enough to time out again.
-      { key:'audit', label:'Audit presentation', chars:21400, isCall:false, suggested:true },
+      // Two audit decks, presented on different dates. Filing the second used
+      // to trash the first; both must now be offered, separately tickable.
+      { id:'audit', key:'audit', label:'Audit presentation · 4 Aug 2026',
+        chars:21400, isCall:false, suggested:true },
+      { id:'audit-2', key:'audit', label:'Audit presentation · 2 Sep 2026',
+        chars:18900, isCall:false, suggested:true },
       { key:'deck', label:'Pitch deck', chars:19068, isCall:false, suggested:false },
       { key:'sow', label:'Scope of work', chars:17335, isCall:false, suggested:true },
-      { key:'sales', label:'Sales call transcript', chars:18039, isCall:true, suggested:false },
-      { key:'kickoff', label:'Onboarding / kickoff call transcript', chars:62476, isCall:true, suggested:false },
-      { key:'cu_h6apc-44014', label:'Meeting - 08/06/2026', chars:55300, isCall:true, suggested:false }
+      { id:'sales', key:'sales', label:'Sales call transcript', chars:18039, isCall:true, suggested:false },
+      { id:'kickoff', key:'kickoff', label:'Onboarding / kickoff call transcript', chars:62476, isCall:true, suggested:false },
+      { id:'cu_h6apc-44014', key:'cu_h6apc-44014', label:'Meeting - 08/06/2026', chars:55300, isCall:true, suggested:false }
     ],
     team:['Drake King','Alexandra McCurdy'],
     // Filed against the client rather than announced and forgotten. One
@@ -595,7 +600,17 @@ const FAKE = {
       { key:'sow', label:'Scope of work', name:'Signed SOW 8.3.26.pdf',
         words:2518, read:'11 Aug, 10:54', url:'https://drive.google.com/file/d/y/view' },
       { key:'deck', label:'Pitch deck', name:'Strategy deck.pdf', words:2979,
-        read:'11 Aug, 10:08', gone:true, url:'' }
+        read:'11 Aug, 10:08', gone:true, url:'' },
+      // Two audit decks, as labelSources_ hands them over: both dated, not just
+      // the second. This card is where somebody goes to check that the deck
+      // they just filed actually landed, so two identical rows here read as
+      // one document rendered twice.
+      { key:'audit', label:'Audit presentation · 4 Aug 2026',
+        name:'Doc audit August.pdf', words:4102, read:'11 Aug, 10:12',
+        url:'https://drive.google.com/file/d/a1/view' },
+      { key:'audit', label:'Audit presentation · 2 Sep 2026',
+        name:'Doc audit September.pdf', words:3688, read:'2 Sep, 14:31',
+        url:'https://drive.google.com/file/d/a2/view' }
     ] },
   deleteClient: { ok:true, clientId:'HARBOR-2608', draftFreed:'DR-260810-1612',
     removed:{ tasks:14, intake:1, plans:0 } },
@@ -1691,6 +1706,46 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
     throw new Error('A cut-short list was reported as complete: ' + built);
   }
 
+  // Two audit decks, and both of them get read.
+  //
+  // Filing a second document of the same kind used to REPLACE the first — it
+  // trashed its Drive files and dropped it from the list, so the deck the
+  // findings came from was gone. Two decks presented on different dates are
+  // two sets of commitments, so the picker has to offer both, separately, and
+  // send both ids rather than one kind.
+  const decks = await page.evaluate(() => {
+    const boxes = [].map.call(document.querySelectorAll('[data-src]'), e => ({
+      id: e.getAttribute('data-src'),
+      label: e.parentElement.textContent.replace(/\s+/g, ' ').trim(),
+      checked: e.checked
+    }));
+    return {
+      audits: boxes.filter(b => /^audit/.test(b.id)),
+      ids: boxes.map(b => b.id)
+    };
+  });
+  if (decks.audits.length !== 2) {
+    throw new Error('Both audit decks are not offered: '
+      + JSON.stringify(decks.audits));
+  }
+  // Distinct ids, or ticking one ticks both and it is not a choice.
+  if (decks.audits[0].id === decks.audits[1].id) {
+    throw new Error('The two audit decks share a tick box: '
+      + JSON.stringify(decks.audits));
+  }
+  // Distinct labels, or the picker shows the same four words twice.
+  if (decks.audits[0].label === decks.audits[1].label) {
+    throw new Error('The two audit decks are indistinguishable on screen: '
+      + JSON.stringify(decks.audits));
+  }
+  if (!decks.audits.every(a => a.checked)) {
+    throw new Error('An audit deck is not ticked by default: '
+      + JSON.stringify(decks.audits));
+  }
+  if (new Set(decks.ids).size !== decks.ids.length) {
+    throw new Error('The picker has duplicate ids: ' + JSON.stringify(decks.ids));
+  }
+
   // Pushing the checklist into ClickUp.
   //
   // Two decisions and a button. The list picker is the part that has to be
@@ -1929,6 +1984,29 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   const docsShut = await page.$eval('#docsBody', e => e.style.display);
   if (docsShut !== 'none') throw new Error('Deal documents did not start folded');
 
+  // Both audit decks have to be tellable apart HERE as well as in the picker.
+  // This card is where somebody goes to check that the deck they just filed
+  // actually landed, and two rows both reading "Audit presentation" are
+  // indistinguishable from one document rendered twice.
+  await page.click('#docsTog');
+  await page.waitForTimeout(120);
+  const auditRows = await page.$$eval('#doclist .nm', els =>
+    els.map(e => e.textContent.trim())
+       .filter(t => t.indexOf('Audit presentation') === 0));
+  if (auditRows.length !== 2) {
+    throw new Error('Deal documents did not list both audit decks: '
+      + JSON.stringify(auditRows));
+  }
+  if (auditRows[0] === auditRows[1]) {
+    throw new Error('The two audit decks are labelled identically, so the card '
+      + 'reads as one document twice: ' + auditRows[0]);
+  }
+  const shotDocs = `${OUT}/${name}-detail-documents.png`;
+  await page.screenshot({ path: shotDocs, fullPage: name === 'desktop' });
+  shots.push(shotDocs);
+  await page.click('#docsTog');
+  await page.waitForTimeout(60);
+
   // The picker must render on the EMPTY state too. It used to be dropped there
   // by an early return in getActionItems, which is the one screen that cannot
   // work without it: no items yet is exactly when somebody is building them,
@@ -1948,19 +2026,25 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   // is 172k characters and is exactly what failed.
   const picked = await page.$$eval('[data-src]', els =>
     els.filter(e => e.checked).map(e => e.getAttribute('data-src')));
-  if (picked.join(',') !== 'audit,sow') {
-    throw new Error('Action item sources did not default to the audit + SOW: '
-      + JSON.stringify(picked));
+  // Every audit deck, plus the SOW. Both decks rather than one: a client with
+  // two audits presented on two dates has two sets of commitments, and the
+  // default that reads only the newer one is the bug this fixture exists for.
+  if (picked.join(',') !== 'audit,audit-2,sow') {
+    throw new Error('Action item sources did not default to every audit + the '
+      + 'SOW: ' + JSON.stringify(picked));
   }
+  // 21.4k + 18.9k + 17.3k. The total has to count BOTH decks, because the
+  // number is what tells somebody whether the request will finish — and a
+  // second audit deck is 19k of it.
   const sum = await page.$eval('#srcSum', e => e.textContent);
-  if (sum !== '39k characters') {
+  if (sum !== '58k characters') {
     throw new Error('The character total did not reflect the default: ' + sum);
   }
   // Ticking a transcript has to move the number, or the size is decoration.
   await page.click('[data-src="kickoff"]');
   await page.waitForTimeout(120);
   const sum2 = await page.$eval('#srcSum', e => e.textContent);
-  if (sum2 !== '101k characters') {
+  if (sum2 !== '120k characters') {
     throw new Error('The total did not update when a transcript was added: ' + sum2);
   }
   await page.click('[data-src="kickoff"]');

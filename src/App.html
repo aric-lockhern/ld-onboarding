@@ -3787,7 +3787,8 @@ function sourcePicker(r){
   return '<div class="pri-h">Read from <span id="srcSum">'
     + Math.round(total / 1000) + 'k characters</span></div>'
     + '<div class="checks">' + src.map(function(s){
-        return '<label class="chk"><input type="checkbox" data-src="' + esc(s.key)
+        return '<label class="chk"><input type="checkbox" data-src="'
+          + esc(s.id || s.key)
           + '" data-chars="' + s.chars + '"' + (s.suggested ? ' checked' : '') + '>'
           + '<span><span class="nm">' + esc(s.label) + '</span><br>'
           + '<span class="cat">' + Math.round(s.chars / 1000) + 'k'
@@ -4412,7 +4413,12 @@ function wireRecent(clientId){
         b.disabled = false; b.textContent = 'Add document';
         if (!r.ok){ toast(r.message, true); return; }
         toast('Filed ' + Math.round(r.chars / 1000) + 'k characters as '
-          + r.label + (r.replaced ? ' — replacing the previous one.' : '.'));
+          + r.label
+          + (r.replaced ? ' — replacing the previous one.'
+             // The one that matters for a second audit deck: it is ADDED, and
+             // the first is still there. The old copy said "replacing", which
+             // was true and was also the bug.
+             : r.added ? ' — added alongside the one already on file.' : '.'));
         loadRecent(clientId);
         // The document list and the action-item picker both change.
         loadDocs(clientId);
@@ -4568,7 +4574,7 @@ function docsCard(r){
   if (docs.length){
     return '<button class="phtog" id="docsTog"><span class="tw">▶</span>'
       + docs.length + ' document' + (docs.length === 1 ? '' : 's')
-      + ' <span class="st">uploaded at intake</span></button>'
+      + ' <span class="st">on file</span></button>'
       + '<div id="docsBody" style="display:none; margin-top:12px">'
       + docsBody(r) + '</div>';
   }
@@ -4579,11 +4585,15 @@ function docsBody(r){
   var docs = (r && r.docs) || [];
   if (!docs.length){
     return '<h3>No documents stored</h3><div class="hint">'
-      + esc((r && r.message) || 'Nothing was uploaded during intake for this client.')
+      + esc((r && r.message) || 'Nothing has been filed against this client yet.')
       + '</div>';
   }
-  return '<h3>Uploaded at intake</h3>'
-    + '<div class="hint">The originals, in this client\'s Drive folder. '
+  // Not "uploaded at intake" — a second audit deck filed from this page three
+  // months later lands in the same list, and a heading that says otherwise is
+  // how somebody concludes it did not save.
+  return '<h3>On file</h3>'
+    + '<div class="hint">Everything stored against this client, in their Drive '
+    + 'folder. '
     + (r.folderUrl ? '<a class="lnk" href="' + esc(r.folderUrl)
         + '" target="_blank" rel="noopener">Open the folder</a>' : '')
     + '</div>'

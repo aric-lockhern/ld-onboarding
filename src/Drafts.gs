@@ -103,6 +103,13 @@ function openDraft(draftId) {
   const r = found.values;
 
   const sources = safeParse_(r[D.SOURCES - 1], []);
+  // Every record written before a document could exist twice has no id, and
+  // its key IS its identity. Backfilled on read rather than migrated in the
+  // cell, so an old draft keeps working untouched — and the first audit deck
+  // on any client keeps the id 'audit', which is what the pickers already say.
+  sources.forEach(s => { if (s && !s.id) s.id = s.key; });
+  labelSources_(sources);
+
   const missing = [];
   sources.forEach(s => {
     if (s && s.fileId && !driveFileExists_(s.fileId)) {
@@ -218,10 +225,87 @@ function renameDraft(draftId, name) {
  * original upload is kept alongside when there is one — the text is what gets
  * analysed, but the PDF is what someone will want to look at in six months.
  */
+/**
+ * Stores one document against a draft.
+ *
+ * IDENTITY IS `id`, KIND IS `key`, AND THEY ARE NOT THE SAME THING.
+ *
+ * They used to be. A record was found and replaced by its `key`, which made
+ * "audit presentation" mean one document forever: filing a second audit deck
+ * trashed the first one's Drive files and dropped it from the list. That is
+ * right for a scope of work — two contracts on file is how the model ends up
+ * disagreeing with itself about the fee — and wrong for an audit deck, where
+ * two decks presented on different dates are two sets of commitments, exactly
+ * like two calls.
+ *
+ * So the caller passes an `id` when it wants a new document rather than a
+ * replacement, and everything downstream keeps filtering on `key`. That is the
+ * property that makes this cheap: `buildActionItems`, `profileSources_` and
+ * the scope drafter all select by kind and none of them dedupe, so a second
+ * audit deck reaches every one of them without a line changing in any of them.
+ */
+/**
+ * Tells two documents of the same kind apart, on the way out rather than on
+ * the way in.
+ *
+ * Two audit decks presented on two dates are two sets of commitments, and a
+ * list showing "Audit presentation" twice is a list nobody can pick from. The
+ * obvious fix is to write a distinguishing label when the second one is filed —
+ * and that is wrong twice over. It leaves the FIRST deck reading as the bare
+ * kind, so the pair looks like a document and an afterthought rather than two
+ * audits; and it cannot reach anything already stored, so every client filed
+ * before today keeps the label it was given.
+ *
+ * Doing it here, where every reader gets its sources, means the picker, the
+ * Deal documents card, the profile and the scope drafter all say the same
+ * thing, and a draft written months ago reads correctly the first time it is
+ * opened. The stored label is left alone — it is what gets normalised back to,
+ * so this never compounds on itself.
+ *
+ * A kind with one document keeps its label untouched: a call is named by
+ * whoever filed it, and stripping a suffix off a name somebody typed would be
+ * this function corrupting the one label it has no business rewriting.
+ */
+function labelSources_(sources) {
+  const byKind = {};
+  (sources || []).forEach(s => {
+    if (!s) return;
+    const k = String(s.key || '');
+    (byKind[k] = byKind[k] || []).push(s);
+  });
+
+  Object.keys(byKind).forEach(k => {
+    const group = byKind[k];
+    if (group.length < 2) return;
+
+    const seen = {};
+    group.forEach((s, i) => {
+      // Back to the kind's own words before appending, so a record labelled
+      // under the old write-time scheme does not end up dated twice.
+      const base = String(s.label || k).split(' · ')[0].trim() || k;
+      // The date it happened beats the date it was filed — a deck presented in
+      // August and uploaded in September is an August deck. Falls back to its
+      // position when neither is recorded, because "1 of 2" still picks.
+      const when = String(s.at || s.read || '').trim();
+      let label = when ? base + ' · ' + when : base + ' ' + (i + 1) + ' of ' + group.length;
+      // Two filed on the same day would otherwise read identically, which is
+      // the whole failure this exists to prevent.
+      if (seen[label]) label += ' (' + (i + 1) + ')';
+      seen[label] = true;
+      s.label = label;
+    });
+  });
+
+  return sources;
+}
+
 function storeSource_(draftId, key, label, text, meta) {
   const found = draftRow_(draftId);
   if (!found) throw new Error('That draft no longer exists.');
   meta = meta || {};
+  // Defaults to the kind, which is the old behaviour exactly: re-reading a
+  // source to retry a failed fetch still replaces it.
+  const id = String(meta.id || key);
 
   const folderId = String(found.values[D.FOLDER - 1] || '');
   if (!folderId) throw new Error('This draft has no Drive folder, so documents '
@@ -232,7 +316,8 @@ function storeSource_(draftId, key, label, text, meta) {
   // Replace rather than accumulate: re-reading a source should leave one file,
   // not a pile of near-identical ones.
   const sources = safeParse_(found.values[D.SOURCES - 1], []);
-  const prior = sources.filter(s => s && s.key === key)[0];
+  sources.forEach(s => { if (s && !s.id) s.id = s.key; });
+  const prior = sources.filter(s => s && s.id === id)[0];
   if (prior) {
     [prior.fileId, prior.originalId].forEach(id => {
       if (!id) return;
@@ -240,7 +325,7 @@ function storeSource_(draftId, key, label, text, meta) {
     });
   }
 
-  const textFile = folder.createFile(key + '.txt', text, MimeType.PLAIN_TEXT);
+  const textFile = folder.createFile(id + '.txt', text, MimeType.PLAIN_TEXT);
 
   let originalId = '';
   let originalMime = '';
@@ -255,7 +340,8 @@ function storeSource_(draftId, key, label, text, meta) {
   }
 
   const record = {
-    key: key, label: label, via: meta.via || '', origin: meta.origin || '',
+    id: id, key: key, label: label,
+    via: meta.via || '', origin: meta.origin || '',
     fileId: textFile.getId(), originalId: originalId,
     originalName: (meta.original && meta.original.name) || '',
     // Kept because a PDF is re-attached to the model on every analysis, not
@@ -263,12 +349,16 @@ function storeSource_(draftId, key, label, text, meta) {
     originalMime: originalMime,
     chars: text.length, words: meta.words || 0,
     preview: meta.preview || '', read: fmtWhen_(new Date()),
+    // When the document itself is from, as opposed to when it was filed. A
+    // deck presented in August and uploaded in September is an August deck,
+    // and that is the date that tells two of them apart.
+    at: meta.at || '',
     // Where it came from, when that is a system rather than an upload. Keeps a
     // re-imported call updating its own copy instead of filing a second one.
     clickupDocId: meta.clickupDocId || ''
   };
 
-  const next = sources.filter(s => s && s.key !== key);
+  const next = sources.filter(s => s && s.id !== id);
   next.push(record);
   saveDraft(draftId, { sources: next });
   return record;

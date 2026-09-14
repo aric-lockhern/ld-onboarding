@@ -116,17 +116,49 @@ function deleteRecentNote(token, clientId, index) {
  * items — which is the whole point. Adding an audit in week three and finding
  * it absent from the action-items picker would make this pointless.
  */
+/**
+ * `multiple` is the difference between a document and a version of one.
+ *
+ * A scope of work REPLACES: two contracts on file is how the model ends up
+ * disagreeing with itself about the fee, and a corrected one is meant to
+ * supersede. An audit deck ACCUMULATES: two decks presented on different dates
+ * are two sets of commitments, exactly like two calls, and filing the second
+ * used to trash the first — silently, in Drive, taking the findings with it.
+ *
+ * The transcripts stay single because the intake form has one slot each and a
+ * second one is a call, which already accumulates under its own key.
+ */
 const CLIENT_DOC_KINDS = [
-  { key: 'call', label: 'Call transcript',
+  { key: 'call', label: 'Call transcript', multiple: true,
     hint: 'Filed as its own call and listed under recent calls.' },
-  { key: 'audit', label: 'Audit presentation',
-    hint: 'The default document the action items are built from.' },
-  { key: 'deck', label: 'Pitch deck', hint: '' },
+  { key: 'audit', label: 'Audit presentation', multiple: true,
+    hint: 'Added alongside any audit already on file, not replacing it.' },
+  { key: 'deck', label: 'Pitch deck', multiple: true, hint: '' },
   { key: 'sow', label: 'Scope of work',
     hint: 'Replaces the stored contract — what the scope confirmation reads.' },
   { key: 'sales', label: 'Sales call transcript', hint: '' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript', hint: '' }
 ];
+
+/**
+ * A free id for another document of the same kind.
+ *
+ * `audit`, then `audit-2`, `audit-3`. The first keeps the bare kind so every
+ * draft written before this existed is already correct and the pickers do not
+ * renumber themselves the day this ships.
+ */
+function nextSourceId_(draftId, key) {
+  const d = openDraft(draftId);
+  const taken = {};
+  ((d && d.sources) || []).forEach(s => {
+    if (s) taken[String(s.id || s.key)] = true;
+  });
+  if (!taken[key]) return key;
+  for (let n = 2; n < 200; n++) {
+    if (!taken[key + '-' + n]) return key + '-' + n;
+  }
+  return key + '-' + Date.now();
+}
 
 /** Callable from the browser, so the picker lists exactly what the server takes. */
 function getClientDocKinds() {
@@ -198,13 +230,28 @@ function addManualCall(token, clientId, label, raw, when, kind) {
   // file for the model to disagree with itself over. A call is keyed by its own
   // name and date, because two calls are two documents.
   const key = isCall ? manualCallKey_(name, at) : type.key;
+
+  // A call has always been keyed by its own name and date, so two calls are
+  // two documents. Everything else was keyed by kind, which made "audit
+  // presentation" mean one document forever. A kind marked `multiple` now gets
+  // its own id while KEEPING the kind as its key — which is what carries it
+  // into the action items, the profile and the scope drafter unchanged.
+  const id = (isCall || !type.multiple) ? key : nextSourceId_(draftId, key);
+  const another = !isCall && type.multiple && id !== key;
+
+  // Stored as the kind's own words, full stop. Telling two audit decks apart
+  // is labelSources_'s job on the way out — done here it would date the second
+  // deck and leave the first one bare, and could never reach a document filed
+  // before today.
   const filedAs = isCall ? name : type.label;
 
-  const replacing = !isCall && storedSourceLabel_(draftId, key);
+  const replacing = !isCall && !type.multiple && storedSourceLabel_(draftId, key);
 
   let record;
   try {
     record = storeSource_(draftId, key, filedAs, text, {
+      id: id,
+      at: at,
       via: sourceKindLabel_(raw),
       origin: (typeof raw === 'string') ? raw : '',
       words: text.split(/\s+/).length,
@@ -215,11 +262,19 @@ function addManualCall(token, clientId, label, raw, when, kind) {
       + 'not save them: ' + ((e && e.message) || String(e)) };
   }
 
-  const out = { ok: true, key: key, label: filedAs, kind: type.key,
+  // What the lists will actually call it, which is not what was stored: a
+  // second audit deck is dated on the way out, and so is the first one, which
+  // has just stopped being the only document of its kind.
+  const shown = displaySourceLabel_(draftId, id) || filedAs;
+
+  const out = { ok: true, key: key, id: id, label: shown, kind: type.key,
                 chars: text.length, words: text.split(/\s+/).length,
                 // Said plainly, because replacing the contract silently is how
                 // somebody loses the version they meant to keep.
-                replaced: !!replacing };
+                replaced: !!replacing,
+                // And the opposite, because "added alongside" is the thing
+                // somebody filing a second audit deck needs to hear.
+                added: !!another };
 
   if (!isCall) {
     out.calls = (readRecent_(clientId).calls) || [];
@@ -267,6 +322,14 @@ function deleteRecentCall(token, clientId, key) {
 
   writeRecent_(clientId, box);
   return { ok: true, calls: box.calls };
+}
+
+/** What one document is called once labelSources_ has been over the set. */
+function displaySourceLabel_(draftId, id) {
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return '';
+  const hit = (d.sources || []).filter(s => s && String(s.id) === String(id))[0];
+  return hit ? String(hit.label || '') : '';
 }
 
 /** What is already filed under a key, so a replacement can be announced. */

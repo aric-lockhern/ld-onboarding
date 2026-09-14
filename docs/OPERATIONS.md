@@ -220,6 +220,14 @@ The dashboard PIN is the only thing in front of that, and it is a convenience lo
 
 Changing either value requires a new deployment version. Editing the manifest alone does nothing.
 
+### Adding a second document of the same kind
+
+**Add document** on the client page takes more than one of most kinds. An audit presentation, a pitch deck and a call transcript are **added alongside** whatever is already on file — two audit decks presented on two dates are two sets of commitments, and both are read.
+
+A **scope of work** is the exception: uploading one replaces the stored contract, deliberately. Two contracts on file is how a fee ends up disputed between them. The toast says which happened — *"added alongside the one already on file"* or *"replacing the previous one"*.
+
+Each extra document is listed separately in the action-items picker with the date it was filed, so you can tick one deck and not the other. Both are ticked by default, and the character total counts both — worth a look before building, since that number is what decides whether the request finishes.
+
 ### Sharing a client with a colleague
 
 Every row on the **Clients** list has a copy button (it appears on hover), and every client page has **Copy link** beside the back button. The link opens straight onto that client for anyone who can reach the tool.
