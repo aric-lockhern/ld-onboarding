@@ -239,10 +239,11 @@ function addManualCall(token, clientId, label, raw, when, kind) {
   const id = (isCall || !type.multiple) ? key : nextSourceId_(draftId, key);
   const another = !isCall && type.multiple && id !== key;
 
-  // Named so two audit decks are tellable apart in a picker that would
-  // otherwise show the same four words twice.
-  const filedAs = isCall ? name
-    : (another ? type.label + ' · ' + at : type.label);
+  // Stored as the kind's own words, full stop. Telling two audit decks apart
+  // is labelSources_'s job on the way out — done here it would date the second
+  // deck and leave the first one bare, and could never reach a document filed
+  // before today.
+  const filedAs = isCall ? name : type.label;
 
   const replacing = !isCall && !type.multiple && storedSourceLabel_(draftId, key);
 
@@ -250,6 +251,7 @@ function addManualCall(token, clientId, label, raw, when, kind) {
   try {
     record = storeSource_(draftId, key, filedAs, text, {
       id: id,
+      at: at,
       via: sourceKindLabel_(raw),
       origin: (typeof raw === 'string') ? raw : '',
       words: text.split(/\s+/).length,
@@ -260,7 +262,12 @@ function addManualCall(token, clientId, label, raw, when, kind) {
       + 'not save them: ' + ((e && e.message) || String(e)) };
   }
 
-  const out = { ok: true, key: key, id: id, label: filedAs, kind: type.key,
+  // What the lists will actually call it, which is not what was stored: a
+  // second audit deck is dated on the way out, and so is the first one, which
+  // has just stopped being the only document of its kind.
+  const shown = displaySourceLabel_(draftId, id) || filedAs;
+
+  const out = { ok: true, key: key, id: id, label: shown, kind: type.key,
                 chars: text.length, words: text.split(/\s+/).length,
                 // Said plainly, because replacing the contract silently is how
                 // somebody loses the version they meant to keep.
@@ -315,6 +322,14 @@ function deleteRecentCall(token, clientId, key) {
 
   writeRecent_(clientId, box);
   return { ok: true, calls: box.calls };
+}
+
+/** What one document is called once labelSources_ has been over the set. */
+function displaySourceLabel_(draftId, id) {
+  const d = openDraft(draftId);
+  if (!d || !d.ok) return '';
+  const hit = (d.sources || []).filter(s => s && String(s.id) === String(id))[0];
+  return hit ? String(hit.label || '') : '';
 }
 
 /** What is already filed under a key, so a replacement can be announced. */

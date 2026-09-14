@@ -600,7 +600,17 @@ const FAKE = {
       { key:'sow', label:'Scope of work', name:'Signed SOW 8.3.26.pdf',
         words:2518, read:'11 Aug, 10:54', url:'https://drive.google.com/file/d/y/view' },
       { key:'deck', label:'Pitch deck', name:'Strategy deck.pdf', words:2979,
-        read:'11 Aug, 10:08', gone:true, url:'' }
+        read:'11 Aug, 10:08', gone:true, url:'' },
+      // Two audit decks, as labelSources_ hands them over: both dated, not just
+      // the second. This card is where somebody goes to check that the deck
+      // they just filed actually landed, so two identical rows here read as
+      // one document rendered twice.
+      { key:'audit', label:'Audit presentation · 4 Aug 2026',
+        name:'Doc audit August.pdf', words:4102, read:'11 Aug, 10:12',
+        url:'https://drive.google.com/file/d/a1/view' },
+      { key:'audit', label:'Audit presentation · 2 Sep 2026',
+        name:'Doc audit September.pdf', words:3688, read:'2 Sep, 14:31',
+        url:'https://drive.google.com/file/d/a2/view' }
     ] },
   deleteClient: { ok:true, clientId:'HARBOR-2608', draftFreed:'DR-260810-1612',
     removed:{ tasks:14, intake:1, plans:0 } },
@@ -1973,6 +1983,29 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   // Deal documents fold away — a long list nobody opened the page to find.
   const docsShut = await page.$eval('#docsBody', e => e.style.display);
   if (docsShut !== 'none') throw new Error('Deal documents did not start folded');
+
+  // Both audit decks have to be tellable apart HERE as well as in the picker.
+  // This card is where somebody goes to check that the deck they just filed
+  // actually landed, and two rows both reading "Audit presentation" are
+  // indistinguishable from one document rendered twice.
+  await page.click('#docsTog');
+  await page.waitForTimeout(120);
+  const auditRows = await page.$$eval('#doclist .nm', els =>
+    els.map(e => e.textContent.trim())
+       .filter(t => t.indexOf('Audit presentation') === 0));
+  if (auditRows.length !== 2) {
+    throw new Error('Deal documents did not list both audit decks: '
+      + JSON.stringify(auditRows));
+  }
+  if (auditRows[0] === auditRows[1]) {
+    throw new Error('The two audit decks are labelled identically, so the card '
+      + 'reads as one document twice: ' + auditRows[0]);
+  }
+  const shotDocs = `${OUT}/${name}-detail-documents.png`;
+  await page.screenshot({ path: shotDocs, fullPage: name === 'desktop' });
+  shots.push(shotDocs);
+  await page.click('#docsTog');
+  await page.waitForTimeout(60);
 
   // The picker must render on the EMPTY state too. It used to be dropped there
   // by an early return in getActionItems, which is the one screen that cannot
