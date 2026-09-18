@@ -590,18 +590,32 @@ function updateTaskStatus(token, clientId, task, status) {
  * The exceptions are computed or structural: the client ID, the progress
  * formula, the Drive folder, the stored profile and the fee lines, which have
  * their own screens.
+ *
+ * A FUNCTION, NOT A CONST, and this is not a style choice. Apps Script
+ * concatenates the .gs files and evaluates them in its own order — AdminServer
+ * before Code, which is where `C` is declared. A top-level `const` here reads
+ * `C` while it is still in the temporal dead zone and throws "C is not
+ * defined" the moment anything in this file is called, which is the whole
+ * dashboard. Nothing catches it locally: there is no runtime for a .gs file
+ * and check.mjs parses rather than executes. Inside a function the lookup
+ * happens when it is called, by which time every file has been evaluated.
+ *
+ * Never write a top-level `const` in one file that reads a `const` from
+ * another. check.mjs now fails on it.
  */
-const CLIENT_FIELD_COLS = {
-  company: C.COMPANY, contact: C.CONTACT, email: C.EMAIL, website: C.WEBSITE,
-  vertical: C.VERTICAL, status: C.STATUS, owner: C.OWNER, scope: C.SCOPE,
-  cadence: C.CADENCE, slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE,
-  services: C.SERVICES, approvals: C.APPROVALS, term: C.TERM, call: C.CALL,
-  bizType: C.BIZTYPE, mrr: C.MRR, platforms: C.PLATFORMS, start: C.START
-};
+function clientFieldCols_() {
+  return {
+    company: C.COMPANY, contact: C.CONTACT, email: C.EMAIL, website: C.WEBSITE,
+    vertical: C.VERTICAL, status: C.STATUS, owner: C.OWNER, scope: C.SCOPE,
+    cadence: C.CADENCE, slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE,
+    services: C.SERVICES, approvals: C.APPROVALS, term: C.TERM, call: C.CALL,
+    bizType: C.BIZTYPE, mrr: C.MRR, platforms: C.PLATFORMS, start: C.START
+  };
+}
 
 function updateClientField(token, clientId, field, value) {
   checkToken_(token);
-  const col = CLIENT_FIELD_COLS[field];
+  const col = clientFieldCols_()[field];
   if (!col) return { ok: false, message: 'Unknown field.' };
 
   // Refused, not just hidden. A field somebody cannot read but can overwrite
