@@ -218,9 +218,9 @@ if (!collisions) pass(`${byBase.size} file names are unique once extensions are 
 // website and vertical were all offered and none of them was in the map.
 console.log('\nChecking editable client fields resolve to a column');
 {
-  const map = serverSrc.match(/const CLIENT_FIELD_COLS = \{([\s\S]*?)\n\};/);
+  const map = serverSrc.match(/function clientFieldCols_\(\) \{([\s\S]*?)\n\}/);
   if (!map) {
-    fail('CLIENT_FIELD_COLS not found in the server source');
+    fail('clientFieldCols_() not found in the server source');
   } else {
     const known = new Set(
       [...map[1].matchAll(/(\w+)\s*:\s*C\.\w+/g)].map(m => m[1]));
@@ -244,6 +244,51 @@ console.log('\nChecking editable client fields resolve to a column');
     } else {
       pass(`${offered.size} editable client fields all resolve to a column`);
     }
+  }
+}
+
+// ---- 8. no top-level const in one file reads a const from another
+// Apps Script concatenates the .gs files and evaluates them in its own order,
+// which is not the order you wrote them in. A top-level `const` that reads
+// another file's `const` hits the temporal dead zone and throws
+// "X is not defined" the instant anything in that file is called — and it is
+// invisible everywhere except the live sheet, because there is no local
+// runtime for a .gs file and this script parses rather than executes.
+//
+// This shipped once: CLIENT_FIELD_COLS in AdminServer.gs read C from Code.gs,
+// and took the whole dashboard down. Inside a function the lookup happens when
+// it is called, by which time every file has been evaluated.
+console.log('\nChecking no top-level const reads another file\'s const');
+{
+  // The shared maps and tables that are declared at the top level somewhere
+  // and read all over the place.
+  const shared = new Set(['C', 'A', 'D', 'P', 'TM', 'ACT', 'TABS']);
+  const offenders = [];
+
+  for (const f of gs) {
+    const src = readFileSync(join(SRC, f), 'utf8');
+    // A top-level const is one at column zero; anything indented is inside a
+    // function and is evaluated when that function runs.
+    for (const m of src.matchAll(/^const\s+(\w+)\s*=\s*([\s\S]*?);\s*$/gm)) {
+      const [, name, body] = m;
+      if (body.length > 8000) continue;
+      for (const ref of body.matchAll(/\b([A-Z][A-Za-z_]*)\s*\./g)) {
+        if (!shared.has(ref[1])) continue;
+        // Declared in this same file, above it, is fine — one file is
+        // evaluated top to bottom.
+        const declaredHere = new RegExp(`^const\\s+${ref[1]}\\s*=`, 'm').test(
+          src.slice(0, m.index));
+        if (declaredHere) continue;
+        offenders.push(`${f}: const ${name} reads ${ref[1]}.* from another file`);
+        break;
+      }
+    }
+  }
+
+  if (offenders.length) {
+    offenders.forEach(o => fail(o + ' — move it inside a function'));
+  } else {
+    pass('no top-level const depends on another file being evaluated first');
   }
 }
 

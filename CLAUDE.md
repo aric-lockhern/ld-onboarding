@@ -25,6 +25,18 @@ Apps Script refuses to expose functions ending in `_` to `google.script.run`. Th
 
 **Renaming a public function to add `_`, or calling a `_` function from HTML, breaks the UI silently at runtime.** Nothing catches it at parse time. `npm run check` catches it — run it before you claim anything works.
 
+### 1b. A top-level `const` must never read another file's `const`
+
+Apps Script concatenates the `.gs` files and evaluates them in **its** order, not yours. `AdminServer.gs` is evaluated before `Code.gs`, so:
+
+```js
+const CLIENT_FIELD_COLS = { company: C.COMPANY, … };   // C is in the TDZ
+```
+
+throws `ReferenceError: C is not defined` the instant *anything* in that file is called — which is the whole dashboard. This shipped exactly once, and cost a deploy.
+
+Nothing catches it locally: there is no runtime for a `.gs` file (rule 5) and `npm run check` parses rather than executes. It now fails on the pattern instead. Put the lookup inside a function, where it happens at call time once every file has been evaluated.
+
 ### 2. Column maps are the source of truth
 
 `src/Code.gs` defines `C` (Clients) and `A` (Access) as 1-based column maps. Every read and write goes through them.
