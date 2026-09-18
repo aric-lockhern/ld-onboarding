@@ -89,13 +89,25 @@ function reviewNewDocument(token, clientId, key) {
            read: doc.label, notes: box.notes };
 }
 
-/** One stored source, with its text. */
-function storedSource_(draftId, key) {
+/**
+ * One stored source, with its text.
+ *
+ * Matched on id first. This used to select on `key` alone, which was the same
+ * thing until a kind could hold two documents — and then "what does the deck I
+ * just filed change?" read the FIRST audit deck and reported on a document
+ * nobody had just added. Falling back to the kind keeps a caller that still
+ * speaks in kinds working, and for every single-document kind the two are the
+ * same string anyway.
+ */
+function storedSource_(draftId, id) {
   const d = openDraft(draftId);
   if (!d || !d.ok) return null;
-  const hit = (d.sources || []).filter(s => s && s.key === key)[0];
+  const want = String(id);
+  const all = d.sources || [];
+  const hit = all.filter(s => s && String(s.id || s.key) === want)[0]
+    || all.filter(s => s && String(s.key) === want)[0];
   if (!hit) return null;
-  return { key: hit.key, label: hit.label || hit.key,
+  return { key: hit.key, id: hit.id || hit.key, label: hit.label || hit.key,
            text: readStored_(hit.fileId) };
 }
 

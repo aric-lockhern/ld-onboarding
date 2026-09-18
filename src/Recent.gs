@@ -136,6 +136,16 @@ const CLIENT_DOC_KINDS = [
   { key: 'deck', label: 'Pitch deck', multiple: true, hint: '' },
   { key: 'sow', label: 'Scope of work',
     hint: 'Replaces the stored contract — what the scope confirmation reads.' },
+  // Anything that is not one of the named kinds. A client sends brand
+  // guidelines, a competitor list, last year's board deck, the spreadsheet
+  // behind their targets — none of it fits a slot, all of it is worth reading,
+  // and before this the only way to file it was to call it something it was
+  // not. `named` because the kind's own words say nothing about which document
+  // this is: "Background document" twice is two rows nobody can tell apart,
+  // where "Brand guidelines" and "Competitor list" need no explaining.
+  { key: 'context', label: 'Background document', multiple: true, named: true,
+    hint: 'Anything that does not fit the kinds above. Name it — the name is '
+        + 'what it will be called everywhere.' },
   { key: 'sales', label: 'Sales call transcript', hint: '' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript', hint: '' }
 ];
@@ -158,6 +168,23 @@ function nextSourceId_(draftId, key) {
     if (!taken[key + '-' + n]) return key + '-' + n;
   }
   return key + '-' + Date.now();
+}
+
+/**
+ * An id for a document whose name is its identity.
+ *
+ * The same shape as manualCallKey_ and for the same reason: re-uploading a
+ * corrected version should update the stored copy rather than leave two, and
+ * what makes it "the same document" is what somebody called it. Two background
+ * documents genuinely named the same thing a month apart are told apart by the
+ * date, which is in here too.
+ *
+ * The kind stays the record's `key`; this is only the id.
+ */
+function namedSourceId_(kind, label, at) {
+  const slug = (label + '-' + at).toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+  return kind + '_' + (slug || 'doc');
 }
 
 /** Callable from the browser, so the picker lists exactly what the server takes. */
@@ -236,22 +263,44 @@ function addManualCall(token, clientId, label, raw, when, kind) {
   // presentation" mean one document forever. A kind marked `multiple` now gets
   // its own id while KEEPING the kind as its key — which is what carries it
   // into the action items, the profile and the scope drafter unchanged.
-  const id = (isCall || !type.multiple) ? key : nextSourceId_(draftId, key);
-  const another = !isCall && type.multiple && id !== key;
+  //
+  // A `named` kind derives its id from what it was called, the way a call
+  // does, so re-uploading a corrected "Brand guidelines" replaces the one on
+  // file instead of filing a second copy beside it — while a genuinely
+  // different document under a different name is a different document.
+  const id = isCall || !type.multiple ? key
+    : type.named ? namedSourceId_(type.key, name, at)
+    : nextSourceId_(draftId, key);
+  const another = !isCall && type.multiple && id !== key
+    && !(type.named && displaySourceLabel_(draftId, id));
 
   // Stored as the kind's own words, full stop. Telling two audit decks apart
   // is labelSources_'s job on the way out — done here it would date the second
   // deck and leave the first one bare, and could never reach a document filed
   // before today.
-  const filedAs = isCall ? name : type.label;
+  //
+  // A named kind is the exception, because there are no words of its own to
+  // fall back on: "Background document" describes the slot, not the document.
+  const filedAs = isCall || type.named ? name : type.label;
 
-  const replacing = !isCall && !type.multiple && storedSourceLabel_(draftId, key);
+  // Replacing is announced, adding is announced, and which one this is depends
+  // on the kind. A scope of work replaces what is under its kind. A named
+  // background document replaces what is under its own id — the same name and
+  // date is the same document, corrected. Two audit decks never replace.
+  const replacing = isCall ? ''
+    : type.named ? displaySourceLabel_(draftId, id)
+    : !type.multiple ? storedSourceLabel_(draftId, key)
+    : '';
 
   let record;
   try {
     record = storeSource_(draftId, key, filedAs, text, {
       id: id,
       at: at,
+      // Keeps labelSources_ off it: this label is somebody's own words, and
+      // normalising it would append a date to "Brand guidelines" the moment a
+      // second background document arrived.
+      named: !!type.named,
       via: sourceKindLabel_(raw),
       origin: (typeof raw === 'string') ? raw : '',
       words: text.split(/\s+/).length,

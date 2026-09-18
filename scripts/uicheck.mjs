@@ -75,7 +75,10 @@ const FAKE = {
     terms:['Month to month','3 months','6 months','12 months','Custom'],
     bizTypes:['Lead Gen','eCommerce'],
     cadences:['Weekly','Biweekly','Monthly','Quarterly','Ad hoc'],
-    serviceList:[],
+    // What the Services chips can be added from. It was empty, so the editor
+    // behind them had nothing to offer and the ＋ never rendered.
+    serviceList:['Google Ads','Microsoft Ads','Reddit Organic Social',
+                 'AI Search SEO','Meta Ads'],
     summary:{ done:4, total:14, pct:29 },
     commitments:[],
     // Skills are what rank people against a task. Drake covers the paid-search
@@ -444,7 +447,13 @@ const FAKE = {
       { key:'audit', label:'Audit presentation',
         hint:'The default document the action items are built from.' },
       { id:'deck', key:'deck', label:'Pitch deck', hint:'' },
-      { id:'sow', key:'sow', label:'Scope of work', hint:'Replaces the stored contract.' }
+      { id:'sow', key:'sow', label:'Scope of work', hint:'Replaces the stored contract.' },
+      // The kind for everything a client sends that fits none of the others.
+      // `named` because "Background document" describes the slot, not the
+      // document — two of them under that label is two rows nobody can tell
+      // apart, so the filer's own name IS the label.
+      { key:'context', label:'Background document', multiple:true, named:true,
+        hint:'Anything that does not fit the kinds above. Name it.' }
     ],
     calls:[
       // One filed by hand, one found by the scan. They render differently and
@@ -472,7 +481,10 @@ const FAKE = {
   clearContactPhoto: { ok:true, photo:'' },
   getClientTeam: { ok:true,
     members:[
-      // Three ways onto an account, and only the third can be removed here.
+      // Three ways onto an account. The owner is a field on the client rather
+      // than a chip, so they keep no ×; the other two do — including the one
+      // holding work, who used to have none at all and a message telling you
+      // to go and reassign three tasks by hand first.
       { name:'Drake King', known:true, role:'Paid lead', tasks:6,
         why:['Onboarding owner','Owns tasks'], pinned:false },
       { name:'Priya Raman', known:true, role:'Analytics', tasks:3,
@@ -488,6 +500,19 @@ const FAKE = {
     teamEmpty:false },
   addClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
   removeClientTeamMember: { ok:true, members:[], available:[], teamEmpty:false },
+  // Two channels, which is the normal shape: the pod's, and a Slack Connect
+  // one the client is in. Which is which decides where a nudge naming a
+  // colleague is allowed to land, so it is stored rather than guessed.
+  getClientChannels: { ok:true, postsTo:'direct-meds',
+    kinds:[{ key:'internal', label:'Internal' },
+           { key:'client', label:'Shared with the client' }],
+    channels:[
+      { id:'C01AAA', name:'direct-meds', kind:'internal' },
+      { id:'C01BBB', name:'direct-meds-lockhern', kind:'client' }
+    ] },
+  linkClientChannel: { ok:true, channels:[], kinds:[], postsTo:'' },
+  unlinkClientChannel: { ok:true, postsTo:'direct-meds', kinds:[],
+    channels:[{ id:'C01AAA', name:'direct-meds', kind:'internal' }] },
   addRecentNote: { ok:true, notes:[] },
   addManualCall: { ok:true, key:'call_q3-planning-call-8-aug-2026',
                    label:'Q3 planning call', kind:'call', replaced:false,
@@ -1405,8 +1430,11 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (!teamStrip.inFacts) {
     throw new Error('The team strip is not in the facts card');
   }
-  if (teamStrip.removable.join(',') !== 'Alexandra McCurdy') {
-    throw new Error('Remove is offered against derived membership: '
+  // Everyone but the onboarding owner. Somebody holding three tasks is exactly
+  // the person you remove when they come off an account, and the version with
+  // no × on them sent people to the sheet to do it by hand.
+  if (teamStrip.removable.join(',') !== 'Priya Raman,Alexandra McCurdy') {
+    throw new Error('Remove is not offered against everyone but the owner: '
       + JSON.stringify(teamStrip.removable));
   }
   if (!teamStrip.canAdd) throw new Error('No way to add somebody to the account');
@@ -1444,6 +1472,40 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
   if (clipped.length) {
     throw new Error('Facts are being cut off: ' + JSON.stringify(clipped));
   }
+
+  // Every fact on this card has to be correctable here.
+  //
+  // Four of them were rendered as editable boxes and bound to fields the
+  // server's column map did not carry — typing into Contact, blurring, and
+  // getting "Unknown field" back. A box that looks editable and is not is
+  // worse than a read-only row, because the correction is lost and the person
+  // believes it saved. The rest — company, contract start, MRR, services —
+  // had no way to change them at all short of opening the spreadsheet.
+  const editable = await page.evaluate(() => {
+    const fields = [].map.call(document.querySelectorAll('.facts [data-field]'),
+      e => e.getAttribute('data-field'));
+    return {
+      fields: fields,
+      // Chips with an × on each, and a ＋ to add from the Services tab.
+      svcRemovable: document.querySelectorAll('.facts [data-rmsvc]').length,
+      svcAdd: !!document.getElementById('svcAdd')
+    };
+  });
+  ['company', 'contact', 'email', 'website', 'vertical', 'start', 'mrr',
+   'status', 'owner', 'term', 'bizType', 'cadence', 'call', 'slack', 'alias',
+   'approvals', 'scope'].forEach(f => {
+    if (editable.fields.indexOf(f) === -1) {
+      throw new Error('The ' + f + ' fact cannot be edited on the client card: '
+        + JSON.stringify(editable.fields));
+    }
+  });
+  if (!editable.svcRemovable || !editable.svcAdd) {
+    throw new Error('Services are not editable on the client card: '
+      + JSON.stringify(editable));
+  }
+  // Whether each of those fields is one the server will actually accept is
+  // checked statically, in check.mjs — it is a name in an HTML attribute
+  // against a key in a server object, which is exactly that script's job.
 
   // What clients pay, hidden from everyone who is not a partner.
   //
@@ -1657,6 +1719,39 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
     throw new Error('The document kinds do not include the audit: '
       + JSON.stringify(addCall.kinds));
   }
+  // A client sends things that fit none of the named kinds — brand guidelines,
+  // a competitor list, the spreadsheet behind their targets. Before this the
+  // only way to file one was to call it something it was not.
+  if (addCall.kinds.indexOf('context') === -1) {
+    throw new Error('There is no kind for a document that fits none of the '
+      + 'others: ' + JSON.stringify(addCall.kinds));
+  }
+  // And it has to be named, because the kind's own words say nothing about
+  // which document this is: two rows reading "Background document" are two
+  // rows nobody can tell apart. Selecting it says so, and filing without one
+  // is refused rather than accepted under the generic label.
+  await page.selectOption('#mcKind', 'context');
+  await page.waitForTimeout(120);
+  const namedKind = await page.evaluate(() => ({
+    label: document.getElementById('mcNameLab').textContent,
+    placeholder: document.getElementById('mcName').placeholder
+  }));
+  if (!/required/i.test(namedKind.label)) {
+    throw new Error('A background document does not ask for a name: '
+      + JSON.stringify(namedKind));
+  }
+  await page.fill('#mcText', 'Some pasted background text.');
+  await page.fill('#mcName', '');
+  await page.click('#addCall');
+  await page.waitForTimeout(250);
+  const refused = await page.$$eval('.toast',
+    els => els.map(e => e.textContent).join(' || '));
+  if (!/Give it a name/.test(refused)) {
+    throw new Error('A background document filed with no name was accepted: '
+      + refused);
+  }
+  await page.fill('#mcText', '');
+  await page.selectOption('#mcKind', 'call');
   if (!addCall.compact) {
     throw new Error('Recent context is still rendering two-line cards');
   }
@@ -2235,9 +2330,60 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
     throw new Error('Adding the tab by hand said nothing useful: ' + added);
   }
 
+  // Both channels, and which one the pings go to, in words on the card.
+  //
+  // An account normally has two — the pod's channel and a Slack Connect one
+  // the client is in — and a nudge naming a colleague and listing what they
+  // have not done belongs only in the first. The old card had one field, so
+  // which channel it held was whichever somebody pasted in, and the failure is
+  // silent, immediate and in front of the client.
+  const chans = await page.evaluate(() => {
+    const box = document.getElementById('chanList');
+    if (!box) return { missing: true };
+    return {
+      names: [].map.call(box.querySelectorAll('.chan b'), e => e.textContent),
+      // The one you must not mistake is the one that is marked.
+      shared: [].map.call(box.querySelectorAll('.chan.shared b'),
+        e => e.textContent),
+      unlinkable: box.querySelectorAll('[data-unlink]').length,
+      text: box.textContent
+    };
+  });
+  if (chans.missing || chans.names.length !== 2) {
+    throw new Error('Both linked channels are not listed: '
+      + JSON.stringify(chans));
+  }
+  if (chans.shared.join(',') !== '#direct-meds-lockhern') {
+    throw new Error('The channel shared with the client is not marked as such: '
+      + JSON.stringify(chans));
+  }
+  if (!/pings go to/.test(chans.text) || !/#direct-meds\b/.test(chans.text)) {
+    throw new Error('The card does not say which channel gets pinged: '
+      + chans.text);
+  }
+  if (!/Nothing is ever posted to a channel shared with the client/.test(chans.text)) {
+    throw new Error('The card does not say a client channel is never posted '
+      + 'to: ' + chans.text);
+  }
+  if (chans.unlinkable !== 2) {
+    throw new Error('Linked channels cannot be unlinked: '
+      + JSON.stringify(chans));
+  }
+
   await page.click('#slackPickBtn');
   await page.waitForSelector('#slackChanSel', { timeout: 5000 });
   await page.waitForTimeout(200);
+  // Linking asks what the channel IS. Without it the kind is a guess, and the
+  // guess that costs something is "internal" against a client-facing channel.
+  const kindSel = await page.evaluate(() => {
+    const s = document.getElementById('slackChanKind');
+    return s ? [].map.call(s.options, o => o.value) : null;
+  });
+  if (!kindSel || kindSel.indexOf('internal') === -1
+      || kindSel.indexOf('client') === -1) {
+    throw new Error('The channel picker does not ask what the channel is: '
+      + JSON.stringify(kindSel));
+  }
   const fPick = `${OUT}/${name}-detail-channel-picker.png`;
   await page.screenshot({ path: fPick, fullPage: name === 'desktop' });
   shots.push(fPick);

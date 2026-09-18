@@ -194,37 +194,95 @@ function addClientTeamMember(token, clientId, name) {
 }
 
 /**
- * Takes somebody off.
+ * Takes somebody off the account.
  *
- * Only the pinned kind. Somebody who is on the account because they own eight
- * tasks stays on it until those tasks move, and the message says so rather
- * than the button doing nothing.
+ * Membership is derived from two different things and only one of them is
+ * stored here, so "remove" means two different acts. Pinning comes off by
+ * itself. Owning eight checklist rows does not: those rows keep their name in
+ * the Owner cell, and a × that quietly left them there would be a lie about
+ * what it did — the person is gone from the strip and still holds the work.
+ *
+ * The first version refused that case outright and said to reassign first.
+ * That was right about the danger and wrong about the answer: somebody leaving
+ * an account is exactly when their rows need releasing, and sending the person
+ * to go and do it by hand twenty times is how eight tasks stay assigned to
+ * somebody who left.
+ *
+ * So it is asked rather than refused. `release` unassigns those rows in the
+ * same press and says how many — an unassigned row is visibly nobody's, which
+ * is the true state, where a row owned by someone off the account is not.
+ *
+ * @param {boolean} [release] also clear their name off the tasks they hold.
  */
-function removeClientTeamMember(token, clientId, name) {
+function removeClientTeamMember(token, clientId, name, release) {
   checkToken_(token);
 
-  const who = String(name || '').trim().toLowerCase();
+  const raw = String(name || '').trim();
+  const who = raw.toLowerCase();
+  const client = getClientRecord_(clientId);
+
+  // The owner is a field, not a chip. Blanking C.OWNER from a × on a strip is
+  // a bigger act than it looks — it is the name on the client record, it picks
+  // the digest recipient, and it is editable three rows above. Say where.
+  if (client && String(client.owner || '').toLowerCase() === who) {
+    return { ok: false, message: raw + ' is the onboarding owner, which is the '
+      + 'Owner field on this client rather than a team chip. Change it there '
+      + 'and they come off the account with it.' };
+  }
+
+  const counts = taskCounts_(clientId, client);
+  const holding = Object.keys(counts).filter(n => n.toLowerCase() === who)[0];
+
+  // Asked once, with the number in it. "Remove them?" against eight tasks and
+  // against none are different decisions.
+  if (holding && !release) {
+    return { ok: false, holds: counts[holding], name: holding,
+             message: holding + ' owns ' + counts[holding] + ' task'
+               + (counts[holding] === 1 ? '' : 's') + ' on this client. '
+               + 'Removing them leaves those unassigned.' };
+  }
+
   const names = readClientTeam_(clientId);
   const next = names.filter(n => n.toLowerCase() !== who);
+  const wasPinned = next.length !== names.length;
 
-  if (next.length === names.length) {
-    const counts = taskCounts_(clientId, getClientRecord_(clientId));
-    const holding = Object.keys(counts)
-      .filter(n => n.toLowerCase() === who)[0];
-    if (holding) {
-      return { ok: false, message: holding + ' is on this account because they '
-        + 'own ' + counts[holding] + ' task'
-        + (counts[holding] === 1 ? '' : 's') + ' on it. Reassign those and they '
-        + 'come off by themselves.' };
-    }
-    const client = getClientRecord_(clientId);
-    if (client && String(client.owner || '').toLowerCase() === who) {
-      return { ok: false, message: client.owner + ' is the onboarding owner. '
-        + 'Change the owner on the Team page or in the client details.' };
-    }
+  let freed = 0;
+  if (holding && release) freed = releaseTasks_(clientId, holding);
+
+  if (!wasPinned && !freed) {
     return { ok: false, message: 'They are already off this account.' };
   }
 
-  writeClientTeam_(clientId, next);
-  return getClientTeam(clientId);
+  if (wasPinned) writeClientTeam_(clientId, next);
+
+  const out = getClientTeam(clientId);
+  out.freed = freed;
+  out.removed = raw;
+  return out;
+}
+
+/**
+ * Clears one person's name off every task they own on one client.
+ *
+ * The assigned stamp goes with it. A.ASSIGNED records the moment work changed
+ * hands, and a date left against nobody says a task was picked up when it is
+ * sitting unowned — the same reason assignTask clears it when unassigning.
+ */
+function releaseTasks_(clientId, name) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2) return 0;
+
+  const want = String(clientId).trim();
+  const who = String(name).trim().toLowerCase();
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+
+  let n = 0;
+  vals.forEach((r, i) => {
+    if (String(r[A.ID - 1]).trim() !== want) return;
+    if (safeStr_(r[A.OWNER - 1]).trim().toLowerCase() !== who) return;
+    sh.getRange(i + 2, A.OWNER).setValue('');
+    sh.getRange(i + 2, A.ASSIGNED).setValue('');
+    n++;
+  });
+  return n;
 }
