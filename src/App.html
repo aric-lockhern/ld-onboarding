@@ -742,6 +742,34 @@
     font-size:8.5px; vertical-align:0}
   .task .n .mk{vertical-align:-4px}
 
+  /* Services are editable now, so each chip carries the same × the team chips
+     do. Faint until the row is hovered: a dozen of them at full contrast is a
+     column of crosses competing with the service names, which are the point. */
+  .svc .x{border:0; background:none; cursor:pointer; color:var(--mid);
+    font-size:14px; line-height:1; padding:0 0 0 7px; opacity:0;
+    transition:opacity .12s}
+  .fact.svcedit:hover .svc .x, .svc:hover .x{opacity:1}
+  .svc .x:hover{color:var(--red, #b42318)}
+  @media (hover:none){ .svc .x{opacity:1} }
+  .fact.svcedit .v{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
+
+  /* The channels linked to a client. Two of them is the normal case and the
+     difference between them is the whole point, so the kind is printed rather
+     than encoded in a colour nobody has been taught. */
+  .chans{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px}
+  .chan{display:inline-flex; align-items:center; gap:7px; font-size:13px;
+    background:var(--paper); border:1px solid var(--line); border-radius:999px;
+    padding:4px 10px}
+  .chan b{font-weight:600}
+  .chan i{font-style:normal; font-size:11.5px; color:var(--muted)}
+  /* A channel the client can read is the one you must not mistake, so it is
+     the one that is marked. */
+  .chan.shared{border-color:#f0b429; background:#fffaf0}
+  .chan.shared i{color:#8a5a00}
+  .chan .x{border:0; background:none; cursor:pointer; color:var(--mid);
+    font-size:14px; line-height:1; padding:0}
+  .chan .x:hover{color:var(--red, #b42318)}
+
   /* Initials, coloured off the name so the same person looks the same
      everywhere. A row of six people is scanned by shape before it is read. */
   .av{display:inline-flex; align-items:center; justify-content:center;
@@ -953,6 +981,7 @@ var SERVER_FNS = [
   'buildActionItems', 'getActionItems',
   'slackTest', 'slackPeople', 'slackCreateChannel', 'slackPingOutstanding',
   'hasSlackToken', 'slackInvite', 'slackChannels', 'slackLinkChannel',
+  'getClientChannels', 'linkClientChannel', 'unlinkClientChannel',
   'slackPingTasks', 'slackJoinChannel', 'slackAddBookmark',
   'clickupWorkspaces', 'clickupLists', 'clickupPlan', 'clickupPush',
   'bulkParse', 'bulkImport', 'appBaseUrl',
@@ -1364,6 +1393,10 @@ function factsCard(c, d){
       + '" target="_blank">' + esc(c.website) + '</a>' : '';
 
   var h = ''
+    // The company name is the page heading as well, and it was the one fact on
+    // the record with nowhere to correct it — a client imported off a pasted
+    // spreadsheet with a typo in its name could only be fixed in the sheet.
+    + fact('Company', 'company', c.company)
     + fact('Contact', 'contact', c.contact)
     + fact('Email', 'email', c.email)
     + fact('Website', 'website', c.website,
@@ -1372,16 +1405,21 @@ function factsCard(c, d){
     + fact('Vertical', 'vertical', c.vertical)
     + fact('Status', 'status', c.status, { options: CLIENT_STATUSES })
     + fact('Owner', 'owner', c.owner)
-    + fact('Contract start', '', c.contractStart)
+    // Editable, and read back through parseDate_ on the server so what lands in
+    // the cell is a date rather than the string "1 Oct 2026". Changing it does
+    // not move the due dates already on the checklist — those were computed
+    // when onboarding started — which the hint below the card says.
+    + fact('Contract start', 'start', c.contractStart)
     // Named as withheld rather than left blank. A missing MRR row reads as
     // missing data, and the next thing that happens is somebody opens the
     // contract and types the number back in.
     + (c.financeHidden
         ? fact('MRR', '', '<span class="locked" title="Only a partner sees '
             + 'what clients pay">Hidden</span>', { html: true, always: true })
-        : fact('MRR', '', c.mrr
-            ? (typeof c.mrr === 'number' ? '$' + c.mrr.toLocaleString() : c.mrr)
-            : ''))
+        // Editable for whoever can see it. It was read-only, which meant a fee
+        // read wrong off the contract could be seen and not corrected — and
+        // the server has always accepted the write, gated on the same tick.
+        : fact('MRR', 'mrr', c.mrr == null || c.mrr === '' ? '' : c.mrr))
     + fact('Term', 'term', c.term, { options: d.terms })
     + fact('Business type', 'bizType', c.bizType, { options: d.bizTypes })
     + fact('Cadence', 'cadence', c.cadence,
@@ -1394,6 +1432,10 @@ function factsCard(c, d){
     // The channel, plus the one action still worth having once it exists. The
     // Slack section below disappears the moment a channel is set, so this is
     // where "ping them" and "change who is in it" live from then on.
+    // The internal channel, which is the one that matters here: it is where
+    // the nudges go. Any others linked to this client are listed in the Slack
+    // section behind `manage`, because a client-facing channel is a fact about
+    // the account rather than something this page acts on.
     + fact('Slack', 'slack', c.slack, { after: c.slack
         ? '<button class="lnk" id="slackManage" type="button">manage</button>'
         : '' })
@@ -1401,7 +1443,13 @@ function factsCard(c, d){
     // Wide and growing. Approvals is a sentence about who signs off on what,
     // and it was being shown as its first forty characters.
     + fact('Approvals', 'approvals', c.approvals, { area: true })
-    + fact('Services', '', serviceChips(c.services), { html: true, wide: true })
+    // Chips you can take off and add to, rather than a read-only row. What a
+    // client bought is the fact most likely to be wrong on an imported record
+    // — the paste had one column of free text — and it was the one fact with
+    // no way to fix it short of opening the sheet.
+    + '<div class="fact svcedit wide"><span class="k">Services</span>'
+    + '<span class="v" id="svcStrip">'
+    + serviceEditor(c.services, d.serviceList) + '</span></div>'
     // The team is a strip in here rather than a card of its own. Who is on the
     // account is one line of answer — six names — and a full section for it
     // pushed the phase rail and the profile below the fold on a laptop.
@@ -1518,6 +1566,109 @@ function serviceChips(services){
 }
 
 /**
+ * The same chips, with an × on each and a menu of what else could go on.
+ *
+ * Built off the Services tab rather than free text, for the reason the Team
+ * page uses checkboxes: a service typed by hand is one the platform rules and
+ * the access emails have never heard of, and it silently buys nothing.
+ * Anything already on the record that is NOT on that tab still shows — it is
+ * usually a service that was renamed, and hiding it would make the correction
+ * look like a deletion.
+ */
+function serviceEditor(services, all){
+  var on = String(services || '').split(',').map(function(s){ return s.trim(); })
+    .filter(Boolean);
+  var have = {};
+  on.forEach(function(s){ have[s.toLowerCase()] = true; });
+
+  var rest = (all || []).filter(function(s){ return !have[String(s).toLowerCase()]; });
+
+  var h = on.length
+    ? '<span class="svcs">' + on.map(function(s){
+        return '<span class="svc">' + brandMark(s) + esc(s)
+          + '<button class="x" data-rmsvc="' + esc(s)
+          + '" title="Take this service off">×</button></span>';
+      }).join('') + '</span>'
+    : '<span class="muted">none recorded</span>';
+
+  if (rest.length){
+    h += '<span class="tadd">'
+      + '<button class="chip-add" id="svcAdd" type="button">＋</button>'
+      + '<span class="menu" id="svcMenu">'
+      + rest.map(function(s){
+          return '<button class="mi" data-addsvc="' + esc(s) + '">'
+            + brandMark(s) + '<span><b>' + esc(s) + '</b></span></button>';
+        }).join('')
+      + '</span></span>';
+  }
+  return h;
+}
+
+/**
+ * Writes the service list back as the comma string the record stores.
+ *
+ * It does NOT rebuild the checklist. Services decide which platforms get
+ * requested, and that is read once when onboarding starts — the same way the
+ * task library is a template rather than a live checklist. Changing them here
+ * corrects the record; it does not go and add four access rows to a client
+ * three phases in, which is a thing nobody asked for and cannot be undone in
+ * one press.
+ */
+function saveServices(clientId, list){
+  return api('updateClientField', TOKEN, clientId, 'services', list.join(', '));
+}
+
+function wireServices(clientId, c, d){
+  var current = function(){
+    return [].map.call(document.querySelectorAll('[data-rmsvc]'), function(b){
+      return b.getAttribute('data-rmsvc');
+    });
+  };
+  var redraw = function(list){
+    c.services = list.join(', ');
+    el('svcStrip').innerHTML = serviceEditor(c.services, d.serviceList);
+    wireServices(clientId, c, d);
+  };
+
+  if (el('svcAdd')){
+    el('svcAdd').addEventListener('click', function(e){
+      e.stopPropagation();
+      el('svcMenu').classList.toggle('on');
+    });
+    document.addEventListener('click', function(){
+      if (el('svcMenu')) el('svcMenu').classList.remove('on');
+    });
+    el('svcMenu').addEventListener('click', function(e){ e.stopPropagation(); });
+  }
+
+  [].forEach.call(document.querySelectorAll('[data-addsvc]'), function(b){
+    b.addEventListener('click', function(){
+      var next = current().concat([b.getAttribute('data-addsvc')]);
+      el('svcMenu').classList.remove('on');
+      saveServices(clientId, next).then(function(r){
+        if (!r.ok){ toast(r.message, true); return; }
+        redraw(next);
+        toast(b.getAttribute('data-addsvc') + ' added. The checklist is not '
+          + 'rebuilt — this changes the record.');
+      }).catch(fail);
+    });
+  });
+
+  [].forEach.call(document.querySelectorAll('[data-rmsvc]'), function(b){
+    b.addEventListener('click', function(){
+      var who = b.getAttribute('data-rmsvc');
+      var next = current().filter(function(s){ return s !== who; });
+      saveServices(clientId, next).then(function(r){
+        if (!r.ok){ toast(r.message, true); return; }
+        redraw(next);
+        toast(who + ' removed from the record. Any access rows already on the '
+          + 'checklist stay — delete those you do not need.');
+      }).catch(fail);
+    });
+  });
+}
+
+/**
  * Initials, coloured off the name.
  *
  * Deterministic rather than random: the same person is the same colour on
@@ -1556,17 +1707,18 @@ function teamStrip(r){
   var members = r.members || [];
   var h = members.length
     ? '<span class="tstrip">' + members.map(function(m){
-        var pinned = m.why.indexOf('Added to the account') !== -1;
         var derived = m.why.filter(function(w){
           return w !== 'Added to the account'; }).join(' · ');
         var why = [m.role, derived || 'Added to the account'].filter(Boolean).join(' · ')
           + (m.tasks ? ' · ' + m.tasks + ' task' + (m.tasks === 1 ? '' : 's') : '');
         return '<span class="tm" title="' + esc(why) + '">'
           + avatar(m.name) + '<span class="nm">' + esc(m.name) + '</span>'
-          // Only pinned membership can be removed here. Somebody on the account
-          // because they own six tasks comes off by reassigning them, and a ×
-          // that refused every time would be worse than none.
-          + (pinned && !derived
+          // Everyone except the onboarding owner, who is a field on the client
+          // rather than a chip. Somebody holding six tasks used to have no ×
+          // at all and a message telling you to go and reassign them first —
+          // which is the moment their rows most need releasing, so the button
+          // asks instead and unassigns them in the same press.
+          + (m.why.indexOf('Onboarding owner') === -1
               ? '<button class="x" data-rmteam="' + esc(m.name)
                 + '" title="Take off the account">×</button>'
               : '')
@@ -1648,10 +1800,44 @@ function wireClientTeam(clientId){
   [].forEach.call(document.querySelectorAll('[data-rmteam]'), function(b){
     b.addEventListener('click', function(){
       var who = b.getAttribute('data-rmteam');
-      api('removeClientTeamMember', TOKEN, clientId, who).then(function(r){
-        if (!r.ok){ toast(r.message, true); return; }
+      var done = function(r){
         el('teamStrip').innerHTML = teamStrip(r);
         wireClientTeam(clientId);
+        toast(who + ' is off the account'
+          + (r.freed ? ' — ' + r.freed + ' task' + (r.freed === 1 ? '' : 's')
+              + ' now unassigned.' : '.'));
+      };
+      // Already asked once and armed, so this press is the answer.
+      if (b.getAttribute('data-armed') === '1'){
+        b.removeAttribute('data-armed');
+        api('removeClientTeamMember', TOKEN, clientId, who, true)
+          .then(function(r){
+            if (!r.ok){ toast(r.message, true); return; }
+            done(r);
+          }).catch(fail);
+        return;
+      }
+
+      // The server refuses the first press when they hold work and says how
+      // much. Asking is the point: removing somebody who owns eight rows and
+      // leaving those rows in their name would be the button lying about what
+      // it did, and refusing outright is what sent people to the sheet.
+      //
+      // Armed on the button rather than through confirm(): this page runs in a
+      // sandboxed iframe with no allow-modals, so confirm() is a dialog that
+      // never appears and a press that silently does nothing.
+      api('removeClientTeamMember', TOKEN, clientId, who).then(function(r){
+        if (r.ok){ done(r); return; }
+        if (!r.holds){ toast(r.message, true); return; }
+        b.setAttribute('data-armed', '1');
+        b.title = 'Press again to remove and unassign';
+        toast(r.message + ' Press × again to remove them and unassign those.',
+              true);
+        setTimeout(function(){
+          if (!b.parentNode) return;
+          b.removeAttribute('data-armed');
+          b.title = 'Take off the account';
+        }, 6000);
       }).catch(fail);
     });
   });
@@ -3157,6 +3343,7 @@ function slackCard(c){
       + '<br><br>Linking a channel also puts an <b>Onboarding</b> tab in it, '
       + 'beside Messages and Pins, that opens this client. Channels connected '
       + 'before that existed need it adding once.</div>'
+      + '<div id="chanList" class="hint">Reading the linked channels…</div>'
       + '<div id="slackPeople" class="hint">Loading the team…</div>'
       + '<div id="slackPick"></div>'
       + '<div class="startrow">'
@@ -3183,6 +3370,66 @@ function slackCard(c){
 }
 
 /**
+ * Every channel linked to this client, and which room each one is.
+ *
+ * Most accounts have two — the pod's channel and a Slack Connect one the
+ * client is in — and the distinction is not cosmetic: it decides where a nudge
+ * naming a colleague and listing what they have not done is allowed to land.
+ * So the card says which channel the pings go to, in words, rather than
+ * leaving it to be discovered by one arriving in front of the client.
+ */
+function channelList(r){
+  if (!r || !r.ok){
+    return '<span class="muted">could not read the linked channels'
+      + (r && r.message ? ' — ' + esc(r.message) : '') + '</span>';
+  }
+  var list = r.channels || [];
+  if (!list.length) return '<span class="muted">no channels linked</span>';
+
+  var label = {};
+  (r.kinds || []).forEach(function(k){ label[k.key] = k.label; });
+
+  return '<div class="chans">' + list.map(function(ch){
+      return '<span class="chan' + (ch.kind === 'client' ? ' shared' : '') + '">'
+        + '<b>#' + esc(ch.name) + '</b>'
+        + '<i>' + esc(label[ch.kind] || ch.kind) + '</i>'
+        + '<button class="x" data-unlink="' + esc(ch.name)
+        + '" title="Unlink from this client — the channel itself is untouched">'
+        + '×</button></span>';
+    }).join('') + '</div>'
+    + '<div class="hint" style="margin-top:6px">'
+    + (r.postsTo
+        ? 'Nudges and outstanding-item pings go to <b>#' + esc(r.postsTo)
+          + '</b>. Nothing is ever posted to a channel shared with the client.'
+        : 'No internal channel is linked, so nothing can be pinged. A channel '
+          + 'shared with the client is never used for that.')
+    + '</div>';
+}
+
+function loadChannels(clientId){
+  if (!el('chanList')) return;
+  api('getClientChannels', clientId).then(function(r){
+    if (!el('chanList')) return;
+    el('chanList').innerHTML = channelList(r);
+    [].forEach.call(document.querySelectorAll('[data-unlink]'), function(b){
+      b.addEventListener('click', function(){
+        api('unlinkClientChannel', TOKEN, clientId, b.getAttribute('data-unlink'))
+          .then(function(res){
+            if (!res.ok){ toast(res.message, true); return; }
+            el('chanList').innerHTML = channelList(res);
+            loadChannels(clientId);
+            toast('#' + b.getAttribute('data-unlink') + ' unlinked. The channel '
+              + 'itself is untouched.');
+          }).catch(fail);
+      });
+    });
+  }).catch(function(){
+    if (el('chanList')) el('chanList').innerHTML =
+      '<span class="muted">could not read the linked channels</span>';
+  });
+}
+
+/**
  * What happened to the channel's link back to this client.
  *
  * Silent on success. A tab appearing in Slack is its own confirmation, and a
@@ -3204,6 +3451,11 @@ function reportBookmark(mark){
 }
 
 function wireSlack(clientId, c){
+  // Every state of this has to be visible text — see the note on slackPeople.
+  // "Reading the linked channels…" and then silence is three different fixes
+  // behind one screen.
+  loadChannels(clientId);
+
   if (el('slackCheck')){
     el('slackCheck').addEventListener('click', function(){
       var b = this; b.disabled = true; b.textContent = 'Checking…';
@@ -3393,13 +3645,30 @@ function wireSlack(clientId, c){
           + 'A private channel it has never been invited to cannot be listed at '
           + 'all — set the Slack channel field under Details by hand for those.</span>'
           + '</div>'
+          // Which room this is, asked at the moment of linking rather than
+          // assumed. Most accounts have both an internal channel and a Slack
+          // Connect one with the client in it, and a nudge naming a colleague
+          // and listing what they have not done only belongs in the first.
+          + '<div class="f" style="margin-top:10px">'
+          + '<label>What this channel is</label>'
+          + '<select id="slackChanKind">'
+          + (r.kinds || [{ key:'internal', label:'Internal' },
+                          { key:'client', label:'Shared with the client' }])
+              .map(function(k){
+                return '<option value="' + esc(k.key) + '">' + esc(k.label)
+                  + '</option>'; }).join('')
+          + '</select>'
+          + '<span class="note">Nudges and outstanding-item pings only ever go '
+          + 'to an internal channel. Nothing is posted automatically to one '
+          + 'shared with the client.</span></div>'
           + '<div class="startrow"><button class="btn pri" id="slackLink">'
           + 'Link this channel</button></div>';
 
         el('slackLink').addEventListener('click', function(){
           var lb = this;
           lb.disabled = true; lb.textContent = 'Linking…';
-          api('slackLinkChannel', TOKEN, clientId, el('slackChanSel').value)
+          api('slackLinkChannel', TOKEN, clientId, el('slackChanSel').value,
+              el('slackChanKind') ? el('slackChanKind').value : 'internal')
             .then(function(res){
               lb.disabled = false; lb.textContent = 'Link this channel';
               if (!res.ok){ toast(res.message, true); return; }
@@ -4079,7 +4348,7 @@ function recentCard(r){
       + kinds.map(function(k){
           return '<option value="' + esc(k.key) + '">' + esc(k.label) + '</option>';
         }).join('') + '</select></div>'
-    + '<div class="f"><label>Name it</label>'
+    + '<div class="f"><label id="mcNameLab">Name it</label>'
       + '<input id="mcName" placeholder="Q3 planning call"></div>'
     + '<div class="f"><label>Date</label>'
       + '<input id="mcDate" placeholder="' + esc(r.today || '') + '"></div>'
@@ -4157,7 +4426,10 @@ function offerReread(clientId, added){
 
   el('rrWhat').addEventListener('click', function(){
     var b = this; b.disabled = true; b.textContent = 'Reading…';
-    api('reviewNewDocument', TOKEN, clientId, added.key).then(function(r){
+    // The id, not the kind. With two audit decks on file the kind names both,
+    // and the server would read whichever it reached first — reporting on a
+    // document nobody had just added.
+    api('reviewNewDocument', TOKEN, clientId, added.id || added.key).then(function(r){
       b.disabled = false; b.textContent = 'What does it change about them?';
       if (!r.ok){ toast(r.message, true); return; }
       el('rrOut').innerHTML = rereadResult(r);
@@ -4392,6 +4664,15 @@ function wireRecent(clientId){
       var k = (RECENT_KINDS || []).filter(function(x){
         return x.key === el('mcKind').value; })[0];
       el('mcHint').textContent = (k && k.hint) || '';
+      // For most kinds the name is optional — "Scope of work" is what a scope
+      // of work is called. For a kind named by whoever files it there is no
+      // fallback worth having: "Background document" twice is two rows nobody
+      // can tell apart, so the label says it is required and the placeholder
+      // stops suggesting a call.
+      var named = !!(k && k.named);
+      el('mcNameLab').textContent = named ? 'Name it — required' : 'Name it';
+      el('mcName').placeholder = named
+        ? 'Brand guidelines' : 'Q3 planning call';
     });
   }
 
@@ -4402,6 +4683,16 @@ function wireRecent(clientId){
       var file = el('mcFile') && el('mcFile').files && el('mcFile').files[0];
       if (!v && !file){
         toast('Paste the text, give a link, or pick a file.', true); return;
+      }
+      // Caught here rather than filed as "Background document" and found again
+      // by nobody. Every other kind has its own words to fall back on.
+      var kind = (RECENT_KINDS || []).filter(function(x){
+        return x.key === (el('mcKind') ? el('mcKind').value : 'call'); })[0];
+      if (kind && kind.named && !el('mcName').value.trim()){
+        toast('Give it a name — it is what this document will be called '
+          + 'everywhere.', true);
+        el('mcName').focus();
+        return;
       }
 
       // A long transcript is a real fetch or a real write, so the button says
@@ -5195,6 +5486,7 @@ function openClient(clientId){
     }
     loadContactPhoto(clientId, c);
     loadClientTeam(clientId);
+    wireServices(clientId, c, d);
     loadRecent(clientId);
     loadActions(clientId);
 

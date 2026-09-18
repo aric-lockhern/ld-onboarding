@@ -267,7 +267,11 @@ function slackCreateChannel(token, clientId, opts) {
   } catch (e) { /* a channel without a purpose still works */ }
 
   const url = 'https://slack.com/app_redirect?channel=' + channelId;
-  setClientField_(clientId, C.SLACK, '#' + name);
+  // A channel this tool just created is ours — it was made private, it has the
+  // pod in it, and nobody has shared it with anyone. Recorded as internal
+  // rather than assumed to be: postableChannel_ reads the stored value.
+  linkClientChannel(token, clientId, { id: channelId, name: name },
+                    clientFacing_({ kind: opts.kind }) ? 'client' : 'internal');
 
   // The way back. Everything else here points out of the tool and into Slack;
   // this is the one link that goes the other way, and it belongs in the
@@ -324,7 +328,9 @@ function slackChannels() {
   }
 
   out.sort((a, b) => a.name.localeCompare(b.name));
-  return { ok: true, channels: out };
+  // The picker asks what the channel IS at the moment of linking, so it needs
+  // the list of kinds with it rather than hardcoding two labels of its own.
+  return { ok: true, channels: out, kinds: CHANNEL_KINDS };
 }
 
 /**
@@ -336,7 +342,12 @@ function slackChannels() {
  * that case is reported as something to do rather than silently linked and
  * left broken.
  */
-function slackLinkChannel(token, clientId, channelId) {
+/**
+ * @param {string} [kind] 'internal' (default) or 'client' — see Channels.gs.
+ *   A client can have both linked; which one this is decides whether anything
+ *   is ever posted to it.
+ */
+function slackLinkChannel(token, clientId, channelId, kind) {
   checkToken_(token);
 
   const client = getClientRecord_(clientId);
@@ -364,14 +375,27 @@ function slackLinkChannel(token, clientId, channelId) {
     }
   }
 
-  setClientField_(clientId, C.SLACK, '#' + ch.name);
+  // Through the list, which derives C.SLACK from it. Writing that cell here as
+  // well would be a second place the channel is recorded, and the two would
+  // disagree the first time a client-facing channel was linked.
+  const shared = clientFacing_({ kind: kind });
+  linkClientChannel(token, clientId, { id: ch.id, name: ch.name },
+                    shared ? 'client' : 'internal');
 
   // Linking an existing channel is the commoner path — most accounts already
   // have one — so it is the one that most needs the tab.
-  const mark = slackBookmarkClient_(client, ch.id);
+  //
+  // Internal channels only. The bookmark is a link into the agency's own CRM —
+  // the checklist, the owners, what the client has not sent yet — and putting
+  // that tab in a channel the client is in publishes all of it to them.
+  const mark = shared
+    ? { ok: true, skipped: true, message: 'No tab added: #' + ch.name + ' is '
+        + 'shared with the client, and the link goes to their onboarding record.' }
+    : slackBookmarkClient_(client, ch.id);
 
   return { ok: true, name: '#' + ch.name, channelId: ch.id,
            url: 'https://slack.com/app_redirect?channel=' + ch.id,
+           kind: shared ? 'client' : 'internal',
            joined: joined, warn: warn, bookmark: mark };
 }
 
@@ -668,11 +692,12 @@ function slackPingTasks(token, clientId, tasks, about) {
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, message: 'Client not found.' };
 
-  const channel = String(client.slack || '').replace(/^#/, '');
-  if (!channel) {
-    return { ok: false, message: 'No Slack channel on this client. Create one '
-      + 'or link an existing one first.' };
-  }
+  // Resolved, never guessed. A client can have two channels linked and only
+  // one of them is ours — a nudge naming a colleague and listing what they
+  // have not done belongs nowhere near the one the client reads.
+  const target = postableChannel_(client);
+  if (!target.ok) return target;
+  const channel = target.channel.name;
 
   const want = {};
   (tasks || []).forEach(t => { want[String(t).trim()] = true; });
@@ -875,10 +900,22 @@ function slackPingOutstanding(token, clientId, channelOverride) {
   const client = getClientRecord_(clientId);
   if (!client) return { ok: false, message: 'Client not found.' };
 
-  const channel = channelOverride || String(client.slack || '').replace(/^#/, '');
+  let channel = String(channelOverride || '').replace(/^#/, '');
   if (!channel) {
-    return { ok: false, message: 'No Slack channel on this client. Create one '
-      + 'first, or set the Slack channel field.' };
+    const target = postableChannel_(client);
+    if (!target.ok) return target;
+    channel = target.channel.name;
+  } else {
+    // An override still cannot be a client-facing channel. The override exists
+    // for the digest, which passes a channel from Config — and a shared channel
+    // pasted in there would post the whole outstanding list to the client
+    // every morning without anyone pressing anything.
+    const named = clientChannels_(client)
+      .filter(c => c.name.toLowerCase() === channel.toLowerCase())[0];
+    if (clientFacing_(named)) {
+      return { ok: false, message: '#' + channel + ' is marked as shared with '
+        + 'the client, so the outstanding list is not posted to it.' };
+    }
   }
 
   const open = getClientTasks_(clientId).filter(t =>

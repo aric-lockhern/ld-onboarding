@@ -577,15 +577,31 @@ function updateTaskStatus(token, clientId, task, status) {
   return { ok: false, message: 'Task row not found.' };
 }
 
+/**
+ * Every editable cell on the client record, and the column behind it.
+ *
+ * This map is what the client card can change, and it used to be shorter than
+ * the card was. Contact, Email, Website and Vertical were rendered as editable
+ * boxes, typed into, and refused on blur with "Unknown field" — a field that
+ * looks editable and is not is worse than a read-only one, because the
+ * correction is lost and the person believes it was saved.
+ *
+ * Anything on the card that a person should be able to correct belongs here.
+ * The exceptions are computed or structural: the client ID, the progress
+ * formula, the Drive folder, the stored profile and the fee lines, which have
+ * their own screens.
+ */
+const CLIENT_FIELD_COLS = {
+  company: C.COMPANY, contact: C.CONTACT, email: C.EMAIL, website: C.WEBSITE,
+  vertical: C.VERTICAL, status: C.STATUS, owner: C.OWNER, scope: C.SCOPE,
+  cadence: C.CADENCE, slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE,
+  services: C.SERVICES, approvals: C.APPROVALS, term: C.TERM, call: C.CALL,
+  bizType: C.BIZTYPE, mrr: C.MRR, platforms: C.PLATFORMS, start: C.START
+};
+
 function updateClientField(token, clientId, field, value) {
   checkToken_(token);
-  const cols = {
-    status: C.STATUS, owner: C.OWNER, scope: C.SCOPE, cadence: C.CADENCE,
-    slack: C.SLACK, alias: C.ALIAS, drive: C.DRIVE, services: C.SERVICES,
-    approvals: C.APPROVALS, term: C.TERM, call: C.CALL,
-    bizType: C.BIZTYPE, mrr: C.MRR, platforms: C.PLATFORMS
-  };
-  const col = cols[field];
+  const col = CLIENT_FIELD_COLS[field];
   if (!col) return { ok: false, message: 'Unknown field.' };
 
   // Refused, not just hidden. A field somebody cannot read but can overwrite
@@ -596,8 +612,70 @@ function updateClientField(token, clientId, field, value) {
       + 'pays. Ask one of them to tick you on the Team page.' };
   }
 
-  return setClientField_(clientId, col, value)
-    ? { ok: true } : { ok: false, message: 'Client not found.' };
+  // A date typed as text sorts and compares as text. Everything downstream —
+  // the due dates, the digest, "started in March" — reads this through
+  // parseDate_, and a cell holding the STRING "1 Oct 2026" is the one input
+  // that makes a date field quietly stop being a date.
+  let write = value;
+  if (field === 'start') {
+    const t = String(value || '').trim();
+    if (!t) {
+      write = '';
+    } else {
+      const d = parseDate_(t);
+      if (!d) {
+        return { ok: false, message: 'Could not read "' + t + '" as a date. '
+          + 'Try 1 Oct 2026 or 2026-10-01.' };
+      }
+      write = d;
+    }
+  }
+
+  // The Slack field is the internal channel, and the channel list is where
+  // that now lives. Writing the cell directly would leave C.SLACK saying one
+  // thing and C.CHANNELS another — and clientChannels_ reads the list, so the
+  // value somebody just typed would be the one ignored.
+  if (field === 'slack') {
+    const client = getClientRecord_(clientId);
+    if (!client) return { ok: false, message: 'Client not found.' };
+    const name = String(value || '').trim().replace(/^#/, '');
+    const list = clientChannels_(client).filter(c => clientFacing_(c));
+    if (name) list.unshift({ name: name, kind: 'internal' });
+    writeClientChannels_(clientId, list);
+    return { ok: true };
+  }
+
+  if (!setClientField_(clientId, col, write)) {
+    return { ok: false, message: 'Client not found.' };
+  }
+
+  // The company name is on every checklist row as well, because the Access tab
+  // is read on its own by the digest and the task board. Renaming the client
+  // and leaving twenty rows under the old name is how one client becomes two
+  // in every list that groups by name.
+  let alsoTasks = 0;
+  if (field === 'company') {
+    alsoTasks = renameOnTasks_(clientId, String(value || '').trim());
+  }
+
+  return { ok: true, tasksRenamed: alsoTasks };
+}
+
+/** Carries a company rename onto the client's checklist rows. */
+function renameOnTasks_(clientId, company) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TABS.ACCESS);
+  if (!sh || sh.getLastRow() < 2 || !company) return 0;
+
+  const want = String(clientId).trim();
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, A.WIDTH).getValues();
+  let n = 0;
+  vals.forEach((r, i) => {
+    if (String(r[A.ID - 1]).trim() !== want) return;
+    if (safeStr_(r[A.COMPANY - 1]) === company) return;
+    sh.getRange(i + 2, A.COMPANY).setValue(company);
+    n++;
+  });
+  return n;
 }
 
 function dashCreateDrive(token, clientId) {

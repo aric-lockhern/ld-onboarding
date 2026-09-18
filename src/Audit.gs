@@ -112,8 +112,14 @@ function actionsModel_() {
  * decides whether a promise is inside the contract or a sales lead. The ClickUp
  * intake form is deliberately absent: it is the client answering questions, not
  * us committing to anything, and it only crowds the prompt.
+ *
+ * A background document is in the list because it is filed by somebody who
+ * thought it mattered, and the alternative is a document that can be uploaded,
+ * named and stored and then read by nothing — which looks done and is not.
+ * Whether it belongs in a given build is the picker's question, not this
+ * list's: this is only what CAN hold a commitment.
  */
-const ACTION_SOURCE_KEYS = ['audit', 'deck', 'sales', 'kickoff', 'sow'];
+const ACTION_SOURCE_KEYS = ['audit', 'deck', 'sales', 'kickoff', 'sow', 'context'];
 
 /**
  * What is ticked when the picker opens.
@@ -214,8 +220,9 @@ function buildActionItems(clientId, keys) {
   if (!docs.length) {
     return fail(all.length
                ? 'The stored documents are ' + all.map(d => d.label).join(', ')
-                 + ' — none of them is a deck, a call transcript or a scope of '
-                 + 'work, so there is nothing to read commitments from.'
+                 + ' — none of them is a deck, a call transcript, a scope of '
+                 + 'work or a background document, so there is nothing to read '
+                 + 'commitments from.'
                : 'No stored documents. The draft they came from may have been '
                  + 'deleted, or nothing was ever uploaded to it.');
   }

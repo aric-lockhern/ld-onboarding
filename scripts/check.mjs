@@ -209,5 +209,43 @@ for (const [base, group] of byBase) {
 }
 if (!collisions) pass(`${byBase.size} file names are unique once extensions are dropped`);
 
+// ---- 7. every editable fact on a client card is a field the server accepts
+// The client card renders each value as its own input carrying data-field, and
+// updateClientField looks that name up in CLIENT_FIELD_COLS. A name in one and
+// not the other is an edit box that refuses on blur with "Unknown field" —
+// which is worse than a read-only row, because the correction is lost and the
+// person believes it saved. Four fields shipped that way: contact, email,
+// website and vertical were all offered and none of them was in the map.
+console.log('\nChecking editable client fields resolve to a column');
+{
+  const map = serverSrc.match(/const CLIENT_FIELD_COLS = \{([\s\S]*?)\n\};/);
+  if (!map) {
+    fail('CLIENT_FIELD_COLS not found in the server source');
+  } else {
+    const known = new Set(
+      [...map[1].matchAll(/(\w+)\s*:\s*C\.\w+/g)].map(m => m[1]));
+    const offered = new Set(
+      [...Object.values(htmlSrc).join('\n')
+        .matchAll(/data-field="\s*'\s*\+\s*esc\((\w+)\)|data-field="([a-zA-Z]+)"/g)]
+        .map(m => m[2]).filter(Boolean));
+
+    // The card builds its inputs through fact(), which interpolates the name —
+    // so the literal attributes above catch nothing and the real list is the
+    // second argument of every fact() call.
+    for (const m of Object.values(htmlSrc).join('\n')
+           .matchAll(/\bfact\(\s*'[^']*'\s*,\s*'([a-zA-Z]+)'/g)) {
+      offered.add(m[1]);
+    }
+
+    const unbacked = [...offered].filter(f => !known.has(f));
+    if (unbacked.length) {
+      fail(`the client card offers ${unbacked.join(', ')} but `
+         + `updateClientField has no column for ${unbacked.length > 1 ? 'them' : 'it'}`);
+    } else {
+      pass(`${offered.size} editable client fields all resolve to a column`);
+    }
+  }
+}
+
 console.log(failures ? `\n${failures} problem(s)\n` : '\nAll checks passed\n');
 process.exit(failures ? 1 : 0);

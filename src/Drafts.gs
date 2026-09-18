@@ -280,6 +280,10 @@ function labelSources_(sources) {
 
     const seen = {};
     group.forEach((s, i) => {
+      // A document somebody named is already distinct, and rewriting it would
+      // hang a date off "Brand guidelines" and truncate any name with a " · "
+      // in it. The kind's generic words are the only thing this may touch.
+      if (s.named) return;
       // Back to the kind's own words before appending, so a record labelled
       // under the old write-time scheme does not end up dated twice.
       const base = String(s.label || k).split(' · ')[0].trim() || k;
@@ -348,6 +352,9 @@ function storeSource_(draftId, key, label, text, meta) {
     // just converted once — see runExtraction.
     originalMime: originalMime,
     chars: text.length, words: meta.words || 0,
+    // This label is somebody's own words rather than the kind's, so
+    // labelSources_ leaves it exactly as typed.
+    named: !!meta.named,
     preview: meta.preview || '', read: fmtWhen_(new Date()),
     // When the document itself is from, as opposed to when it was filed. A
     // deck presented in August and uploaded in September is an August deck,
