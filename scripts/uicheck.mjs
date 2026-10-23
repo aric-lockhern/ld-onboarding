@@ -663,11 +663,36 @@ const FAKE = {
         chars:3100, words:520, gone:true, preview:'' }
     ] },
   listDrafts: { ok:true, drafts:[
+    // Five, because the fold shows three and offers the rest. This list grows
+    // by one on every intake anybody starts, and it sat unfolded above the
+    // form — so the screen you opened to create a client opened on a wall of
+    // other people's clients.
     { draftId:'DR-260810-1612', name:'Harbor & Sons', updated:'10 Aug, 16:12',
-      updatedAt:2, status:'Analysed', clientId:'', sourceCount:3, analysed:true },
+      updatedAt:5, status:'Analysed', clientId:'', sourceCount:3, analysed:true },
     { draftId:'DR-260807-0904', name:'Verity Outdoors', updated:'7 Aug, 09:04',
-      updatedAt:1, status:'Submitted', clientId:'VERITY-2607', sourceCount:2, analysed:true }
+      updatedAt:4, status:'Submitted', clientId:'VERITY-2607', sourceCount:2, analysed:true },
+    { draftId:'DR-260805-1120', name:'Cornhole Co', updated:'5 Aug, 11:20',
+      updatedAt:3, status:'Analysed', clientId:'', sourceCount:4, analysed:true },
+    { draftId:'DR-260801-1545', name:'Left Main REI', updated:'1 Aug, 15:45',
+      updatedAt:2, status:'Submitted', clientId:'LEFTMAIN-2608', sourceCount:5, analysed:true },
+    { draftId:'DR-260728-0930', name:'Doc\'s Diesel', updated:'28 Jul, 09:30',
+      updatedAt:1, status:'Draft', clientId:'', sourceCount:1, analysed:false }
   ] },
+  // Who can be chased for a call recording. The person doing the intake is
+  // almost never the person who ran the discovery call.
+  getAskTargets: { ok:true, kind:'sales', slack:true, teamEmpty:false,
+    last:'Justin Hale', what:'the recording or transcript of the discovery call',
+    people:[
+      { name:'Justin Hale', email:'justin@lockherndigital.com',
+        slackId:'U01JUST', role:'Sales' },
+      { name:'Drake King', email:'drake@lockherndigital.com',
+        slackId:'U01DRAKE', role:'Paid lead' },
+      // Half a row on the Team page. Listed with the gap named rather than
+      // dropped — "why is she not in this list" is otherwise unanswerable.
+      { name:'Priya Raman', email:'', slackId:'U01PRIY', role:'Analytics' }
+    ] },
+  askForSource: { ok:true, how:'slack', who:'Justin Hale',
+                  message:'Asked Justin Hale on Slack.' },
   runExtraction: {
     ok:true,
     sourcesUsed:['Sales call transcript','Scope of work','ClickUp onboarding form'],
@@ -1031,6 +1056,109 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
 
     // The new-client flow is two screens; step 2 is where the extraction lands.
     if (view === 'new') {
+      // The saved drafts are folded and three deep.
+      //
+      // This list grows by one every time anybody starts an intake. Unfolded
+      // it was the first thing on the screen and after a couple of months it
+      // is a wall of rows — the page you open to create a client opening on a
+      // list of other people's clients.
+      const drafts = await page.evaluate(() => ({
+        folded: document.getElementById('draftBody').style.display === 'none',
+        // The count has to be on the closed row, or folding it hides the fact
+        // that there is anything there at all.
+        count: document.getElementById('draftTog').textContent,
+        rows: document.querySelectorAll('#dlist .drow').length,
+        more: !!document.getElementById('draftAll')
+      }));
+      if (!drafts.folded) throw new Error('The saved drafts did not start folded');
+      if (!/5 saved/.test(drafts.count)) {
+        throw new Error('The folded drafts row does not say how many: '
+          + drafts.count);
+      }
+      if (drafts.rows !== 3) {
+        throw new Error('The drafts list is not capped at three: ' + drafts.rows);
+      }
+      if (!drafts.more) throw new Error('No way to see the drafts beyond three');
+      await page.click('#draftTog');
+      await page.click('#draftAll');
+      await page.waitForTimeout(80);
+      const allRows = await page.$$eval('#dlist .drow', e => e.length);
+      if (allRows !== 5) {
+        throw new Error('Showing the rest did not list them all: ' + allRows);
+      }
+      await page.click('#draftTog');
+
+      // The documents are in the order a deal produces them, and the first
+      // five are numbered. The old order was whatever each was added in, which
+      // put the scope of work third and the audit — the document the action
+      // items are built from — last.
+      const order = await page.evaluate(() => ({
+        keys: [].map.call(document.querySelectorAll('[id^="src_"]'),
+          e => e.id.replace('src_', '')),
+        steps: [].map.call(document.querySelectorAll('.stepn'),
+          e => e.textContent),
+        split: !!document.querySelector('.srcsplit'),
+        // Both audit rows exist: the deck holds the findings, the call holds
+        // what was said about them. They used to share one key, so whichever
+        // was uploaded second replaced the first.
+        twoAudits: !!document.getElementById('src_audit')
+                   && !!document.getElementById('src_auditcall')
+      }));
+      if (order.keys.join(',') !== 'sales,auditcall,audit,form,sow,deck,kickoff') {
+        throw new Error('The intake sources are not in deal order: '
+          + JSON.stringify(order.keys));
+      }
+      if (order.steps.join(',') !== '1,2,3,4,5') {
+        throw new Error('The numbered spine is wrong: ' + JSON.stringify(order.steps));
+      }
+      if (!order.twoAudits) {
+        throw new Error('The audit deck and its transcript are not separate rows');
+      }
+      if (!order.split) {
+        throw new Error('Nothing separates the numbered spine from the optional '
+          + 'documents, so the unnumbered rows read as missing their number');
+      }
+
+      // The first row is the one the person doing the intake usually cannot
+      // fill in, because they did not run the call. Without a way to ask, the
+      // next step is a Slack message typed from memory — or nothing, and the
+      // client gets onboarded by somebody who never heard the call that sold it.
+      await page.click('[data-ask="sales"]');
+      await page.waitForSelector('#askGo_sales', { timeout: 5000 });
+      const ask = await page.evaluate(() => ({
+        who: [].map.call(document.querySelectorAll('#askWho_sales option'),
+          o => o.textContent),
+        picked: document.getElementById('askWho_sales').value,
+        how: [].map.call(document.querySelectorAll('#askHow_sales option'),
+          o => o.value)
+      }));
+      // Remembered, because the discovery calls are run by the same one or two
+      // people and picking from eleven names every time is the friction that
+      // turns this back into "I'll ask them later".
+      if (ask.picked !== 'Justin Hale') {
+        throw new Error('The last person asked is not preselected: ' + ask.picked);
+      }
+      if (ask.how.join(',') !== 'slack,email') {
+        throw new Error('Both ways to send are not offered: '
+          + JSON.stringify(ask.how));
+      }
+      // Somebody with half a Team row is listed with the gap named. Dropping
+      // them makes "why is she not in this list" unanswerable from here.
+      if (!ask.who.some(o => /Priya Raman.*no email/.test(o))) {
+        throw new Error('A person missing an address is not shown as such: '
+          + JSON.stringify(ask.who));
+      }
+      const fAsk = `${OUT}/${name}-new-ask.png`;
+      await page.screenshot({ path: fAsk, fullPage: name === 'desktop' });
+      shots.push(fAsk);
+
+      await page.click('#askGo_sales');
+      await page.waitForTimeout(250);
+      const asked = await page.$eval('#ask_sales', e => e.textContent);
+      if (!/Asked Justin Hale on Slack/.test(asked)) {
+        throw new Error('The row does not record that the ask was sent: ' + asked);
+      }
+
       // Two ClickUp links: one resolves, one 403s. The failure row is the point.
       await page.fill('#src_sales', 'https://doc.clickup.com/18033356/d/h/h6apc-42354/f4aa');
       await page.fill('#src_kickoff', 'https://doc.clickup.com/18033356/d/h/h6apc-44034/b21c');
@@ -1080,6 +1208,10 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
       await page.click('nav button[data-v="clients"]');
       await page.waitForTimeout(200);
       await page.click('#newBtn');
+      // The saved drafts are folded now, so resuming one means opening the
+      // fold first — which is the real flow, not a harness workaround.
+      await page.waitForSelector('#draftTog', { timeout: 5000 });
+      await page.click('#draftTog');
       await page.waitForSelector('[data-open]', { timeout: 5000 });
       const fDrafts = `${OUT}/${name}-new-drafts.png`;
       await page.screenshot({ path: fDrafts, fullPage: name === 'desktop' });
@@ -1115,6 +1247,8 @@ for (const [name, w, h] of [['desktop', 1280, 900], ['wide', 1920, 1080],
       // was fetched in full and then failed on save with "That draft no longer
       // exists". A fresh draft must be started instead.
       await page.click('#backSrc');
+      await page.waitForSelector('#draftTog', { timeout: 5000 });
+      await page.click('#draftTog');
       await page.waitForSelector('[data-del="DR-260810-1612"]', { timeout: 5000 });
       await page.click('[data-del="DR-260810-1612"]');   // arms
       await page.click('[data-del="DR-260810-1612"]');   // confirms

@@ -26,20 +26,39 @@
 const CLICKUP_API = 'https://api.clickup.com/api/v3';
 const CLICKUP_API_V2 = 'https://api.clickup.com/api/v2';
 
-/** Labels for the sources, in the order they get sent to the model. */
+/**
+ * The deal's documents, in the order they happen.
+ *
+ * This is the spine of the intake screen and the order they are sent to the
+ * model. It is chronological on purpose: a deal produces these documents in
+ * this sequence, and a list in that order is one somebody can walk down while
+ * remembering what they have. The previous order was whatever each was added
+ * in, which put the scope of work third and the audit last — the audit being
+ * the document the action items are actually built from.
+ *
+ * `step` is the number shown on screen. The five numbered ones are the spine;
+ * the two with no step are real documents that not every deal produces, and
+ * numbering them would imply they are missing when they were never going to
+ * exist.
+ *
+ * THE TWO AUDIT ROWS ARE TWO DOCUMENTS. The transcript of the call where the
+ * audit was walked through is not the deck: the deck holds the findings, the
+ * call holds what was said about them, what the client pushed back on, and
+ * what got promised in the room. They used to share the `audit` key, so
+ * whichever was uploaded second replaced the first — and the one that survived
+ * was whichever somebody happened to upload last.
+ */
 const SOURCE_KINDS = [
-  { key: 'sales', label: 'Sales call transcript' },
-  { key: 'kickoff', label: 'Onboarding / kickoff call transcript' },
-  { key: 'sow', label: 'Scope of work' },
-  { key: 'form', label: 'ClickUp onboarding form' },
+  { key: 'sales', step: 1, label: 'Sales call transcript' },
+  { key: 'auditcall', step: 2, label: 'Audit presentation transcript' },
+  { key: 'audit', step: 3, label: 'Audit presentation' },
+  { key: 'form', step: 4, label: 'ClickUp onboarding form' },
+  { key: 'sow', step: 5, label: 'Scope of work' },
+  // Not every deal has these, so they carry no number. The pitch deck sells
+  // the engagement where the audit says what is wrong with the account today;
+  // the kickoff call happens after the contract is signed.
   { key: 'deck', label: 'Pitch deck' },
-  // The audit deck, and the call where it was walked through. It is the
-  // densest source of commitments there is — every slide is a finding with a
-  // recommendation attached, and the recommendations are what somebody then
-  // expects us to do. Kept separate from the pitch deck because they are
-  // different documents doing different jobs: the pitch deck sells the
-  // engagement, the audit says what is wrong with the account today.
-  { key: 'audit', label: 'Audit presentation' }
+  { key: 'kickoff', label: 'Onboarding / kickoff call transcript' }
 ];
 
 // ---------------------------------------------------------------- READ ONE

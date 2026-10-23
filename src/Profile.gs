@@ -77,7 +77,10 @@ function profileSources_(draftId) {
   const d = openDraft(draftId);
   if (!d || !d.ok) return [];
 
-  const order = ['sales', 'kickoff', 'form', 'sow', 'deck'];
+  // Chronological, the same spine the intake screen walks down. The audit
+  // call is in it because how somebody reacted to being shown what is wrong
+  // with their account says more about working with them than the contract does.
+  const order = ['sales', 'auditcall', 'kickoff', 'form', 'sow', 'deck'];
   const docs = [];
   const take = s => {
     if (!s || !s.fileId) return;

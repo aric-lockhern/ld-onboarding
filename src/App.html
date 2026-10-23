@@ -770,6 +770,31 @@
     font-size:14px; line-height:1; padding:0}
   .chan .x:hover{color:var(--red, #b42318)}
 
+  /* The intake sources, numbered. A deal produces these in a fixed order and
+     the number is what makes the list walkable — "I have 1, 3 and 5" is a
+     sentence somebody can say to themselves. */
+  .stepn{display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px; margin-right:7px; border-radius:999px;
+    background:var(--blue); color:#fff; font-size:11px; font-weight:600;
+    vertical-align:1px}
+  /* Where the numbered spine ends and the optional documents begin. Without
+     it the unnumbered rows read as rows whose number went missing. */
+  .srcsplit{margin:22px 0 12px; padding-top:14px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.06em}
+
+  /* Asking a colleague for a document, in place under the row it is about. A
+     dialog over a form holding four half-filled boxes is a way to lose them. */
+  .askbox:empty{display:none}
+  .askbox{margin:0 0 8px; padding:10px 12px; background:var(--paper);
+    border:1px solid var(--line); border-radius:9px}
+  .askf{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .askf select{font-size:13px; padding:5px 8px; max-width:100%}
+  .asknote{display:block; width:100%; margin-top:8px; font-size:13px;
+    padding:6px 9px; border:1px solid var(--line); border-radius:7px;
+    background:var(--surface); color:var(--ink); box-sizing:border-box}
+  .okline{font-size:13px; color:var(--ink)}
+
   /* Initials, coloured off the name so the same person looks the same
      everywhere. A row of six people is scanned by shape before it is read. */
   .av{display:inline-flex; align-items:center; justify-content:center;
@@ -975,6 +1000,7 @@ var SERVER_FNS = [
   'dashPreview', 'dashPreviewNudge', 'dashSend', 'dashSendNudge',
   'getPlatformList', 'getIntakeOptions', 'submitIntake',
   'readSource', 'runExtraction', 'hasClickUpToken', 'startOnboarding',
+  'getAskTargets', 'askForSource',
   'createDraft', 'listDrafts', 'openDraft', 'saveDraft', 'deleteDraft', 'renameDraft',
   'buildClientProfile', 'getClientProfile', 'deleteClient',
   'getClientDocs', 'getTeam',
@@ -5849,20 +5875,56 @@ function renderIntake(){
   });
 }
 
+/**
+ * The deal's documents, in the order they happen.
+ *
+ * Chronological on purpose: a deal produces these in this sequence, and a list
+ * in that order is one somebody can walk down while remembering what they
+ * have. The previous order was whatever each was added in, which put the scope
+ * of work third and the audit last — the audit being the document the action
+ * items are actually built from.
+ *
+ * Mirrors SOURCE_KINDS in Extract.gs, which is the server's copy of the same
+ * order. check.mjs fails if the two disagree, because a key here that the
+ * server does not know is a row somebody fills in that is then never read.
+ *
+ * `step` is the number on screen. The two without one are real documents that
+ * not every deal produces, and numbering them would imply they are missing
+ * when they were never going to exist.
+ */
 var SOURCES = [
-  { key:'sales', label:'Sales call transcript',
-    hint:'The call where the deal was won. Usually carries the company, the contact, the vertical and what was promised.' },
-  { key:'kickoff', label:'Onboarding / kickoff call transcript',
-    hint:'Who does what, meeting cadence, approvals, launch expectations.' },
-  { key:'sow', label:'Scope of work',
+  { key:'sales', step:1, label:'Sales call transcript', ask:true,
+    hint:'The discovery call where the deal was won. Usually carries the company, the contact, the vertical and what was promised.' },
+  { key:'auditcall', step:2, label:'Audit presentation transcript', ask:true,
+    hint:'The call where the audit was walked through, if there was one — not the deck. What the client pushed back on and what got agreed in the room lives here and nowhere else.' },
+  { key:'audit', step:3, label:'Audit presentation',
+    hint:'The deck itself: a Google Slides link, or upload the PDF or PowerPoint. This is what the action items are built from by default — every finding on it came with a recommendation, and a recommendation shown to a client is one they now expect.' },
+  { key:'form', step:4, label:'ClickUp onboarding form',
+    hint:'The submitted form as a ClickUp task link — app.clickup.com/t/… . The answers are read from its custom fields, not just the description.' },
+  { key:'sow', step:5, label:'Scope of work',
     hint:'The contract. Where MRR, start date, renewal and the platform list actually live.' },
   { key:'deck', label:'Pitch deck',
     hint:'Google Slides link, or upload the PDF. The fees and payment slide is where the monthly figure and its breakdown by channel live.' },
-  { key:'form', label:'ClickUp onboarding form',
-    hint:'The submitted form as a ClickUp task link — app.clickup.com/t/… . The answers are read from its custom fields, not just the description.' },
-  { key:'audit', label:'Audit presentation',
-    hint:'The audit deck, or the ClickUp transcript of the call where it was walked through. This is what the action items are built from by default — every finding on it came with a recommendation, and a recommendation shown to a client is one they now expect.' }
+  { key:'kickoff', label:'Onboarding / kickoff call transcript',
+    hint:'Who does what, meeting cadence, approvals, launch expectations.' }
 ];
+
+/** One saved draft, as a row. Pulled out so the fold can render three or all. */
+function draftRow(d){
+  return '<div class="drow">'
+    + '<div class="bd"><div class="nm">' + esc(d.name)
+    + '<span class="tag ' + (d.status === 'Submitted' ? 'done' : '') + '">'
+    + esc(d.status) + '</span></div>'
+    + '<div class="mt">' + d.sourceCount + ' document'
+    + (d.sourceCount === 1 ? '' : 's')
+    + (d.analysed ? ' · analysed' : ' · not analysed yet')
+    + ' · updated ' + esc(d.updated) + '</div></div>'
+    + '<button type="button" class="btn sm" data-open="' + esc(d.draftId)
+    + '">Open</button>'
+    + '<button type="button" class="clr" data-del="' + esc(d.draftId)
+    + '">Delete</button>'
+    + '</div>';
+}
 
 function drawSources(){
   var h = '<div class="steps">'
@@ -5871,27 +5933,28 @@ function drawSources(){
 
   // Everything read is kept, so the common case after the first week is picking
   // up something already half-done rather than starting from an empty form.
+  //
+  // Folded, and three deep. This is the first thing on the New client screen
+  // and it grows by one every time anybody starts an intake — after a couple
+  // of months it is a wall of rows above the form, and the screen you opened
+  // to create a client opens on a list of other people's clients. The three
+  // you might resume are the three most recent; the rest are a record, not a
+  // to-do list, so they sit behind a line that says how many.
   if (DRAFTS.length){
+    var shown = DRAFTS.slice(0, 3);
+    var rest = DRAFTS.length - shown.length;
     h += '<div class="card form"><div class="sect">'
-      + '<h3>Pick up where you left off</h3>'
+      + '<button type="button" class="phtog" id="draftTog">'
+      + '<span class="tw">▶</span>Pick up where you left off '
+      + '<span class="st">' + DRAFTS.length + ' saved</span></button>'
+      + '<div id="draftBody" style="display:none; margin-top:10px">'
       + '<div class="hint">Documents already read are stored in Drive. Reopening '
       + 'one costs no re-upload — you can swap a source and re-analyse.</div>'
-      + '<div id="dlist">'
-      + DRAFTS.map(function(d){
-          return '<div class="drow">'
-            + '<div class="bd"><div class="nm">' + esc(d.name)
-            + '<span class="tag ' + (d.status === 'Submitted' ? 'done' : '') + '">'
-            + esc(d.status) + '</span></div>'
-            + '<div class="mt">' + d.sourceCount + ' document'
-            + (d.sourceCount === 1 ? '' : 's')
-            + (d.analysed ? ' · analysed' : ' · not analysed yet')
-            + ' · updated ' + esc(d.updated) + '</div></div>'
-            + '<button type="button" class="btn sm" data-open="' + esc(d.draftId)
-            + '">Open</button>'
-            + '<button type="button" class="clr" data-del="' + esc(d.draftId)
-            + '">Delete</button>'
-            + '</div>';
-        }).join('')
+      + '<div id="dlist">' + shown.map(draftRow).join('') + '</div>'
+      + (rest
+          ? '<div class="startrow"><button type="button" class="btn sm" '
+            + 'id="draftAll">Show the other ' + rest + '</button></div>'
+          : '')
       + '</div></div></div>';
   }
 
@@ -5907,15 +5970,33 @@ function drawSources(){
       + 'Pasted text and Google Doc links work regardless.</div>';
   }
 
-  h += SOURCES.map(function(s){
+  h += SOURCES.map(function(s, i){
     // Carried back from the reading step, so returning here to add a source you
     // forgot does not cost you the four you already pasted.
     var prev = SRCVALS[s.key];
     var ptext = (typeof prev === 'string') ? prev : '';
     var pfile = (prev && typeof prev === 'object') ? (prev.name || 'file') : '';
-    return '<div class="f wide" style="margin-bottom:16px">'
-      + '<label for="src_' + s.key + '">' + esc(s.label) + '</label>'
-      + '<div class="note" style="margin:-2px 0 4px">' + esc(s.hint) + '</div>'
+
+    // Where the numbered spine ends. Without this line the unnumbered rows
+    // read as rows whose number went missing.
+    var head = (!s.step && i > 0 && SOURCES[i - 1].step)
+      ? '<div class="srcsplit">Also useful, if the deal produced them</div>' : '';
+
+    return head
+      + '<div class="f wide" style="margin-bottom:16px">'
+      + '<label for="src_' + s.key + '">'
+      + (s.step ? '<span class="stepn">' + s.step + '</span>' : '')
+      + esc(s.label) + '</label>'
+      + '<div class="note" style="margin:-2px 0 4px">' + esc(s.hint)
+      // The row that matters most is the one the person doing the intake
+      // usually cannot fill in: they did not run the call. Without this the
+      // next step is a Slack message typed from memory, or nothing at all.
+      + (s.ask
+          ? ' <button type="button" class="lnk" data-ask="' + s.key
+            + '">Ask someone for it</button>'
+          : '')
+      + '</div>'
+      + '<div class="askbox" id="ask_' + s.key + '"></div>'
       + '<textarea id="src_' + s.key + '" placeholder="Paste the text, or a link…">'
       + esc(ptext) + '</textarea>'
       + '<div class="drop" id="drop_' + s.key + '">'
@@ -5956,6 +6037,25 @@ function drawSources(){
   el('skip').addEventListener('click', function(){ EXTRACT = null; drawForm(); });
   el('analyse').addEventListener('click', collectAndRead);
 
+  if (el('draftTog')){
+    el('draftTog').addEventListener('click', function(){
+      var b = el('draftBody');
+      var shut = b.style.display === 'none';
+      b.style.display = shut ? '' : 'none';
+      el('draftTog').querySelector('.tw').textContent = shut ? '▼' : '▶';
+    });
+  }
+  if (el('draftAll')){
+    el('draftAll').addEventListener('click', function(){
+      el('dlist').innerHTML = DRAFTS.map(draftRow).join('');
+      this.parentNode.removeChild(this);
+    });
+  }
+
+  [].forEach.call(document.querySelectorAll('[data-ask]'), function(b){
+    b.addEventListener('click', function(){ openAsk(b.getAttribute('data-ask')); });
+  });
+
   if (el('dlist')){
     el('dlist').addEventListener('click', function(ev){
       var k;
@@ -5963,6 +6063,111 @@ function drawSources(){
       if ((k = ev.target.getAttribute('data-del'))) return removeDraft(k, ev.target);
     });
   }
+}
+
+/**
+ * Asks a colleague for a document this row needs.
+ *
+ * Opens in place under the row rather than as a dialog, because the thing it
+ * is about is the row — and a modal over a form with four half-filled boxes is
+ * a way to lose them.
+ *
+ * Slack or email is a real choice and not a preference: a freelancer who is
+ * not in the workspace has an address and no member ID, and somebody who lives
+ * in Slack will not read an email until tomorrow. Whoever was picked last for
+ * this document is remembered server-side, so the second intake is one press.
+ */
+function openAsk(kind){
+  var box = el('ask_' + kind);
+  if (!box) return;
+  if (box.innerHTML){ box.innerHTML = ''; return; }
+
+  box.innerHTML = '<div class="hint">Reading the team…</div>';
+  api('getAskTargets', kind).then(function(r){
+    if (!r || !r.ok){
+      box.innerHTML = '<div class="hint">'
+        + esc((r && r.message) || 'The server returned nothing.') + '</div>';
+      return;
+    }
+    if (r.teamEmpty){
+      box.innerHTML = '<div class="hint">The Team tab is empty, so there is '
+        + 'nobody to ask. Build the directory on the Team page first.</div>';
+      return;
+    }
+
+    // Everyone is listed, including anyone missing an address or a member ID —
+    // "why is Justin not in this list" is a question with an answer, and it is
+    // always a half-filled row on the Team page. Listing them says which.
+    box.innerHTML = '<div class="askf">'
+      + '<select id="askWho_' + kind + '">'
+      + r.people.map(function(p){
+          var miss = [];
+          if (!p.email) miss.push('no email');
+          if (!p.slackId) miss.push('no Slack ID');
+          return '<option value="' + esc(p.name) + '"'
+            + (p.name === r.last ? ' selected' : '') + '>' + esc(p.name)
+            + (p.role ? ' · ' + esc(p.role) : '')
+            + (miss.length ? ' · ' + miss.join(', ') : '') + '</option>';
+        }).join('')
+      + '</select>'
+      + '<select id="askHow_' + kind + '">'
+      + '<option value="slack"' + (r.slack ? '' : ' disabled') + '>Slack DM'
+      + (r.slack ? '' : ' — no token set') + '</option>'
+      + '<option value="email">Email</option>'
+      + '</select>'
+      + '<button type="button" class="btn sm pri" id="askGo_' + kind + '">Send</button>'
+      + '<button type="button" class="clr" id="askNo_' + kind + '">Cancel</button>'
+      + '</div>'
+      + '<input class="asknote" id="askNote_' + kind + '" '
+      + 'placeholder="Anything to add — optional">'
+      + '<div class="note">Asks for a link rather than the file. The recording '
+      + 'is already open in somebody\'s notetaker, and the answer that takes '
+      + 'thirty seconds is the one that comes back.</div>';
+
+    if (!r.slack) el('askHow_' + kind).value = 'email';
+
+    el('askNo_' + kind).addEventListener('click', function(){ box.innerHTML = ''; });
+    el('askGo_' + kind).addEventListener('click', function(){
+      var b = this;
+      b.disabled = true; b.textContent = 'Sending…';
+      api('askForSource', TOKEN, {
+        kind: kind,
+        who: el('askWho_' + kind).value,
+        how: el('askHow_' + kind).value,
+        company: askCompany(),
+        note: el('askNote_' + kind).value.trim()
+      }).then(function(res){
+        b.disabled = false; b.textContent = 'Send';
+        if (!res.ok){ toast(res.message, true); return; }
+        toast(res.message);
+        // Replaced by what happened, so the row carries a record of the ask
+        // rather than going back to looking untouched.
+        box.innerHTML = '<div class="okline">Asked ' + esc(res.who) + ' '
+          + (res.how === 'email' ? 'by email' : 'on Slack')
+          + '. Paste the link in when it comes back.</div>';
+      }).catch(function(e){
+        b.disabled = false; b.textContent = 'Send'; fail(e);
+      });
+    });
+  }).catch(function(e){
+    box.innerHTML = '<div class="hint">Could not read the team: '
+      + esc((e && e.message) || 'unknown error') + '.</div>';
+  });
+}
+
+/**
+ * The client's name, from wherever this screen already knows it.
+ *
+ * The review step's own field once it has been reached, then the draft's name.
+ * On a fresh intake both are empty, which is the normal case — the message
+ * says "a new client" rather than carrying an empty gap where a name goes.
+ */
+function askCompany(){
+  if (el('company') && el('company').value.trim()){
+    return el('company').value.trim();
+  }
+  if (DRAFT && DRAFT.name) return DRAFT.name;
+  return '';
 }
 
 /**
