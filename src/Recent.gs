@@ -147,6 +147,12 @@ const CLIENT_DOC_KINDS = [
     hint: 'Anything that does not fit the kinds above. Name it — the name is '
         + 'what it will be called everywhere.' },
   { key: 'sales', label: 'Sales call transcript', hint: '' },
+  // Two audit rows because they are two documents: the deck holds the
+  // findings, the call holds what was said about them and what got promised
+  // in the room. Multiple for the same reason the deck is — two audits
+  // presented on two dates are two calls.
+  { key: 'auditcall', label: 'Audit presentation transcript', multiple: true,
+    hint: 'The call where the audit was walked through, not the deck itself.' },
   { key: 'kickoff', label: 'Onboarding / kickoff call transcript', hint: '' }
 ];
 

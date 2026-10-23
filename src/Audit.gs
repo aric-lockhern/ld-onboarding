@@ -119,7 +119,8 @@ function actionsModel_() {
  * Whether it belongs in a given build is the picker's question, not this
  * list's: this is only what CAN hold a commitment.
  */
-const ACTION_SOURCE_KEYS = ['audit', 'deck', 'sales', 'kickoff', 'sow', 'context'];
+const ACTION_SOURCE_KEYS = ['audit', 'auditcall', 'deck', 'sales', 'kickoff',
+                            'sow', 'context'];
 
 /**
  * What is ticked when the picker opens.
@@ -419,7 +420,7 @@ function actionSources_(clientId) {
       label: s.label,
       chars: s.chars || 0,
       isCall: isImportedCallKey_(s.key)
-        || s.key === 'sales' || s.key === 'kickoff',
+        || s.key === 'sales' || s.key === 'kickoff' || s.key === 'auditcall',
       suggested: !!preferred[s.key]
     }));
 

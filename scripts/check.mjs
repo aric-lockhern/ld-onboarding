@@ -292,5 +292,32 @@ console.log('\nChecking no top-level const reads another file\'s const');
   }
 }
 
+// ---- 9. the intake source list matches the server's, in the same order
+// SOURCES in App.html draws the intake screen; SOURCE_KINDS in Extract.gs is
+// what readSource accepts and the order they reach the model. They are two
+// copies of one list. A key in the page that the server does not know is a box
+// somebody fills in that is then never read — and the order is the feature
+// here, so it has to be the same order in both.
+console.log('\nChecking the intake source lists agree');
+{
+  const pull = (src, re) => {
+    const m = src.match(re);
+    return m ? [...m[1].matchAll(/key:\s*'([a-z]+)'/g)].map(x => x[1]) : null;
+  };
+  const server = pull(serverSrc,
+    /const SOURCE_KINDS = \[([\s\S]*?)\n\];/);
+  const page = pull(Object.values(htmlSrc).join('\n'),
+    /var SOURCES = \[([\s\S]*?)\n\];/);
+
+  if (!server || !page) {
+    fail('could not find SOURCE_KINDS (Extract.gs) or SOURCES (App.html)');
+  } else if (server.join(',') !== page.join(',')) {
+    fail(`intake sources differ — App.html has [${page.join(', ')}], `
+       + `Extract.gs has [${server.join(', ')}]`);
+  } else {
+    pass(`${page.length} intake sources match, in the same order`);
+  }
+}
+
 console.log(failures ? `\n${failures} problem(s)\n` : '\nAll checks passed\n');
 process.exit(failures ? 1 : 0);

@@ -450,7 +450,7 @@ function draftContext_(draftId) {
     return '';
   };
 
-  out.transcript = pick(['kickoff', 'sales']);
+  out.transcript = pick(['kickoff', 'sales', 'auditcall']);
   out.contract = pick(['sow', 'deck', 'form']);
   return out;
 }
